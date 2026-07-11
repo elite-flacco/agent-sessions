@@ -1,0 +1,82 @@
+import {
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    externalId: text("external_id").notNull(),
+    provider: text("provider").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    repository: text("repository"),
+    cwd: text("cwd"),
+    branch: text("branch"),
+    status: text("status").notNull(),
+    startedAt: text("started_at").notNull(),
+    endedAt: text("ended_at"),
+    updatedAt: text("updated_at").notNull(),
+    filesChanged: integer("files_changed"),
+    additions: integer("additions"),
+    deletions: integer("deletions"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cachedTokens: integer("cached_tokens"),
+    model: text("model"),
+    estimatedCostUsd: real("estimated_cost_usd"),
+  },
+  (table) => [
+    uniqueIndex("sessions_provider_external_idx").on(
+      table.provider,
+      table.externalId,
+    ),
+    index("sessions_started_idx").on(table.startedAt),
+    index("sessions_status_idx").on(table.status),
+  ],
+);
+
+export const activityEvents = sqliteTable(
+  "activity_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    detail: text("detail"),
+    occurredAt: text("occurred_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("events_session_external_idx").on(
+      table.sessionId,
+      table.externalId,
+    ),
+  ],
+);
+
+export const ingestionSources = sqliteTable("ingestion_sources", {
+  path: text("path").primaryKey(),
+  provider: text("provider").notNull(),
+  size: integer("size").notNull(),
+  modifiedAt: integer("modified_at").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  lastSyncedAt: text("last_synced_at").notNull(),
+  parseState: text("parse_state").notNull(),
+});
+
+export const syncErrors = sqliteTable("sync_errors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  provider: text("provider").notNull(),
+  sourcePath: text("source_path").notNull(),
+  code: text("code").notNull(),
+  message: text("message").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+});

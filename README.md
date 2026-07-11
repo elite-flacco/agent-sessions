@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Relay
 
-## Getting Started
+Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite without retaining full prompts, responses, reasoning, credentials, or tool payload bodies.
 
-First, run the development server:
+## Requirements
+
+- Node.js 20 or newer
+- Local session histories from one or more supported agents
+
+## Run locally
 
 ```bash
+npm install
+npm run collect
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Sync activity** in the app or run `npm run collect` again to import changed files.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For continuous collection in a second terminal:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run collect:watch
+```
 
-## Learn More
+## Data sources
 
-To learn more about Next.js, take a look at the following resources:
+| Provider    | Local source                                                        |
+| ----------- | ------------------------------------------------------------------- |
+| Codex       | `~/.codex/sessions/**/*.jsonl`                                      |
+| Claude Code | `~/.claude/projects/**/*.jsonl`                                     |
+| Zcode       | `~/.zcode/cli/rollout/*.jsonl` and `~/.zcode/cli/agents/**/*.jsonl` |
+| Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                   |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Relay stores its normalized database at `data/relay.db`. Override this with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Commands
 
-## Deploy on Vercel
+- `npm run dev` — start the loopback-only development server
+- `npm run build && npm start` — build and run the production server
+- `npm run collect` — incrementally import changed local files once
+- `npm run collect:watch` — import once and watch existing sources for changes
+- `npm run db:generate` — generate a versioned migration after schema changes
+- `npm run db:migrate` — apply generated migrations
+- `npm run verify` — lint, typecheck, formatting, tests, and production build
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Privacy boundary
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The adapters derive short task titles, workspace metadata, timestamps, model/usage summaries when trustworthy, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are not written to Relay's database.

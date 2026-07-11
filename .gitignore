@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+/data/
+/coverage/
+/artifacts/
 
 # debug
 npm-debug.log*
