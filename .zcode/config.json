@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "enabled": true,
+    "events": {
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "git diff --quiet HEAD || npm run verify || exit 2",
+              "timeout": 180
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
