@@ -72,6 +72,21 @@ export const ingestionSources = sqliteTable("ingestion_sources", {
   parseState: text("parse_state").notNull(),
 });
 
+export const adapterScans = sqliteTable("adapter_scans", {
+  provider: text("provider").primaryKey(),
+  lastScanAt: text("last_scan_at").notNull(),
+  sources: integer("sources").notNull(),
+  imported: integer("imported").notNull(),
+  errors: integer("errors").notNull(),
+});
+
+export const collectorLeases = sqliteTable("collector_leases", {
+  name: text("name").primaryKey(),
+  owner: text("owner").notNull(),
+  acquiredAt: text("acquired_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+});
+
 export const syncErrors = sqliteTable("sync_errors", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   provider: text("provider").notNull(),

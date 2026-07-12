@@ -39,6 +39,28 @@ beforeAll(async () => {
     now.toISOString(),
     null,
   );
+  insert.run(
+    "3",
+    "zcode",
+    "Stale runner",
+    null,
+    null,
+    "running",
+    new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    new Date(now.getTime() - 30 * 60_000).toISOString(),
+    null,
+  );
+  insert.run(
+    "4",
+    "codex",
+    "Fresh runner",
+    "beacon",
+    null,
+    "running",
+    new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    now.toISOString(),
+    null,
+  );
   const insertEvent = sqlite.prepare(`INSERT INTO activity_events
     (session_id, external_id, kind, title, occurred_at) VALUES (?, ?, ?, ?, ?)`);
   const at = (minutes: number) =>
@@ -52,6 +74,10 @@ beforeAll(async () => {
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
   insertSource.run("/tmp/a.jsonl", "codex", 10, 1, "fp-a", at(2), "ok");
   insertSource.run("/tmp/b.jsonl", "claude", 10, 1, "fp-b", at(2), "error");
+  const insertScan = sqlite.prepare(`INSERT INTO adapter_scans
+    (provider, last_scan_at, sources, imported, errors) VALUES (?, ?, ?, ?, ?)`);
+  insertScan.run("codex", at(30), 1, 0, 0);
+  insertScan.run("claude", at(1), 1, 0, 0);
 });
 
 afterAll(async () => {
@@ -84,8 +110,17 @@ describe("session queries", () => {
   it("calculates local summary metrics", () => {
     expect(queries.getSummary()).toMatchObject({
       sessionsToday: 1,
-      activeNow: 0,
+      activeNow: 1,
     });
+  });
+
+  it("derives interrupted status for stale running sessions at query time", () => {
+    const running = queries.getSessions({ status: "running", range: "all" });
+    expect(running.map((session) => session.title)).toEqual(["Fresh runner"]);
+    const stale = queries
+      .getSessions({ range: "all" })
+      .find((session) => session.title === "Stale runner");
+    expect(stale?.status).toBe("interrupted");
   });
 });
 
@@ -109,16 +144,21 @@ describe("activity stream queries", () => {
   });
 
   it("lists distinct repositories and counts sessions", () => {
-    expect(queries.getRepositories()).toEqual(["ai-compass", "relay"]);
-    expect(queries.countSessions()).toBe(2);
+    expect(queries.getRepositories()).toEqual([
+      "ai-compass",
+      "beacon",
+      "relay",
+    ]);
+    expect(queries.countSessions()).toBe(4);
   });
 
-  it("reports collector health from ingestion state", () => {
+  it("reports collector health from ingestion and scan state", () => {
     expect(queries.getCollectorHealth()).toMatchObject({
       sources: 2,
       parseErrors: 1,
       recentSyncErrors: 0,
       connectedAgents: 1,
+      delayedProviders: ["codex"],
     });
   });
 });

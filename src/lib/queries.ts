@@ -37,6 +37,21 @@ export interface SessionFilters {
   selected?: string;
 }
 
+const STALE_RUNNING_MS = 10 * 60 * 1000;
+
+/**
+ * Sessions are stored with the status derived at parse time, which goes
+ * stale when a source file stops changing. Derive the effective status at
+ * query time instead: a "running" session with no updates inside the stale
+ * window reads as interrupted.
+ */
+const statusExpression = (column: string, updatedColumn: string) =>
+  `CASE WHEN ${column} = 'running' AND ${updatedColumn} < ? THEN 'interrupted' ELSE ${column} END`;
+
+function staleCutoff(): string {
+  return new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+}
+
 function cutoff(range?: string): string | undefined {
   const days =
     range === "today"
@@ -52,6 +67,7 @@ function cutoff(range?: string): string | undefined {
 }
 
 export function getSessions(filters: SessionFilters): SessionListItem[] {
+  const status = statusExpression("status", "updated_at");
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (filters.q) {
@@ -64,8 +80,8 @@ export function getSessions(filters: SessionFilters): SessionListItem[] {
     params.push(filters.provider);
   }
   if (filters.status && filters.status !== "all") {
-    clauses.push("status = ?");
-    params.push(filters.status);
+    clauses.push(`${status} = ?`);
+    params.push(staleCutoff(), filters.status);
   }
   const date = cutoff(filters.range);
   if (date) {
@@ -75,11 +91,11 @@ export function getSessions(filters: SessionFilters): SessionListItem[] {
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   return sqlite
     .prepare(
-      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, status,
+      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY started_at DESC LIMIT 250`,
     )
-    .all(...params) as SessionListItem[];
+    .all(staleCutoff(), ...params) as SessionListItem[];
 }
 
 export function getSessionEvents(sessionId: number): SessionEventRow[] {
@@ -105,8 +121,10 @@ export function getSummary(): {
   ).count;
   const activeNow = (
     sqlite
-      .prepare("SELECT COUNT(*) count FROM sessions WHERE status = 'running'")
-      .get() as { count: number }
+      .prepare(
+        "SELECT COUNT(*) count FROM sessions WHERE status = 'running' AND updated_at >= ?",
+      )
+      .get(staleCutoff()) as { count: number }
   ).count;
   const totalRuntimeMs = (
     sqlite
@@ -165,11 +183,12 @@ export function getActivityStream(
   return sqlite
     .prepare(
       `SELECT e.id, e.kind, e.title, e.detail, e.occurred_at occurredAt,
-        s.id sessionId, s.title sessionTitle, s.provider, s.repository, s.branch, s.status sessionStatus
+        s.id sessionId, s.title sessionTitle, s.provider, s.repository, s.branch,
+        ${statusExpression("s.status", "s.updated_at")} sessionStatus
       FROM activity_events e JOIN sessions s ON s.id = e.session_id ${where}
       ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?`,
     )
-    .all(...params, limit) as ActivityStreamRow[];
+    .all(staleCutoff(), ...params, limit) as ActivityStreamRow[];
 }
 
 export function getRepositories(): string[] {
@@ -196,7 +215,10 @@ export interface CollectorHealth {
   recentSyncErrors: number;
   lastSyncedAt: string | null;
   connectedAgents: number;
+  delayedProviders: string[];
 }
+
+const DELAYED_SCAN_MS = 15 * 60 * 1000;
 
 export function getCollectorHealth(): CollectorHealth {
   const sourceState = sqlite
@@ -219,7 +241,16 @@ export function getCollectorHealth(): CollectorHealth {
       .prepare("SELECT COUNT(*) count FROM sync_errors WHERE occurred_at >= ?")
       .get(dayAgo) as { count: number }
   ).count;
-  return { ...sourceState, recentSyncErrors };
+  const delayedProviders = (
+    sqlite
+      .prepare(
+        "SELECT provider FROM adapter_scans WHERE last_scan_at < ? ORDER BY provider",
+      )
+      .all(new Date(Date.now() - DELAYED_SCAN_MS).toISOString()) as {
+      provider: string;
+    }[]
+  ).map((row) => row.provider);
+  return { ...sourceState, recentSyncErrors, delayedProviders };
 }
 
 export function getSyncState(): {

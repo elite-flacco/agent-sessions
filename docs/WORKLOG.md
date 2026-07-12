@@ -37,6 +37,28 @@ Running log of autonomous work on TODO.md items. Newest entries at the bottom of
 
 ## Milestone 2 — Collector diagnostics and concurrency
 
+### Design
+
+- Two new tables (versioned migration `0001`): `adapter_scans` (per-adapter last scan time and tallies, separate from per-file state) and `collector_leases` (durable named leases).
+- Durable locking via SQLite leases rather than a lockfile: a `sync` lease (5 min TTL) makes a full scan exclusive across processes — a second process gets `locked: true` and skips; an expired lease from a dead process is taken over automatically. A `watch` lease (90s TTL, renewed every 30s) makes `collect:watch` refuse to start when another live watcher exists.
+- Concurrent syncs inside one process (manual sync button + activity-page auto-sync) now share a single in-flight run instead of racing.
+- `watchSources` accepts injectable source roots (`{path, provider}[]`, defaulting to the real home-dir roots), resolves adapters by root instead of substring matching, waits for the watcher to be ready before returning, and records per-file errors instead of crashing the process on an unhandled rejection.
+- Sync-error hygiene: errors older than 7 days are pruned each scan, and a source that parses cleanly again clears its previous errors — fixes the misleading "21 sync errors in 24h" from v1's initial import.
+- Session staleness is now derived at query time (`running` with no update for 10 min reads as `interrupted`), fixing the inconsistency noted in milestone 1 where one view showed Running and another Interrupted. The health strip also lists adapters whose last scan is >15 min old ("Scans delayed: …").
+- CLI: Ctrl+C now releases the watch lease cleanly; a lock-skipped sync prints a distinct message.
+
+### Decisions
+
+- 2026-07-11: SQLite leases over OS lockfiles — the DB is already the shared, WAL-protected coordination point, and leases self-expire when a process dies.
+- 2026-07-11: Deferred "unsupported event counts" and batched writes: the former needs a per-adapter definition of "unsupported" that would touch every strategy (better done with the format-version detection TODO), and the latter has no observed performance problem yet.
+- 2026-07-11: Kept parse-time `staleStatus` as the stored initial value; the query layer owns presentation-time staleness.
+
+### Verified
+
+- `npm run verify` passes (23 tests including real-watcher tests that create and append JSONL files in a temp root, concurrent `syncAll` calls, lease takeover, and error-pruning).
+
+## Milestone 3 — Projects
+
 _(pending)_
 
 ## Milestone 3 — Projects

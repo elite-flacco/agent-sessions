@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import chokidar from "chokidar";
 import type {
   AgentProvider,
@@ -11,6 +12,7 @@ import { claudeAdapter } from "./adapters/claude";
 import { codexAdapter } from "./adapters/codex";
 import { piAdapter } from "./adapters/pi";
 import { zcodeAdapter } from "./adapters/zcode";
+import { acquireLease, releaseLease } from "./lock";
 import { homePath } from "./utils";
 
 export const adapters: ProviderAdapter[] = [
@@ -19,6 +21,24 @@ export const adapters: ProviderAdapter[] = [
   zcodeAdapter,
   piAdapter,
 ];
+
+export interface SourceRoot {
+  path: string;
+  provider: AgentProvider;
+}
+
+export const defaultRoots: SourceRoot[] = [
+  { path: homePath(".codex", "sessions"), provider: "codex" },
+  { path: homePath(".claude", "projects"), provider: "claude" },
+  { path: homePath(".zcode", "cli", "rollout"), provider: "zcode" },
+  { path: homePath(".zcode", "cli", "agents"), provider: "zcode" },
+  { path: homePath(".pi", "agent", "sessions"), provider: "pi" },
+];
+
+const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
+const WATCH_LEASE_TTL_MS = 90 * 1000;
+const WATCH_LEASE_RENEW_MS = 30 * 1000;
+const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -83,6 +103,25 @@ function persistSession(session: NormalizedSession): void {
   write();
 }
 
+function recordSyncError(
+  provider: AgentProvider,
+  sourcePath: string,
+  code: string,
+  message: string,
+): void {
+  sqlite
+    .prepare(
+      "INSERT INTO sync_errors (provider, source_path, code, message, occurred_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .run(
+      provider,
+      sourcePath,
+      code,
+      message.slice(0, 500),
+      new Date().toISOString(),
+    );
+}
+
 async function syncFile(
   adapter: ProviderAdapter,
   filePath: string,
@@ -98,17 +137,17 @@ async function syncFile(
 
   const result = await adapter.parse(filePath);
   result.sessions.forEach(persistSession);
-  const errorStatement = sqlite.prepare(
-    "INSERT INTO sync_errors (provider, source_path, code, message, occurred_at) VALUES (?, ?, ?, ?, ?)",
-  );
   for (const error of result.errors)
-    errorStatement.run(
+    recordSyncError(
       error.provider,
       error.sourcePath,
       error.code,
-      error.message.slice(0, 500),
-      error.occurredAt,
+      error.message,
     );
+  if (!result.errors.length)
+    sqlite
+      .prepare("DELETE FROM sync_errors WHERE source_path = ?")
+      .run(filePath);
   sqlite
     .prepare(
       `INSERT INTO ingestion_sources (path, provider, size, modified_at, fingerprint, last_synced_at, parse_state)
@@ -131,52 +170,113 @@ async function syncFile(
   };
 }
 
-export async function syncAll(options: { force?: boolean } = {}): Promise<{
+export interface SyncTotals {
   imported: number;
   skipped: number;
   errors: number;
   sources: number;
-}> {
-  const totals = { imported: 0, skipped: 0, errors: 0, sources: 0 };
-  for (const adapter of adapters) {
-    const paths = await adapter.discover();
-    totals.sources += paths.length;
-    for (const filePath of paths) {
-      try {
-        const result = await syncFile(adapter, filePath, options.force);
-        totals.imported += result.imported;
-        totals.skipped += result.skipped;
-        totals.errors += result.errors;
-      } catch (error) {
-        totals.errors += 1;
-        sqlite
-          .prepare(
-            "INSERT INTO sync_errors (provider, source_path, code, message, occurred_at) VALUES (?, ?, ?, ?, ?)",
-          )
-          .run(
+  locked: boolean;
+}
+
+interface SyncOptions {
+  force?: boolean;
+  adapters?: ProviderAdapter[];
+}
+
+let syncInFlight: Promise<SyncTotals> | null = null;
+
+/**
+ * Incrementally ingest every discovered source. Concurrent calls within this
+ * process share one run; a durable lease prevents a second process from
+ * scanning at the same time.
+ */
+export function syncAll(options: SyncOptions = {}): Promise<SyncTotals> {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = runSync(options).finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+}
+
+async function runSync(options: SyncOptions): Promise<SyncTotals> {
+  const totals: SyncTotals = {
+    imported: 0,
+    skipped: 0,
+    errors: 0,
+    sources: 0,
+    locked: false,
+  };
+  if (!acquireLease("sync", SYNC_LEASE_TTL_MS)) {
+    totals.locked = true;
+    return totals;
+  }
+  try {
+    sqlite
+      .prepare("DELETE FROM sync_errors WHERE occurred_at < ?")
+      .run(new Date(Date.now() - SYNC_ERROR_RETENTION_MS).toISOString());
+    for (const adapter of options.adapters ?? adapters) {
+      const scan = { sources: 0, imported: 0, errors: 0 };
+      const paths = await adapter.discover();
+      scan.sources = paths.length;
+      for (const filePath of paths) {
+        try {
+          const result = await syncFile(adapter, filePath, options.force);
+          scan.imported += result.imported;
+          scan.errors += result.errors;
+          totals.skipped += result.skipped;
+        } catch (error) {
+          scan.errors += 1;
+          recordSyncError(
             adapter.provider,
             filePath,
             "read_error",
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : "Unknown sync error",
-            new Date().toISOString(),
+            error instanceof Error ? error.message : "Unknown sync error",
           );
+        }
       }
+      sqlite
+        .prepare(
+          `INSERT INTO adapter_scans (provider, last_scan_at, sources, imported, errors)
+          VALUES (?, ?, ?, ?, ?) ON CONFLICT(provider) DO UPDATE SET
+          last_scan_at=excluded.last_scan_at, sources=excluded.sources,
+          imported=excluded.imported, errors=excluded.errors`,
+        )
+        .run(
+          adapter.provider,
+          new Date().toISOString(),
+          scan.sources,
+          scan.imported,
+          scan.errors,
+        );
+      totals.sources += scan.sources;
+      totals.imported += scan.imported;
+      totals.errors += scan.errors;
     }
+    return totals;
+  } finally {
+    releaseLease("sync");
   }
-  return totals;
 }
 
-export async function watchSources(): Promise<() => Promise<void>> {
+/**
+ * Watch source roots for new and appended session files. Holds a durable
+ * lease so only one watcher process ingests at a time; throws if another
+ * live watcher already holds it.
+ */
+export async function watchSources(
+  roots: SourceRoot[] = defaultRoots,
+): Promise<() => Promise<void>> {
+  if (!acquireLease("watch", WATCH_LEASE_TTL_MS))
+    throw new Error(
+      "Another Relay collector is already watching these sources.",
+    );
+  const renewTimer = setInterval(
+    () => acquireLease("watch", WATCH_LEASE_TTL_MS),
+    WATCH_LEASE_RENEW_MS,
+  );
+  renewTimer.unref?.();
   const watcher = chokidar.watch(
-    [
-      homePath(".codex", "sessions"),
-      homePath(".claude", "projects"),
-      homePath(".zcode", "cli", "rollout"),
-      homePath(".zcode", "cli", "agents"),
-      homePath(".pi", "agent", "sessions"),
-    ],
+    roots.map((root) => root.path),
     {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
@@ -184,20 +284,45 @@ export async function watchSources(): Promise<() => Promise<void>> {
   );
   const syncChanged = async (filePath: string): Promise<void> => {
     if (!filePath.endsWith(".jsonl")) return;
-    await syncFile(adapterForPath(filePath), filePath);
+    const adapter = adapterForPath(filePath, roots);
+    try {
+      await syncFile(adapter, filePath);
+    } catch (error) {
+      recordSyncError(
+        adapter.provider,
+        filePath,
+        "read_error",
+        error instanceof Error ? error.message : "Unknown sync error",
+      );
+    }
   };
   watcher.on("add", syncChanged);
   watcher.on("change", syncChanged);
-  return () => watcher.close();
+  await new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
+  return async () => {
+    clearInterval(renewTimer);
+    releaseLease("watch");
+    await watcher.close();
+  };
 }
 
-function adapterForPath(filePath: string): ProviderAdapter {
-  const match: AgentProvider = filePath.includes("/.codex/")
-    ? "codex"
-    : filePath.includes("/.claude/")
-      ? "claude"
-      : filePath.includes("/.zcode/")
-        ? "zcode"
-        : "pi";
+function adapterForPath(
+  filePath: string,
+  roots: SourceRoot[] = defaultRoots,
+): ProviderAdapter {
+  const root = roots.find(
+    (candidate) =>
+      filePath === candidate.path ||
+      filePath.startsWith(candidate.path + path.sep),
+  );
+  const match: AgentProvider =
+    root?.provider ??
+    (filePath.includes("/.codex/")
+      ? "codex"
+      : filePath.includes("/.claude/")
+        ? "claude"
+        : filePath.includes("/.zcode/")
+          ? "zcode"
+          : "pi");
   return adapters.find((adapter) => adapter.provider === match) ?? piAdapter;
 }

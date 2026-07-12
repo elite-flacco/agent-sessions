@@ -143,6 +143,19 @@ export function ActivityStream({
             ? `Last ingest ${relativeTime(health.lastSyncedAt)}${ingestDelayed ? " — may be stale" : ""}`
             : "Nothing ingested yet"}
         </span>
+        {health.delayedProviders.length > 0 && (
+          <span className="health-item health-warning">
+            <AlertTriangle size={13} />
+            Scans delayed:{" "}
+            {health.delayedProviders
+              .map(
+                (provider) =>
+                  providerLabels[provider as keyof typeof providerLabels] ??
+                  provider,
+              )
+              .join(", ")}
+          </span>
+        )}
         <span
           className={paused ? "health-item health-warning" : "health-item"}
           role="status"

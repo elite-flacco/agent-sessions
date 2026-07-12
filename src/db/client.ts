@@ -58,6 +58,19 @@ CREATE TABLE IF NOT EXISTS ingestion_sources (
   last_synced_at TEXT NOT NULL,
   parse_state TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS adapter_scans (
+  provider TEXT PRIMARY KEY,
+  last_scan_at TEXT NOT NULL,
+  sources INTEGER NOT NULL,
+  imported INTEGER NOT NULL,
+  errors INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collector_leases (
+  name TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sync_errors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider TEXT NOT NULL,
