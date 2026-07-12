@@ -50,6 +50,8 @@ Costs are **API-equivalent estimates**: tokens are priced against a checked-in t
 
 Relay stores its normalized database at `data/relay.db`. Override this with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
 
+Zcode's rollout (`model_io`) files carry model usage but no working directory, so Relay resolves each Zcode session's project/workspace from Zcode's own session database (`~/.zcode/cli/db/db.sqlite`, read-only) and falls back to "Unknown workspace" only when a session id isn't found there.
+
 ## Commands
 
 - `npm run dev` — start the loopback-only development server

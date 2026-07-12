@@ -1,12 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProviderAdapter } from "@/lib/types";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
 import { piAdapter } from "./pi";
-import { zcodeAdapter } from "./zcode";
+import { zcodeAdapter, __resetZcodeDbCache } from "./zcode";
 
 const temporaryDirectories: string[] = [];
 
@@ -25,6 +26,20 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => fs.rm(directory, { recursive: true, force: true })),
   );
+});
+
+// Isolate the ZCode adapter's DB resolver so tests never read the real
+// ~/.zcode database. Point it at a path that cannot exist; the adapter's
+// read-only `fileMustExist` open fails gracefully. Tests that exercise the
+// enrichment set ZCODE_DB_PATH to their own temp DB.
+const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
+beforeEach(() => {
+  process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+  __resetZcodeDbCache();
+});
+afterEach(() => {
+  delete process.env.ZCODE_DB_PATH;
+  __resetZcodeDbCache();
 });
 
 async function parse(
@@ -297,6 +312,57 @@ describe("provider adapters", () => {
     ]);
     expect(cancelled.sessions[0]?.status).toBe("interrupted");
     expect(failed.sessions[0]?.status).toBe("needs_attention");
+  });
+
+  it("resolves the Zcode workspace from Zcode's session DB when the rollout omits cwd", async () => {
+    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-zcode-db-"));
+    temporaryDirectories.push(dbDir);
+    const dbPath = path.join(dbDir, "db.sqlite");
+    const db = new Database(dbPath);
+    db.exec(
+      "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL)",
+    );
+    db.prepare("INSERT INTO session (id, directory) VALUES (?, ?)").run(
+      "z-1",
+      "/projects/relay-demo",
+    );
+    db.close();
+    process.env.ZCODE_DB_PATH = dbPath;
+    __resetZcodeDbCache();
+
+    const result = await parse(zcodeAdapter, [
+      {
+        type: "model_io",
+        sessionId: "z-1",
+        turnId: "t1",
+        startedAt: "2026-07-11T10:00:00Z",
+        completedAt: "2026-07-11T10:01:00Z",
+        model: "gpt-5",
+        request: { content: "Plan the collector" },
+        response: { content: "PRIVATE_ZCODE_RESPONSE" },
+      },
+    ]);
+    const session = result.sessions[0];
+    expect(session?.cwd).toBe("/projects/relay-demo");
+    expect(session?.repository).toBe("relay-demo");
+    expect(session?.summary).toBe("Zcode session in relay-demo.");
+  });
+
+  it("leaves the Zcode workspace unknown when the session id is absent from the DB", async () => {
+    const result = await parse(zcodeAdapter, [
+      {
+        type: "model_io",
+        sessionId: "z-missing",
+        startedAt: "2026-07-11T10:00:00Z",
+        completedAt: "2026-07-11T10:01:00Z",
+        model: "gpt-5",
+        request: { content: "Hello" },
+      },
+    ]);
+    const session = result.sessions[0];
+    expect(session?.cwd).toBeUndefined();
+    expect(session?.repository).toBeUndefined();
+    expect(session?.summary).toBe("Zcode session in an unknown workspace.");
   });
 
   it("accumulates Claude usage per model and counts each message once", async () => {

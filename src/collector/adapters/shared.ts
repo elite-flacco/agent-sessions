@@ -67,6 +67,20 @@ export function dominantModel(usage: ModelUsage[]): string | undefined {
   return [...usage].sort((a, b) => total(b) - total(a))[0]?.model;
 }
 
+const providerDisplayName = (provider: AgentProvider): string =>
+  provider === "claude"
+    ? "Claude Code"
+    : provider === "pi"
+      ? "Pi"
+      : provider === "zcode"
+        ? "Zcode"
+        : "Codex";
+
+export function sessionSummary(provider: AgentProvider, cwd?: string): string {
+  const workspace = repositoryFromCwd(cwd) ?? "an unknown workspace";
+  return `${providerDisplayName(provider)} session in ${workspace}.`;
+}
+
 export function timestamp(row: Record<string, unknown>): string | undefined {
   return (
     stringValue(row.timestamp) ??
@@ -162,7 +176,7 @@ export async function parseJsonl(
       externalId: strategy.identify(rows, filePath),
       provider: strategy.provider,
       title,
-      summary: `${strategy.provider === "claude" ? "Claude Code" : strategy.provider === "pi" ? "Pi" : strategy.provider === "zcode" ? "Zcode" : "Codex"} session in ${repositoryFromCwd(cwd) ?? "an unknown workspace"}.`,
+      summary: sessionSummary(strategy.provider, cwd),
       repository: repositoryFromCwd(cwd),
       cwd,
       branch: strategy.branch(rows),
