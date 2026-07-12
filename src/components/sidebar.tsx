@@ -36,10 +36,15 @@ export function Sidebar({
         </div>
       </div>
       <nav aria-label="Primary navigation" className="primary-nav">
-        <UpcomingRow icon={<LayoutDashboard size={15} />} label="Overview" />
         <NavLink
           href="/"
           active={pathname === "/"}
+          icon={<LayoutDashboard size={15} />}
+          label="Overview"
+        />
+        <NavLink
+          href="/sessions"
+          active={pathname === "/sessions"}
           icon={<Database size={15} />}
           label="Sessions"
           count={sessionCount}

@@ -181,6 +181,29 @@ describe("activity stream queries", () => {
     expect(unknown[0].status).toBe("interrupted");
   });
 
+  it("summarizes daily and weekly overview windows", () => {
+    const overview = queries.getOverview();
+    expect(overview.today.sessions).toBe(1);
+    expect(overview.week.sessions).toBe(3);
+    expect(overview.week.failures).toBe(1);
+    expect(overview.daily).toHaveLength(14);
+    expect(overview.daily.at(-1)?.count).toBeGreaterThanOrEqual(1);
+    expect(overview.providerCounts[0]).toMatchObject({ provider: "codex" });
+  });
+
+  it("lists running and attention sessions with derived status", () => {
+    expect(
+      queries.getRunningSessions().map((session) => session.title),
+    ).toEqual(["Fresh runner"]);
+    const attention = queries.getAttentionSessions();
+    expect(attention.map((session) => session.title)).toContain("Stale runner");
+    expect(
+      attention.every((session) =>
+        ["interrupted", "needs_attention"].includes(session.status),
+      ),
+    ).toBe(true);
+  });
+
   it("reports collector health from ingestion and scan state", () => {
     expect(queries.getCollectorHealth()).toMatchObject({
       sources: 2,

@@ -279,6 +279,122 @@ export function getProjectSessions(key: string): SessionListItem[] {
     .all(...params) as SessionListItem[];
 }
 
+export interface OverviewData {
+  today: { sessions: number; runtimeMs: number; events: number };
+  week: {
+    sessions: number;
+    runtimeMs: number;
+    events: number;
+    failures: number;
+  };
+  providerCounts: { provider: AgentProvider; count: number }[];
+  daily: { date: string; count: number }[];
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function startOfToday(): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.toISOString();
+}
+
+export function getOverview(): OverviewData {
+  const todayStart = startOfToday();
+  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const status = statusExpression("status", "updated_at");
+
+  const windowStats = (since: string) =>
+    sqlite
+      .prepare(
+        `SELECT COUNT(*) sessions,
+          COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs,
+          COALESCE(SUM(CASE WHEN ${status} IN ('interrupted', 'needs_attention') THEN 1 ELSE 0 END), 0) failures
+        FROM sessions WHERE started_at >= ?`,
+      )
+      .get(staleCutoff(), since) as {
+      sessions: number;
+      runtimeMs: number;
+      failures: number;
+    };
+  const events = (since: string) =>
+    (
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) count FROM activity_events WHERE occurred_at >= ?",
+        )
+        .get(since) as { count: number }
+    ).count;
+
+  const today = windowStats(todayStart);
+  const week = windowStats(weekStart);
+  const providerCounts = sqlite
+    .prepare(
+      `SELECT provider, COUNT(*) count FROM sessions WHERE started_at >= ?
+      GROUP BY provider ORDER BY count DESC`,
+    )
+    .all(weekStart) as { provider: AgentProvider; count: number }[];
+
+  const dailyRows = sqlite
+    .prepare(
+      `SELECT date(started_at) date, COUNT(*) count FROM sessions
+      WHERE started_at >= ? GROUP BY date(started_at)`,
+    )
+    .all(new Date(Date.now() - 13 * DAY_MS).toISOString()) as {
+    date: string;
+    count: number;
+  }[];
+  const counts = new Map(dailyRows.map((row) => [row.date, row.count]));
+  const daily = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(Date.now() - (13 - index) * DAY_MS)
+      .toISOString()
+      .slice(0, 10);
+    return { date, count: counts.get(date) ?? 0 };
+  });
+
+  return {
+    today: {
+      sessions: today.sessions,
+      runtimeMs: today.runtimeMs,
+      events: events(todayStart),
+    },
+    week: {
+      sessions: week.sessions,
+      runtimeMs: week.runtimeMs,
+      events: events(weekStart),
+      failures: week.failures,
+    },
+    providerCounts,
+    daily,
+  };
+}
+
+export function getRunningSessions(limit = 8): SessionListItem[] {
+  const status = statusExpression("status", "updated_at");
+  return sqlite
+    .prepare(
+      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+    started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
+    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
+    WHERE status = 'running' AND updated_at >= ? ORDER BY updated_at DESC LIMIT ?`,
+    )
+    .all(staleCutoff(), staleCutoff(), limit) as SessionListItem[];
+}
+
+export function getAttentionSessions(limit = 8): SessionListItem[] {
+  const status = statusExpression("status", "updated_at");
+  const dayAgo = new Date(Date.now() - DAY_MS).toISOString();
+  return sqlite
+    .prepare(
+      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+    started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
+    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
+    WHERE ${status} IN ('interrupted', 'needs_attention') AND updated_at >= ?
+    ORDER BY updated_at DESC LIMIT ?`,
+    )
+    .all(staleCutoff(), staleCutoff(), dayAgo, limit) as SessionListItem[];
+}
+
 export interface CollectorHealth {
   sources: number;
   parseErrors: number;

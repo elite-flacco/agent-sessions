@@ -202,7 +202,7 @@ function ProjectInspector({
           <Link
             key={session.id}
             className="project-session-row"
-            href={`/?range=all&selected=${session.id}`}
+            href={`/sessions?range=all&selected=${session.id}`}
           >
             <span className={`status-label status-${session.status}`}>
               <i />

@@ -77,4 +77,19 @@ Running log of autonomous work on TODO.md items. Newest entries at the bottom of
 
 ## Milestone 4 — Overview
 
-_(pending)_
+### Design
+
+- Overview is now the home page (`/`); Sessions moved to `/sessions`. This matches the nav order and lets every summary card deep-link into filtered Sessions views. Behavior change worth knowing: old `/?q=…` bookmarks now land on Overview — Sessions filters live at `/sessions?…`.
+- Summary cards (all linked): sessions today → `?range=today`, running now → `?status=running`, sessions this week, failures this week → `?status=interrupted`. No cost totals anywhere, per the TODO's pricing-trust rule.
+- Left column: "Running now" and "Needs attention" (interrupted/needs-attention with activity in the last 24h) session lists, each row linking to the session in the Sessions view.
+- Right column: agent distribution meters for the week (linking to provider-filtered Sessions), a 14-day sessions-per-day bar strip, and recent projects linking into `/projects`.
+- Charts are pure CSS meters/bars using semantic tokens. Because AGENTS.md forbids inline styles, dynamic widths/heights are quantized to ten `meter-fill-N`/`spark-fill-N` component classes instead of computed styles.
+
+### Decisions
+
+- 2026-07-12: Moved Sessions off `/` (see above) rather than putting Overview at `/overview` — the app is days old, so link breakage is negligible and the nav has always listed Overview first.
+- 2026-07-12: "Failures this week" counts derived interrupted + needs-attention sessions. On real data this reads high (54) because sessions whose files simply stop (window closed, agent killed) are indistinguishable from real interruptions in most providers' JSONL. Better lifecycle detection is already a TODO under adapter improvements; the number is honest, just blunt.
+
+### Verified
+
+- `npm run verify` passes (27 tests). Browser-checked: linked cards, running/attention lists, distribution meters, 14-day bars, recent projects, and the `/sessions` move (filters and selection still work).
