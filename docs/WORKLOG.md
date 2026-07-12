@@ -2,6 +2,25 @@
 
 Running log of autonomous work on TODO.md items. Newest entries at the bottom of each section. Scope agreed with Shuang on 2026-07-11: TODO suggested-order items 1–4 (Live Activity → collector diagnostics/tests → Projects → Overview), commits directly on `main`, fully autonomous with decisions recorded here.
 
+## Status: all four milestones shipped
+
+One commit per milestone on `main`, each passing `npm run verify`:
+
+1. `c912651` — Live Activity stream (`/activity`)
+2. `1c7f8a7` — Collector leases, scan tracking, diagnostics, watcher/concurrency tests
+3. `c73c365` — Projects view (`/projects`) with unknown-workspace group
+4. `b6897a0` — Overview home page with drill-down links (Sessions → `/sessions`)
+
+To test at any point: `git checkout <sha>`, then `npm run dev`.
+
+## Open questions for Shuang
+
+1. **Sessions moved from `/` to `/sessions`** so Overview could be home. Easy to swap back if you preferred landing on the session table — say the word.
+2. **Live Activity triggers ingestion server-side** (throttled to once per 10s while the page is open). If you'd rather the web process never touch source files and require `collect:watch` instead, it's a one-line removal in `src/app/activity/page.tsx`.
+3. **Repository aliases** (same repo under moved/multiple paths): needs a home for local config. I'd fold it into the Settings milestone with a small `settings` table — OK to design it that way?
+4. **"Failures this week" reads high** because most providers' files just stop when you close a window, which is indistinguishable from an interruption. Fine as-is until the adapter lifecycle work, or would you rather Overview only count `needs_attention`?
+5. **Usage & Cost** stays untouched pending a decision on the pricing table (source, versioning, effective dates). If you point me at a pricing source you trust, that milestone can start.
+
 ## Milestone 1 — Live Activity
 
 ### Design

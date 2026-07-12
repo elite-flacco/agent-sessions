@@ -23,6 +23,19 @@ For continuous collection in a second terminal:
 npm run collect:watch
 ```
 
+Only one watcher can ingest at a time: a durable lease in the database makes a second `collect:watch` process exit with a message instead of double-importing.
+
+## Pages
+
+| Route       | What it shows                                                                                                                                                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`         | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                                   |
+| `/sessions` | The session table with search, provider/status/date filters, and the inspector. Filters and selection are URL-backed.                                                                                                                                                   |
+| `/activity` | Live activity — a cross-session event stream grouped by session, with provider/repository filters, pause/resume, follow-newest, and collector health. While open, it triggers an incremental ingest at most every 10 seconds, so it stays live without `collect:watch`. |
+| `/projects` | Sessions grouped by repository with runtime, branches, agents, and session history. Records without repository context appear under "Unknown workspace" for review.                                                                                                     |
+
+Sessions shown as **Running** are derived at query time: a running session with no file updates for 10 minutes reads as Interrupted.
+
 ## Data sources
 
 | Provider    | Local source                                                        |

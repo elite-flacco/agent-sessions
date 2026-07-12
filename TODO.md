@@ -1,37 +1,14 @@
 # Relay Roadmap and Outstanding Work
 
-This file tracks work intentionally deferred from Relay v1. Items are ordered by recommended priority; they are candidates, not commitments.
-
-## Recommended next milestone
-
-### Live Activity
-
-- Add a live event stream across all running sessions.
-- Group events by agent and session while preserving chronological order.
-- Show new tool, command, file, completion, interruption, and warning events without refreshing the page.
-- Add pause/resume, provider filters, repository filters, and “follow newest” behavior.
-- Surface collector health and delayed/stale sources in the stream.
-- Keep raw prompts, responses, reasoning, tool arguments, and credentials outside the database and UI.
-
-Why this first: the collector and normalized activity model already exist, so this creates the most useful new workflow without requiring a new data model or cloud services.
+This file tracks work intentionally deferred from Relay v1. Items are ordered by recommended priority; they are candidates, not commitments. See `docs/WORKLOG.md` for decisions and open questions from the post-v1 milestones.
 
 ## Product areas shown in the navigation
 
-### Overview
+### Projects (view shipped; follow-ups remain)
 
-- Add daily and weekly summaries for sessions, runtime, activity, failures, and provider usage.
-- Show currently running work and sessions that may need attention.
-- Add recent projects and agent distribution charts.
-- Make every summary card link to the corresponding filtered Sessions view.
-- Avoid estimated cost totals until model pricing and token accounting are trustworthy.
-
-### Projects
-
-- Group sessions by normalized repository and working directory.
-- Show recent branches, active agents, runtime, usage, and last activity.
-- Add project detail pages with session history and common tasks.
-- Support aliases for repositories that moved or appear under multiple paths.
-- Add an explicit “unknown workspace” review flow for records lacking repository context.
+- Support aliases for repositories that moved or appear under multiple paths (needs local config storage — pair with Settings).
+- Extend the "unknown workspace" group into a real review flow (manual repository assignment stored as an override).
+- Surface common tasks per project once title normalization improves.
 
 ### Usage and Cost
 
@@ -68,10 +45,9 @@ Why this first: the collector and normalized activity model already exist, so th
 - Add adapter format-version detection and compatibility fixtures from multiple agent releases.
 - Record unsupported event counts without persisting raw event bodies.
 - Add explicit source truncation, rotation, deletion, and moved-file handling.
-- Add a durable collector lock so two watcher processes cannot ingest concurrently.
 - Add backpressure and batched SQLite writes for very large histories.
-- Track each adapter’s last successful scan separately from individual file state.
 - Add configurable retention and database compaction.
+- Improve session lifecycle detection so abandoned sessions (window closed) are distinguishable from real interruptions; today both read as "interrupted", which inflates Overview failure counts.
 - Add a repair command that verifies indexes, source fingerprints, orphaned events, and duplicate sessions.
 - Investigate whether Zcode’s task database can safely provide repository and lifecycle metadata missing from JSONL.
 - Add fixtures for nested agents, subagents, resumed sessions, multiple tasks in one Codex thread, and sessions spanning time zones or daylight-saving changes.
@@ -80,8 +56,6 @@ Why this first: the collector and normalized activity model already exist, so th
 ## Quality and operations
 
 - Add browser end-to-end tests for search, combined filters, selection, sync, empty states, and mobile layout.
-- Add tests for the file watcher receiving newly created sessions and appended records.
-- Add tests for concurrent sync requests and collector restarts.
 - Add performance benchmarks for initial import, incremental sync, and dashboard queries.
 - Add structured local logs with redaction and bounded retention.
 - Add database backup/restore tests before exposing those controls in Settings.
@@ -104,13 +78,18 @@ Why this first: the collector and normalized activity model already exist, so th
 
 ## Suggested implementation order
 
-1. Live Activity.
-2. Collector diagnostics and watcher/concurrency tests.
-3. Projects and repository normalization.
-4. Overview with drill-down links.
-5. Settings and local data-management controls.
-6. Usage and Cost after pricing provenance is reliable.
-7. Desktop packaging, notifications, or optional sharing based on actual usage.
+1. Settings and local data-management controls (also unblocks repository aliases).
+2. Usage and Cost after pricing provenance is reliable.
+3. Sessions improvements (pagination, dedicated session route, keyboard shortcuts).
+4. Desktop packaging, notifications, or optional sharing based on actual usage.
+
+## Completed post-v1 (July 2026)
+
+- Live Activity stream at `/activity` with grouping, filters, pause/resume, follow-newest, collector health, and throttled server-side ingest.
+- Collector hardening: durable sync/watch leases, per-adapter scan tracking, sync-error pruning, watcher tests for new/appended files, concurrent syncs, and restarts.
+- Projects view at `/projects` with repository grouping, branches, runtime, session history, and an unknown-workspace review group.
+- Overview home page with daily/weekly summaries, running and needs-attention lists, agent distribution, 14-day activity, and drill-down links (Sessions moved to `/sessions`).
+- Query-time status staleness so all views agree on running vs interrupted.
 
 ## Completed in v1
 

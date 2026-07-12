@@ -8,11 +8,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## Relay architecture
 
 - `src/collector/adapters/` contains provider-specific JSONL normalization. Adapters must never return raw prompts, responses, reasoning, credentials, or tool arguments.
-- `src/collector/index.ts` owns idempotent source fingerprinting, persistence, and filesystem watching.
-- `src/db/` owns the versioned SQLite/Drizzle schema; generated migrations live in `drizzle/`.
-- `src/lib/queries.ts` is the server-side read boundary for dashboard data.
-- `src/components/dashboard.tsx` owns the interactive Sessions experience and URL-backed filters.
-- New UI must use semantic tokens and component classes from `src/app/globals.css`; do not introduce raw Tailwind palette colors, arbitrary values, inline styles, or `dark:` variants.
+- `src/collector/index.ts` owns idempotent source fingerprinting, persistence, and filesystem watching. Full scans and the watcher hold durable leases (`src/collector/lock.ts`, `collector_leases` table) so two processes never ingest concurrently; concurrent in-process syncs share one run. Per-adapter scan state lives in `adapter_scans`.
+- `src/db/` owns the versioned SQLite/Drizzle schema; generated migrations live in `drizzle/`. Schema changes must update both `src/db/schema.ts` and the bootstrap SQL in `src/db/client.ts`, then run `npm run db:generate`.
+- `src/lib/queries.ts` is the server-side read boundary for dashboard data. It imports the SQLite client, so client components may import **types only** from it; runtime values shared with client code belong in `src/lib/types.ts`, `src/lib/labels.ts`, or `src/lib/format.ts`. Session status is derived at query time (`running` goes stale to `interrupted` after 10 minutes without updates) — do not trust the stored status column for presentation.
+- Pages: `/` Overview (`overview-view.tsx`), `/sessions` (`dashboard.tsx`), `/activity` (`activity-stream.tsx`, server-side throttled ingest via `src/lib/live-sync.ts`), `/projects` (`projects-view.tsx`). All share `src/components/sidebar.tsx`, use URL-backed filters/selection, and poll with `router.refresh()`.
+- New UI must use semantic tokens and component classes from `src/app/globals.css`; do not introduce raw Tailwind palette colors, arbitrary values, inline styles, or `dark:` variants. For dynamic chart fills, use the quantized `meter-fill-N`/`spark-fill-N` classes instead of inline styles.
 
 ## Plan authoring rules
 
