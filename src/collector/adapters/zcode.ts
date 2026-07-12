@@ -1,13 +1,73 @@
+import Database from "better-sqlite3";
+import type { Database as BetterSqlite3Database } from "better-sqlite3";
+import { resolve } from "node:path";
 import type { ModelUsage, ProviderAdapter } from "@/lib/types";
-import { homePath, record, stringValue, walkJsonl } from "../utils";
+import {
+  homePath,
+  record,
+  repositoryFromCwd,
+  stringValue,
+  walkJsonl,
+} from "../utils";
 import {
   accumulateUsage,
   contentText,
   filenameId,
   numberedEvent,
   parseJsonl,
+  sessionSummary,
   tokenCount,
 } from "./shared";
+
+// ZCode's interactive ("rollout") JSONL rows carry no `cwd`, so the workspace
+// is unknown from the rollout alone. ZCode's own session DB
+// (`~/.zcode/cli/db/db.sqlite`, `session.directory`) is the authoritative
+// source and is keyed by the same session id present in the JSONL rows. We open
+// it read-only as a fallback; any open/query failure is a silent no-op.
+const zcodeDbPath = (): string =>
+  process.env.ZCODE_DB_PATH
+    ? resolve(process.env.ZCODE_DB_PATH)
+    : homePath(".zcode", "cli", "db", "db.sqlite");
+
+const dbConnections = new Map<string, BetterSqlite3Database>();
+
+function zcodeDirectoryDb(): BetterSqlite3Database | undefined {
+  const dbPath = zcodeDbPath();
+  const cached = dbConnections.get(dbPath);
+  if (cached) return cached;
+  try {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    dbConnections.set(dbPath, db);
+    return db;
+  } catch {
+    return undefined;
+  }
+}
+
+function zcodeSessionDirectory(sessionId: string): string | undefined {
+  const db = zcodeDirectoryDb();
+  if (!db) return undefined;
+  try {
+    const row = db
+      .prepare("SELECT directory FROM session WHERE id = ?")
+      .get(sessionId) as { directory?: string } | undefined;
+    return stringValue(row?.directory);
+  } catch {
+    return undefined;
+  }
+}
+
+// Drop cached connections so tests can point ZCODE_DB_PATH at a fresh temp DB.
+export function __resetZcodeDbCache(): void {
+  for (const db of dbConnections.values()) {
+    try {
+      db.close();
+    } catch {
+      // ignore — a closed or locked handle is fine to drop
+    }
+  }
+  dbConnections.clear();
+}
 
 export const zcodeAdapter: ProviderAdapter = {
   provider: "zcode",
@@ -16,8 +76,8 @@ export const zcodeAdapter: ProviderAdapter = {
     const agents = await walkJsonl(homePath(".zcode", "cli", "agents"));
     return [...rollout, ...agents];
   },
-  parse: (filePath) =>
-    parseJsonl(filePath, {
+  parse: async (filePath) => {
+    const result = await parseJsonl(filePath, {
       provider: "zcode",
       fallbackTitle: "Zcode coding session",
       identify: (rows) =>
@@ -106,5 +166,21 @@ export const zcodeAdapter: ProviderAdapter = {
               ]
             : [];
         }),
-    }),
+    });
+
+    // Rollout `model_io` rows carry no cwd; enrich from ZCode's session DB so
+    // interactive sessions resolve their workspace/repository. Sessions that
+    // already have a cwd (subagent transcripts) are left untouched.
+    const session = result.sessions[0];
+    if (session && !session.cwd) {
+      const directory =
+        session.externalId && zcodeSessionDirectory(session.externalId);
+      if (directory) {
+        session.cwd = directory;
+        session.repository = repositoryFromCwd(directory);
+        session.summary = sessionSummary("zcode", directory);
+      }
+    }
+    return result;
+  },
 };
