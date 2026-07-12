@@ -1,0 +1,120 @@
+"use client";
+
+import {
+  Activity,
+  BarChart3,
+  CircleDot,
+  Database,
+  FolderKanban,
+  LayoutDashboard,
+  MoreHorizontal,
+  Settings,
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+
+interface SidebarProps {
+  sessionCount: number;
+  connectedAgents: number;
+  sourceErrors: number;
+}
+
+export function Sidebar({
+  sessionCount,
+  connectedAgents,
+  sourceErrors,
+}: SidebarProps) {
+  const pathname = usePathname();
+  return (
+    <aside className="relay-sidebar">
+      <div className="brand-block">
+        <div className="brand-mark">R</div>
+        <div className="brand-copy">
+          <strong>Relay</strong>
+          <span>Agent operations</span>
+        </div>
+      </div>
+      <nav aria-label="Primary navigation" className="primary-nav">
+        <UpcomingRow icon={<LayoutDashboard size={15} />} label="Overview" />
+        <NavLink
+          href="/"
+          active={pathname === "/"}
+          icon={<Database size={15} />}
+          label="Sessions"
+          count={sessionCount}
+        />
+        <NavLink
+          href="/activity"
+          active={pathname === "/activity"}
+          icon={<Activity size={15} />}
+          label="Live activity"
+        />
+        <UpcomingRow icon={<FolderKanban size={15} />} label="Projects" />
+        <UpcomingRow icon={<BarChart3 size={15} />} label="Usage & cost" />
+      </nav>
+      <div className="sidebar-footer">
+        <div className="connection-card">
+          <CircleDot size={14} />
+          <div>
+            <strong>{connectedAgents} agents connected</strong>
+            <span>
+              {sourceErrors
+                ? `${sourceErrors} sources need attention`
+                : "Local data only"}
+            </span>
+          </div>
+        </div>
+        <UpcomingRow icon={<Settings size={15} />} label="Settings" />
+        <div className="profile-row">
+          <div className="avatar">SS</div>
+          <div>
+            <strong>Shuang Song</strong>
+            <span>Personal workspace</span>
+          </div>
+          <MoreHorizontal size={15} />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function NavLink({
+  href,
+  active,
+  icon,
+  label,
+  count,
+}: {
+  href: string;
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <Link
+      href={href}
+      className={active ? "nav-row nav-active" : "nav-row"}
+      aria-current={active ? "page" : undefined}
+    >
+      {icon}
+      <span>{label}</span>
+      {count !== undefined && <small>{count}</small>}
+    </Link>
+  );
+}
+
+function UpcomingRow({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <button
+      className="nav-row nav-upcoming"
+      disabled
+      title={`${label} is coming soon`}
+    >
+      {icon}
+      <span>{label}</span>
+      <small>SOON</small>
+    </button>
+  );
+}

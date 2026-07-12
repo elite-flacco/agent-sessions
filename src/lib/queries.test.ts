@@ -39,6 +39,19 @@ beforeAll(async () => {
     now.toISOString(),
     null,
   );
+  const insertEvent = sqlite.prepare(`INSERT INTO activity_events
+    (session_id, external_id, kind, title, occurred_at) VALUES (?, ?, ?, ?, ?)`);
+  const at = (minutes: number) =>
+    new Date(now.getTime() - minutes * 60_000).toISOString();
+  insertEvent.run(1, "e1", "started", "Session started", at(30));
+  insertEvent.run(1, "e2", "tool", "Used Bash", at(20));
+  insertEvent.run(2, "e3", "tool", "Used Read", at(10));
+  insertEvent.run(1, "e4", "completed", "Session completed", at(5));
+  const insertSource = sqlite.prepare(`INSERT INTO ingestion_sources
+    (path, provider, size, modified_at, fingerprint, last_synced_at, parse_state)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  insertSource.run("/tmp/a.jsonl", "codex", 10, 1, "fp-a", at(2), "ok");
+  insertSource.run("/tmp/b.jsonl", "claude", 10, 1, "fp-b", at(2), "error");
 });
 
 afterAll(async () => {
@@ -72,6 +85,40 @@ describe("session queries", () => {
     expect(queries.getSummary()).toMatchObject({
       sessionsToday: 1,
       activeNow: 0,
+    });
+  });
+});
+
+describe("activity stream queries", () => {
+  it("returns newest events first with session context", () => {
+    const rows = queries.getActivityStream({});
+    expect(rows.map((row) => row.title)).toEqual([
+      "Session completed",
+      "Used Read",
+      "Used Bash",
+      "Session started",
+    ]);
+    expect(rows[0].sessionTitle).toBe("Build Relay filters");
+    expect(rows[1].provider).toBe("pi");
+  });
+
+  it("filters by provider and repository", () => {
+    expect(queries.getActivityStream({ provider: "pi" })).toHaveLength(1);
+    expect(queries.getActivityStream({ repo: "relay" })).toHaveLength(3);
+    expect(queries.getActivityStream({ repo: "unknown" })).toHaveLength(0);
+  });
+
+  it("lists distinct repositories and counts sessions", () => {
+    expect(queries.getRepositories()).toEqual(["ai-compass", "relay"]);
+    expect(queries.countSessions()).toBe(2);
+  });
+
+  it("reports collector health from ingestion state", () => {
+    expect(queries.getCollectorHealth()).toMatchObject({
+      sources: 2,
+      parseErrors: 1,
+      recentSyncErrors: 0,
+      connectedAgents: 1,
     });
   });
 });

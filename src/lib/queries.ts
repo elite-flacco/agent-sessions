@@ -125,6 +125,103 @@ export function getSummary(): {
   return { sessionsToday, activeNow, totalRuntimeMs, connectedAgents };
 }
 
+export interface ActivityStreamRow {
+  id: number;
+  kind: string;
+  title: string;
+  detail: string | null;
+  occurredAt: string;
+  sessionId: number;
+  sessionTitle: string;
+  provider: AgentProvider;
+  repository: string | null;
+  branch: string | null;
+  sessionStatus: SessionStatus;
+}
+
+export interface ActivityStreamFilters {
+  provider?: string;
+  repo?: string;
+}
+
+export function getActivityStream(
+  filters: ActivityStreamFilters,
+  limit = 120,
+): ActivityStreamRow[] {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filters.provider && filters.provider !== "all") {
+    clauses.push("s.provider = ?");
+    params.push(filters.provider);
+  }
+  if (filters.repo && filters.repo !== "all") {
+    if (filters.repo === "unknown") clauses.push("s.repository IS NULL");
+    else {
+      clauses.push("s.repository = ?");
+      params.push(filters.repo);
+    }
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return sqlite
+    .prepare(
+      `SELECT e.id, e.kind, e.title, e.detail, e.occurred_at occurredAt,
+        s.id sessionId, s.title sessionTitle, s.provider, s.repository, s.branch, s.status sessionStatus
+      FROM activity_events e JOIN sessions s ON s.id = e.session_id ${where}
+      ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?`,
+    )
+    .all(...params, limit) as ActivityStreamRow[];
+}
+
+export function getRepositories(): string[] {
+  return (
+    sqlite
+      .prepare(
+        "SELECT DISTINCT repository FROM sessions WHERE repository IS NOT NULL ORDER BY repository COLLATE NOCASE",
+      )
+      .all() as { repository: string }[]
+  ).map((row) => row.repository);
+}
+
+export function countSessions(): number {
+  return (
+    sqlite.prepare("SELECT COUNT(*) count FROM sessions").get() as {
+      count: number;
+    }
+  ).count;
+}
+
+export interface CollectorHealth {
+  sources: number;
+  parseErrors: number;
+  recentSyncErrors: number;
+  lastSyncedAt: string | null;
+  connectedAgents: number;
+}
+
+export function getCollectorHealth(): CollectorHealth {
+  const sourceState = sqlite
+    .prepare(
+      `SELECT COUNT(*) sources,
+        COALESCE(SUM(CASE WHEN parse_state = 'error' THEN 1 ELSE 0 END), 0) parseErrors,
+        MAX(last_synced_at) lastSyncedAt,
+        COUNT(DISTINCT CASE WHEN parse_state = 'ok' THEN provider END) connectedAgents
+      FROM ingestion_sources`,
+    )
+    .get() as {
+    sources: number;
+    parseErrors: number;
+    lastSyncedAt: string | null;
+    connectedAgents: number;
+  };
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const recentSyncErrors = (
+    sqlite
+      .prepare("SELECT COUNT(*) count FROM sync_errors WHERE occurred_at >= ?")
+      .get(dayAgo) as { count: number }
+  ).count;
+  return { ...sourceState, recentSyncErrors };
+}
+
 export function getSyncState(): {
   lastSyncedAt: string | null;
   errors: number;

@@ -1,4 +1,5 @@
 import { Dashboard } from "@/components/dashboard";
+import { Sidebar } from "@/components/sidebar";
 import {
   getSessionEvents,
   getSessions,
@@ -31,14 +32,23 @@ export default async function Home({ searchParams }: HomeProps) {
     sessions.find((session) => String(session.id) === filters.selected) ??
     sessions[0];
   const events = selected ? getSessionEvents(selected.id) : [];
+  const summary = getSummary();
+  const syncState = getSyncState();
   return (
-    <Dashboard
-      sessions={sessions}
-      selected={selected ?? null}
-      events={events}
-      summary={getSummary()}
-      syncState={getSyncState()}
-      filters={filters}
-    />
+    <main className="relay-shell">
+      <Sidebar
+        sessionCount={sessions.length}
+        connectedAgents={summary.connectedAgents}
+        sourceErrors={syncState.errors}
+      />
+      <Dashboard
+        sessions={sessions}
+        selected={selected ?? null}
+        events={events}
+        summary={summary}
+        syncState={syncState}
+        filters={filters}
+      />
+    </main>
   );
 }

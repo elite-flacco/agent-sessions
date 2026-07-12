@@ -711,6 +711,82 @@
   .empty-state h3 {
     color: var(--foreground);
   }
+
+  .stream-actions {
+    display: flex;
+    gap: 0.55rem;
+  }
+  .health-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1.1rem;
+    margin-top: 1.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--card);
+    padding: 0.75rem 0.9rem;
+    color: var(--muted-foreground);
+  }
+  .health-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+  }
+  .health-warning {
+    color: var(--warning);
+  }
+  .stream-filter-row {
+    display: grid;
+    grid-template-columns: 9.5rem 12rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.9rem;
+  }
+  .stream-count {
+    color: var(--muted-foreground);
+    text-align: right;
+  }
+  .stream-list {
+    display: grid;
+    gap: 0.8rem;
+    margin-top: 0.9rem;
+    transition: opacity 120ms ease;
+  }
+  .stream-block {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--card);
+    overflow: hidden;
+  }
+  .stream-block-head {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border-bottom: 1px solid var(--border);
+    padding: 0.7rem 0.9rem;
+  }
+  .stream-block-title {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: 0.15rem;
+  }
+  .stream-block-title strong {
+    overflow: hidden;
+    font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stream-block-title span {
+    overflow: hidden;
+    color: var(--muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stream-block-events {
+    padding: 0.2rem 0.9rem;
+  }
 }
 
 @media (max-width: 900px) {
@@ -734,6 +810,7 @@
     }
     .primary-nav {
       margin: 0 0 0 auto;
+      grid-auto-flow: column;
     }
     .nav-active {
       width: auto;
@@ -806,6 +883,15 @@
     }
     .inspector {
       margin-top: 0.2rem;
+    }
+    .stream-filter-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .stream-count {
+      display: none;
+    }
+    .stream-block-head .status-label {
+      display: none;
     }
   }
 }
