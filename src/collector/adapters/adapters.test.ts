@@ -120,6 +120,52 @@ describe("provider adapters", () => {
     );
   });
 
+  it("skips harness-injected wrapper blocks when titling Codex sessions", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-11T10:00:00Z",
+        payload: { id: "codex-title", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              text: "<recommended_plugins>plugin catalog</recommended_plugins>",
+            },
+          ],
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:02Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              text: '<in-app-browser-context source="ambient-ui-state">This block is automatically supplied by the harness.</in-app-browser-context>',
+            },
+          ],
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:03Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Fix the sidebar layout" }],
+        },
+      },
+    ]);
+    expect(result.sessions[0].title).toBe("Fix the sidebar layout");
+  });
+
   it("marks Codex as interrupted only for an explicit abort marker", async () => {
     const result = await parse(codexAdapter, [
       {

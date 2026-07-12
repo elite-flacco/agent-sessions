@@ -25,8 +25,9 @@ const ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing";
 const RETRIEVED = "2026-07-12";
 
 // Anthropic cache rates: read 0.1x input, write 1.25x input (5-minute TTL,
-// the Claude Code default). OpenAI and Z.ai publish no cache-write premium,
-// so writes price as ordinary input there.
+// the Claude Code default). OpenAI publishes an explicit cache-write rate
+// for the gpt-5.6 family (1.25x input); gpt-5.5 and earlier, like Z.ai,
+// list no cache-write premium, so writes price as ordinary input there.
 export const PRICING_TABLE: PricingEntry[] = [
   {
     model: "claude-fable-5",
@@ -114,7 +115,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     inputPerMTok: 5,
     outputPerMTok: 30,
     cacheReadPerMTok: 0.5,
-    cacheWritePerMTok: 5,
+    cacheWritePerMTok: 6.25,
     effectiveFrom: "2026-06-01",
     source: OPENAI_SOURCE,
     retrievedAt: RETRIEVED,
@@ -178,7 +179,9 @@ export const PRICING_RETRIEVED_AT = RETRIEVED;
 // prefixes), lowercase, and drop dated snapshot suffixes.
 export function normalizeModel(raw: string): string {
   const last = raw.trim().split("/").at(-1) ?? raw;
-  return last.toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
+  // Dated snapshot suffixes come dashed (gpt-5-mini-2025-08-07) or compact
+  // (claude-haiku-4-5-20251001, Anthropic's pinned-id form).
+  return last.toLowerCase().replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, "");
 }
 
 export function findPricing(

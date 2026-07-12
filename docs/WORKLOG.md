@@ -135,3 +135,19 @@ To test at any point: `git checkout <sha>`, then `npm run dev`.
 ### Verified
 
 - `npm run verify` passes (27 tests). Browser-checked: linked cards, running/attention lists, distribution meters, 14-day bars, recent projects, and the `/sessions` move (filters and selection still work).
+
+## Code review follow-up — P1/P2 fixes
+
+### Design
+
+- Fixed the five P1/P2 findings from `docs/reviews/2026-07-12-code-review.md`: LIKE-escape in session search (#1), compact-date model normalization (#2), Codex title boilerplate (#3), gpt-5.6-sol cache-write rate (#4), and by-model cost attribution (#5). Each fix landed with a regression test written first.
+
+### Decisions
+
+- 2026-07-12: By-model cost attribution (#5) tracks a per-model priced flag instead of reusing the session-level gate: a priced model keeps its dollars even when a sibling model in the same session is unpriced. Documented consequence: byModel cost can exceed the window totals, which still exclude any session containing unpriced usage.
+- 2026-07-12: gpt-5.6-sol cache-write corrected to $6.25/MTok after independently re-verifying OpenAI's live pricing page — the gpt-5.6 family publishes an explicit 1.25x cache-write column; gpt-5.5 and earlier (and Z.ai) do not, so their writes-as-input entries stand. Pricing-table header comment updated to state the per-family exception.
+- 2026-07-12: Codex title fix adds `in-app-browser-context` to the strip list only; the review's structural-rule suggestion (strip any leading wrapper tag) is deferred until the next junk tag shows up.
+
+### Verified
+
+- Lint, typecheck, 58/58 tests, and production build pass. `format:check` fails only on pre-existing untracked docs (`docs/reviews/`, `.zcode/plans/`), not on source.

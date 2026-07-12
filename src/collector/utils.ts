@@ -54,6 +54,10 @@ export function safeTitle(value: unknown, fallback: string): string {
   const raw = stringValue(value);
   const text = raw
     ?.replace(/<recommended_plugins>[\s\S]*?<\/recommended_plugins>/gi, " ")
+    .replace(
+      /<in-app-browser-context[^>]*>[\s\S]*?<\/in-app-browser-context>/gi,
+      " ",
+    )
     .replace(/<environment_context>[\s\S]*?<\/environment_context>/gi, " ")
     .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, " ")
     .replace(/<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/gi, " ")

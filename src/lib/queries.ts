@@ -78,8 +78,14 @@ export function getSessions(filters: SessionFilters): SessionListItem[] {
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (filters.q) {
-    clauses.push("(title LIKE ? OR repository LIKE ? OR branch LIKE ?)");
-    const query = `%${filters.q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+    // SQLite gives backslash no meaning in LIKE unless ESCAPE declares it.
+    clauses.push(
+      "(title LIKE ? ESCAPE '\\' OR repository LIKE ? ESCAPE '\\' OR branch LIKE ? ESCAPE '\\')",
+    );
+    const query = `%${filters.q
+      .replaceAll("\\", "\\\\")
+      .replaceAll("%", "\\%")
+      .replaceAll("_", "\\_")}%`;
     params.push(query, query, query);
   }
   if (filters.provider && filters.provider !== "all") {
@@ -554,8 +560,11 @@ const USAGE_DAYS = 30;
 /**
  * Aggregates the last 30 days of per-session per-model usage. Sessions with
  * any unpriced usage are excluded from dollar sums (and counted in
- * unpricedSessions) but still contribute to token totals. Buckets cover the
- * full 30-day window; a session's usage is attributed to its start date.
+ * unpricedSessions) but still contribute to token totals. The by-model
+ * buckets attribute dollars per model instead, so byModel cost can exceed
+ * the window totals when priced and unpriced models share a session.
+ * Buckets cover the full 30-day window; a session's usage is attributed to
+ * its start date.
  */
 export function getUsageSummary(): UsageSummary {
   const since = new Date(Date.now() - USAGE_DAYS * DAY_MS).toISOString();
@@ -571,7 +580,7 @@ export function getUsageSummary(): UsageSummary {
     cacheReadTokens: number;
     costUsd: number;
     priced: boolean;
-    models: Map<string, { tokens: number; costUsd: number }>;
+    models: Map<string, { tokens: number; costUsd: number; priced: boolean }>;
   }
   const bySession = new Map<number, SessionAccumulator>();
   for (const row of rows) {
@@ -596,9 +605,14 @@ export function getUsageSummary(): UsageSummary {
     if (cost === undefined) entry.priced = false;
     else entry.costUsd += cost;
     const modelKey = normalizeModel(row.model);
-    const model = entry.models.get(modelKey) ?? { tokens: 0, costUsd: 0 };
+    const model = entry.models.get(modelKey) ?? {
+      tokens: 0,
+      costUsd: 0,
+      priced: true,
+    };
     model.tokens += tokens;
-    model.costUsd += cost ?? 0;
+    if (cost === undefined) model.priced = false;
+    else model.costUsd += cost;
     entry.models.set(modelKey, model);
     bySession.set(row.sessionId, entry);
   }
@@ -656,11 +670,14 @@ export function getUsageSummary(): UsageSummary {
       costUsd,
       session.tokens,
     );
+    // Cost is attributed per model, not per session: a priced model keeps
+    // its dollars even when a sibling model in the same session is unpriced
+    // (that session is still excluded from the window dollar sums above).
     for (const [model, totals] of session.models) {
       addBucket(
         byModel,
         model,
-        session.priced ? totals.costUsd : 0,
+        totals.priced ? totals.costUsd : 0,
         totals.tokens,
       );
     }

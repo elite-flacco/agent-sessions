@@ -101,6 +101,41 @@ describe("session queries", () => {
     expect(queries.getSessions({ q: "main" })).toHaveLength(1);
   });
 
+  it("treats underscore, percent, and backslash literally in search", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, status, started_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`);
+    insert.run(
+      "like-1",
+      "codex",
+      "fix_bug at 50% coverage",
+      "completed",
+      now,
+      now,
+    );
+    insert.run("like-2", "codex", "fixzbug elsewhere", "completed", now, now);
+    insert.run(
+      "like-3",
+      "codex",
+      String.raw`path\to\repo`,
+      "completed",
+      now,
+      now,
+    );
+    try {
+      expect(queries.getSessions({ q: "fix_bug" }).map((s) => s.title)).toEqual(
+        ["fix_bug at 50% coverage"],
+      );
+      expect(queries.getSessions({ q: "50%" })).toHaveLength(1);
+      expect(queries.getSessions({ q: String.raw`path\to` })).toHaveLength(1);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id LIKE 'like-%'")
+        .run();
+    }
+  });
+
   it("combines provider, status, and date filters", () => {
     expect(
       queries.getSessions({ provider: "codex", status: "completed" }),
@@ -262,5 +297,46 @@ describe("usage and cost queries", () => {
     expect(unknown?.costUsd).toBe(0);
     expect(summary.daily).toHaveLength(30);
     expect(summary.daily.at(-1)?.costUsd).toBeCloseTo(8, 6);
+  });
+
+  it("attributes per-model cost even when a sibling model is unpriced", () => {
+    const startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
+         VALUES ('mixed-1', 'codex', 'Mixed models', 'completed', ?, ?)`,
+      )
+      .run(startedAt, startedAt);
+    const sessionId = (
+      sqlite
+        .prepare("SELECT id FROM sessions WHERE external_id = 'mixed-1'")
+        .get() as { id: number }
+    ).id;
+    const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    insertUsage.run(sessionId, "gpt-5.5", 1_000_000, 0, 0, 0, null);
+    insertUsage.run(sessionId, "mystery-model-2", 1_000, 0, 0, 0, null);
+    try {
+      const summary = queries.getUsageSummary();
+      // The session is excluded from window dollar sums (mystery-model-2 is
+      // unpriced) but gpt-5.5's own cost still shows in the by-model chart.
+      expect(summary.month.costUsd).toBeCloseTo(8, 6);
+      expect(summary.month.unpricedSessions).toBe(2);
+      const gpt = summary.byModel.find((bucket) => bucket.key === "gpt-5.5");
+      // $8 from session 1 plus $5 (1M input) from the mixed session.
+      expect(gpt?.costUsd).toBeCloseTo(13, 6);
+      const mystery = summary.byModel.find(
+        (bucket) => bucket.key === "mystery-model-2",
+      );
+      expect(mystery?.costUsd).toBe(0);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM session_model_usage WHERE session_id = ?")
+        .run(sessionId);
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = 'mixed-1'")
+        .run();
+    }
   });
 });

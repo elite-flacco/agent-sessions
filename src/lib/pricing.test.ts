@@ -9,6 +9,8 @@ describe("model normalization", () => {
     ["315079d2-9bb1-4210-8a18-c8ac6dfce453/z-ai/glm-5.2", "glm-5.2"],
     ["GLM-5.2", "glm-5.2"],
     ["gpt-5-mini-2025-08-07", "gpt-5-mini"],
+    ["claude-haiku-4-5-20251001", "claude-haiku-4-5"],
+    ["claude-sonnet-4-5-20250929", "claude-sonnet-4-5"],
   ])("normalizes %s to %s", (raw, canonical) => {
     expect(normalizeModel(raw)).toBe(canonical);
   });
@@ -18,6 +20,12 @@ describe("pricing lookup", () => {
   it("selects the introductory Sonnet 5 rate inside its window", () => {
     expect(findPricing("claude-sonnet-5", "2026-07-12")?.inputPerMTok).toBe(2);
     expect(findPricing("claude-sonnet-5", "2026-09-15")?.inputPerMTok).toBe(3);
+  });
+
+  it("prices gpt-5.6-sol cache writes at the published 1.25x premium", () => {
+    expect(findPricing("gpt-5.6-sol", "2026-07-12")?.cacheWritePerMTok).toBe(
+      6.25,
+    );
   });
 
   it("returns undefined for unknown models and pre-launch dates", () => {
