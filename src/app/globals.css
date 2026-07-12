@@ -787,6 +787,90 @@
   .stream-block-events {
     padding: 0.2rem 0.9rem;
   }
+
+  .project-table-head,
+  .project-row {
+    grid-template-columns:
+      minmax(14rem, 2fr) minmax(8rem, 1.1fr) minmax(6rem, 0.7fr)
+      minmax(5rem, 0.6fr) minmax(6rem, 0.7fr);
+  }
+  .project-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding-right: 0.5rem;
+  }
+  .project-active-dot {
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: 0.45rem;
+    border-radius: 9999px;
+    background: var(--success);
+    vertical-align: middle;
+  }
+  .detail-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--success);
+  }
+  .inline-icon {
+    display: inline;
+    vertical-align: -0.12em;
+  }
+  .branch-list {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .branch-list > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .branch-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    padding: 0.25rem 0.6rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .project-session-row {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: start;
+    padding-block: 0.65rem;
+  }
+  .project-session-row + .project-session-row {
+    border-top: 1px solid var(--border);
+  }
+  .project-session-row:hover strong {
+    color: var(--accent);
+  }
+  .project-session-row strong {
+    display: block;
+    overflow: hidden;
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-session-row > div {
+    min-width: 0;
+  }
+  .project-session-row p {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .project-session-row time {
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
 }
 
 @media (max-width: 900px) {
@@ -883,6 +967,12 @@
     }
     .inspector {
       margin-top: 0.2rem;
+    }
+    .project-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .project-row > :nth-child(n + 3) {
+      display: none;
     }
     .stream-filter-row {
       grid-template-columns: repeat(2, minmax(0, 1fr));

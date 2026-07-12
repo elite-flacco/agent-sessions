@@ -1,5 +1,9 @@
 import { sqlite } from "@/db/client";
-import type { AgentProvider, SessionStatus } from "./types";
+import {
+  UNKNOWN_PROJECT_KEY,
+  type AgentProvider,
+  type SessionStatus,
+} from "./types";
 
 export interface SessionListItem {
   id: number;
@@ -207,6 +211,72 @@ export function countSessions(): number {
       count: number;
     }
   ).count;
+}
+
+export interface ProjectSummary {
+  key: string;
+  repository: string | null;
+  sessionCount: number;
+  activeCount: number;
+  providers: AgentProvider[];
+  branches: string[];
+  workdirs: string[];
+  totalRuntimeMs: number;
+  lastActivityAt: string;
+}
+
+interface ProjectRow {
+  repository: string | null;
+  sessionCount: number;
+  activeCount: number;
+  providers: string | null;
+  branches: string | null;
+  workdirs: string | null;
+  totalRuntimeMs: number;
+  lastActivityAt: string;
+}
+
+export function getProjects(): ProjectSummary[] {
+  const rows = sqlite
+    .prepare(
+      `SELECT repository,
+        COUNT(*) sessionCount,
+        SUM(CASE WHEN status = 'running' AND updated_at >= ? THEN 1 ELSE 0 END) activeCount,
+        GROUP_CONCAT(DISTINCT provider) providers,
+        GROUP_CONCAT(DISTINCT branch) branches,
+        GROUP_CONCAT(DISTINCT cwd) workdirs,
+        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) totalRuntimeMs,
+        MAX(updated_at) lastActivityAt
+      FROM sessions GROUP BY repository ORDER BY lastActivityAt DESC`,
+    )
+    .all(staleCutoff()) as ProjectRow[];
+  return rows.map((row) => ({
+    key: row.repository ?? UNKNOWN_PROJECT_KEY,
+    repository: row.repository,
+    sessionCount: row.sessionCount,
+    activeCount: row.activeCount,
+    providers: (row.providers?.split(",") ?? []) as AgentProvider[],
+    branches: row.branches?.split(",") ?? [],
+    workdirs: row.workdirs?.split(",") ?? [],
+    totalRuntimeMs: row.totalRuntimeMs,
+    lastActivityAt: row.lastActivityAt,
+  }));
+}
+
+export function getProjectSessions(key: string): SessionListItem[] {
+  const status = statusExpression("status", "updated_at");
+  const where =
+    key === UNKNOWN_PROJECT_KEY ? "repository IS NULL" : "repository = ?";
+  const params: unknown[] =
+    key === UNKNOWN_PROJECT_KEY ? [staleCutoff()] : [staleCutoff(), key];
+  return sqlite
+    .prepare(
+      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+    started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
+    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions WHERE ${where}
+    ORDER BY started_at DESC LIMIT 50`,
+    )
+    .all(...params) as SessionListItem[];
 }
 
 export interface CollectorHealth {

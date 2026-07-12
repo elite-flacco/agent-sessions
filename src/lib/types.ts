@@ -10,6 +10,8 @@ export const sessionStatuses = [
 ] as const;
 export type SessionStatus = (typeof sessionStatuses)[number];
 
+export const UNKNOWN_PROJECT_KEY = "(unknown)";
+
 export interface ActivityEvent {
   externalId: string;
   kind:

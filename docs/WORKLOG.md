@@ -59,11 +59,21 @@ Running log of autonomous work on TODO.md items. Newest entries at the bottom of
 
 ## Milestone 3 — Projects
 
-_(pending)_
+### Design
 
-## Milestone 3 — Projects
+- New `/projects` route with the same master-detail layout as Sessions: project list on the left, inspector on the right, selection URL-backed (`?selected=<key>`). No schema change — projects are an aggregation over `sessions` (`GROUP BY repository`), with runtime, active count, distinct providers/branches/workdirs, and last activity per group.
+- Project identity is the normalized repository name; distinct working directories are listed within a project rather than splitting it (multiple checkouts/worktrees of one repo stay together). Sessions without repository context group into an explicit "Unknown workspace" entry flagged "needs review" in the inspector, with an explanation of why (Zcode model-I/O files carry no cwd).
+- Detail panel shows stats, local paths, recent branch chips, and the session history; each history row links to the Sessions view (`/?range=all&selected=<id>`).
 
-_(pending)_
+### Decisions
+
+- 2026-07-12: Repository aliases (repos that moved or appear under multiple paths) deferred — they need persistent user-defined mappings, which belongs with the Settings milestone's local-config storage. Listed under open questions.
+- 2026-07-12: "Common tasks" per project deferred; session titles are too free-form to cluster meaningfully without better title normalization (a Sessions-improvements TODO).
+- 2026-07-12: Fixed a client-boundary bug found in dev: a runtime constant exported from `queries.ts` (server-only, pulls better-sqlite3) was imported by a client component. Constant moved to `types.ts`; convention noted — client components may import only types from `queries.ts`.
+
+### Verified
+
+- `npm run verify` passes (25 tests). Browser-checked against real data: grouping, unknown-workspace bucket, branch chips, history links, selection.
 
 ## Milestone 4 — Overview
 

@@ -152,6 +152,35 @@ describe("activity stream queries", () => {
     expect(queries.countSessions()).toBe(4);
   });
 
+  it("groups sessions into projects with an unknown-workspace bucket", () => {
+    const projects = queries.getProjects();
+    expect(projects.map((project) => project.key).sort()).toEqual([
+      "(unknown)",
+      "ai-compass",
+      "beacon",
+      "relay",
+    ]);
+    const beacon = projects.find((project) => project.key === "beacon");
+    expect(beacon).toMatchObject({
+      sessionCount: 1,
+      activeCount: 1,
+      providers: ["codex"],
+    });
+    const unknown = projects.find((project) => project.key === "(unknown)");
+    expect(unknown?.repository).toBeNull();
+    expect(unknown?.sessionCount).toBe(1);
+  });
+
+  it("lists session history for a project", () => {
+    expect(queries.getProjectSessions("relay")[0].title).toBe(
+      "Build Relay filters",
+    );
+    const unknown = queries.getProjectSessions("(unknown)");
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0].title).toBe("Stale runner");
+    expect(unknown[0].status).toBe("interrupted");
+  });
+
   it("reports collector health from ingestion and scan state", () => {
     expect(queries.getCollectorHealth()).toMatchObject({
       sources: 2,

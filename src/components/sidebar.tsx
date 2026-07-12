@@ -50,7 +50,12 @@ export function Sidebar({
           icon={<Activity size={15} />}
           label="Live activity"
         />
-        <UpcomingRow icon={<FolderKanban size={15} />} label="Projects" />
+        <NavLink
+          href="/projects"
+          active={pathname === "/projects"}
+          icon={<FolderKanban size={15} />}
+          label="Projects"
+        />
         <UpcomingRow icon={<BarChart3 size={15} />} label="Usage & cost" />
       </nav>
       <div className="sidebar-footer">
