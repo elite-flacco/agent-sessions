@@ -14,13 +14,13 @@ Date: 2026-07-12. Scope: the "Usage and Cost" TODO area. Decisions confirmed wit
 
 One canonical shape for all providers, stored per session **per model** (sessions mix models — e.g. Claude subagents run Sonnet inside a Fable session):
 
-| Field | Meaning |
-|---|---|
-| `inputTokens` | Uncached input tokens (excludes cache reads and writes) |
-| `outputTokens` | Output tokens, including reasoning/thinking tokens |
-| `cacheReadTokens` | Tokens served from prompt cache |
+| Field              | Meaning                                                                |
+| ------------------ | ---------------------------------------------------------------------- |
+| `inputTokens`      | Uncached input tokens (excludes cache reads and writes)                |
+| `outputTokens`     | Output tokens, including reasoning/thinking tokens                     |
+| `cacheReadTokens`  | Tokens served from prompt cache                                        |
 | `cacheWriteTokens` | Tokens written to prompt cache (only Anthropic-style APIs report this) |
-| `reportedCostUsd` | Cost the provider itself recorded, when present (Pi only today) |
+| `reportedCostUsd`  | Cost the provider itself recorded, when present (Pi only today)        |
 
 Provider mappings (verified against real local files on 2026-07-12):
 
@@ -41,19 +41,19 @@ New table `session_model_usage`: `id`, `session_id` (FK → sessions, cascade), 
 
 Client-safe pure data + pure functions (no SQLite import). Each entry: normalized model id, USD per million tokens for `input` / `output` / `cacheRead` / `cacheWrite`, `effectiveFrom` / `effectiveTo` dates, `source` URL, `retrievedAt`. Rates recorded from the 2026-07-12 lookup:
 
-| Model | In | Out | Cache read | Cache write | Notes |
-|---|---|---|---|---|---|
-| claude-fable-5 | 10 | 50 | 1.00 | 12.50 | write = 1.25× (5-min TTL, Claude Code default) |
-| claude-opus-4-8 / 4-7 / 4-6 | 5 | 25 | 0.50 | 6.25 | |
-| claude-sonnet-5 (→ 2026-08-31) | 2 | 10 | 0.20 | 2.50 | introductory pricing |
-| claude-sonnet-5 (2026-09-01 →) | 3 | 15 | 0.30 | 3.75 | sticker |
-| claude-sonnet-4-6 | 3 | 15 | 0.30 | 3.75 | |
-| claude-haiku-4-5 | 1 | 5 | 0.10 | 1.25 | |
-| gpt-5.5, gpt-5.6-sol | 5 | 30 | 0.50 | 5 | OpenAI has no write premium (write = input rate; Codex reports no writes anyway) |
-| gpt-5.4 | 2.50 | 15 | 0.25 | 2.50 | |
-| gpt-5.4-mini | 0.75 | 4.50 | 0.075 | 0.75 | |
-| gpt-5-mini | 0.25 | 2 | 0.025 | 0.25 | dated snapshots (e.g. `-2025-08-07`) normalize here |
-| glm-5.2 | 1.40 | 4.40 | 0.26 | 1.40 | Z.ai; no write premium published |
+| Model                          | In   | Out  | Cache read | Cache write | Notes                                                                            |
+| ------------------------------ | ---- | ---- | ---------- | ----------- | -------------------------------------------------------------------------------- |
+| claude-fable-5                 | 10   | 50   | 1.00       | 12.50       | write = 1.25× (5-min TTL, Claude Code default)                                   |
+| claude-opus-4-8 / 4-7 / 4-6    | 5    | 25   | 0.50       | 6.25        |                                                                                  |
+| claude-sonnet-5 (→ 2026-08-31) | 2    | 10   | 0.20       | 2.50        | introductory pricing                                                             |
+| claude-sonnet-5 (2026-09-01 →) | 3    | 15   | 0.30       | 3.75        | sticker                                                                          |
+| claude-sonnet-4-6              | 3    | 15   | 0.30       | 3.75        |                                                                                  |
+| claude-haiku-4-5               | 1    | 5    | 0.10       | 1.25        |                                                                                  |
+| gpt-5.5, gpt-5.6-sol           | 5    | 30   | 0.50       | 5           | OpenAI has no write premium (write = input rate; Codex reports no writes anyway) |
+| gpt-5.4                        | 2.50 | 15   | 0.25       | 2.50        |                                                                                  |
+| gpt-5.4-mini                   | 0.75 | 4.50 | 0.075      | 0.75        |                                                                                  |
+| gpt-5-mini                     | 0.25 | 2    | 0.025      | 0.25        | dated snapshots (e.g. `-2025-08-07`) normalize here                              |
+| glm-5.2                        | 1.40 | 4.40 | 0.26       | 1.40        | Z.ai; no write premium published                                                 |
 
 Model normalization strips provider/plan prefixes (`z-ai/`, `builtin:zai-coding-plan/`, `<uuid>/z-ai/`), lowercases, and strips date suffixes (`gpt-5-mini-2025-08-07` → `gpt-5-mini`). `kimi-k2.6` is deliberately absent (seen once, cost already reported by Pi; no verified rate).
 

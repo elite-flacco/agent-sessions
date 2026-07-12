@@ -1,6 +1,13 @@
-import type { ProviderAdapter } from "@/lib/types";
+import type { ModelUsage, ProviderAdapter } from "@/lib/types";
 import { homePath, record, stringValue, walkJsonl } from "../utils";
-import { contentText, filenameId, numberedEvent, parseJsonl } from "./shared";
+import {
+  accumulateUsage,
+  contentText,
+  filenameId,
+  numberedEvent,
+  parseJsonl,
+  tokenCount,
+} from "./shared";
 
 export const zcodeAdapter: ProviderAdapter = {
   provider: "zcode",
@@ -30,9 +37,45 @@ export const zcodeAdapter: ProviderAdapter = {
           return undefined;
         return candidate;
       },
-      completed: (rows) =>
-        rows.some((row) => Boolean(row.completedAt) || row.type === "result"),
-      model: (rows) => stringValue(rows.find((row) => row.model)?.model),
+      terminalStatus: (rows) => {
+        for (const row of [...rows].reverse()) {
+          if (row.status === "cancelled") return "interrupted";
+          if (row.status === "failed") return "needs_attention";
+          if (
+            row.status === "completed" ||
+            Boolean(row.completedAt) ||
+            row.type === "result" ||
+            row.type === "turn_complete"
+          )
+            return "completed";
+        }
+        return undefined;
+      },
+      // model_io rows carry response.usage (camelCase, one row per request);
+      // its inputTokens includes cache traffic, so uncached input is the
+      // remainder after subtracting reads and writes.
+      usage: (rows) => {
+        const byModel = new Map<string, ModelUsage>();
+        for (const row of rows) {
+          if (row.type !== "model_io") continue;
+          const usage = record(record(row.response)?.usage);
+          const model =
+            stringValue(row.model) ?? stringValue(record(row.model)?.modelId);
+          if (!usage || !model) continue;
+          const cacheRead = tokenCount(usage.cacheReadTokens);
+          const cacheWrite = tokenCount(usage.cacheWriteTokens);
+          accumulateUsage(byModel, model, {
+            inputTokens: Math.max(
+              0,
+              tokenCount(usage.inputTokens) - cacheRead - cacheWrite,
+            ),
+            outputTokens: tokenCount(usage.outputTokens),
+            cacheReadTokens: cacheRead,
+            cacheWriteTokens: cacheWrite,
+          });
+        }
+        return [...byModel.values()];
+      },
       events: (rows) =>
         rows.flatMap((row, index) => {
           if (row.type === "model_io")

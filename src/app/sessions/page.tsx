@@ -3,8 +3,10 @@ import { Sidebar } from "@/components/sidebar";
 import {
   getSessionEvents,
   getSessions,
+  getSessionUsage,
   getSummary,
   getSyncState,
+  getUsageSummary,
   type SessionFilters,
 } from "@/lib/queries";
 
@@ -32,6 +34,7 @@ export default async function Home({ searchParams }: HomeProps) {
     sessions.find((session) => String(session.id) === filters.selected) ??
     sessions[0];
   const events = selected ? getSessionEvents(selected.id) : [];
+  const usage = selected ? getSessionUsage(selected.id) : null;
   const summary = getSummary();
   const syncState = getSyncState();
   return (
@@ -44,9 +47,11 @@ export default async function Home({ searchParams }: HomeProps) {
       <Dashboard
         sessions={sessions}
         selected={selected ?? null}
+        usage={usage}
         events={events}
         summary={summary}
         syncState={syncState}
+        costToday={getUsageSummary().today}
         filters={filters}
       />
     </main>

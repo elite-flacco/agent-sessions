@@ -1,6 +1,13 @@
-import type { ProviderAdapter } from "@/lib/types";
+import type { ModelUsage, ProviderAdapter } from "@/lib/types";
 import { homePath, record, stringValue, walkJsonl } from "../utils";
-import { contentText, filenameId, numberedEvent, parseJsonl } from "./shared";
+import {
+  accumulateUsage,
+  contentText,
+  filenameId,
+  numberedEvent,
+  parseJsonl,
+  tokenCount,
+} from "./shared";
 
 export const piAdapter: ProviderAdapter = {
   provider: "pi",
@@ -22,9 +29,37 @@ export const piAdapter: ProviderAdapter = {
         );
         return contentText(record(message?.message)?.content);
       },
-      completed: (rows) => rows.some((row) => row.type === "session_end"),
-      model: (rows) =>
-        stringValue(rows.find((row) => row.type === "model_change")?.modelId),
+      terminalStatus: (rows) =>
+        rows.some((row) => row.type === "session_end")
+          ? "completed"
+          : undefined,
+      // Pi records normalized usage and the actual billed cost on each
+      // assistant message; cost.total becomes the reported (not estimated)
+      // session cost.
+      usage: (rows) => {
+        const byModel = new Map<string, ModelUsage>();
+        for (const row of rows) {
+          const message = record(row.message);
+          const usage = record(message?.usage);
+          const model = stringValue(message?.model);
+          if (!usage || !model || message?.role !== "assistant") continue;
+          const total = record(usage.cost)?.total;
+          accumulateUsage(
+            byModel,
+            model,
+            {
+              inputTokens: tokenCount(usage.input),
+              outputTokens: tokenCount(usage.output),
+              cacheReadTokens: tokenCount(usage.cacheRead),
+              cacheWriteTokens: tokenCount(usage.cacheWrite),
+            },
+            typeof total === "number" && Number.isFinite(total)
+              ? total
+              : undefined,
+          );
+        }
+        return [...byModel.values()];
+      },
       events: (rows) =>
         rows.flatMap((row, index) => {
           if (row.type === "session")

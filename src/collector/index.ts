@@ -39,16 +39,29 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const NORMALIZATION_VERSION = "3";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
     .createHash("sha1")
-    .update(`${size}:${modifiedAt}`)
+    .update(`${NORMALIZATION_VERSION}:${size}:${modifiedAt}`)
     .digest("hex");
 }
 
 function persistSession(session: NormalizedSession): void {
   const write = sqlite.transaction(() => {
+    const inputTokens = session.usage.reduce(
+      (total, usage) => total + usage.inputTokens,
+      0,
+    );
+    const outputTokens = session.usage.reduce(
+      (total, usage) => total + usage.outputTokens,
+      0,
+    );
+    const cachedTokens = session.usage.reduce(
+      (total, usage) => total + usage.cacheReadTokens + usage.cacheWriteTokens,
+      0,
+    );
     sqlite
       .prepare(
         `INSERT INTO sessions (
@@ -75,16 +88,40 @@ function persistSession(session: NormalizedSession): void {
         filesChanged: session.filesChanged ?? null,
         additions: session.additions ?? null,
         deletions: session.deletions ?? null,
-        inputTokens: session.usage?.inputTokens ?? null,
-        outputTokens: session.usage?.outputTokens ?? null,
-        cachedTokens: session.usage?.cachedTokens ?? null,
-        model: session.usage?.model ?? null,
-        estimatedCostUsd: session.usage?.estimatedCostUsd ?? null,
+        inputTokens: session.usage.length ? inputTokens : null,
+        outputTokens: session.usage.length ? outputTokens : null,
+        cachedTokens: session.usage.length ? cachedTokens : null,
+        model: session.model ?? null,
+        estimatedCostUsd: null,
       });
 
     const row = sqlite
       .prepare("SELECT id FROM sessions WHERE provider = ? AND external_id = ?")
       .get(session.provider, session.externalId) as { id: number };
+    if (session.usage.length) {
+      sqlite
+        .prepare(
+          `DELETE FROM session_model_usage WHERE session_id = ? AND model NOT IN (${session.usage.map(() => "?").join(", ")})`,
+        )
+        .run(row.id, ...session.usage.map((usage) => usage.model));
+    }
+    const usageStatement = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, model) DO UPDATE SET
+      input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
+      cache_read_tokens=excluded.cache_read_tokens, cache_write_tokens=excluded.cache_write_tokens,
+      reported_cost_usd=excluded.reported_cost_usd`);
+    for (const usage of session.usage) {
+      usageStatement.run(
+        row.id,
+        usage.model,
+        usage.inputTokens,
+        usage.outputTokens,
+        usage.cacheReadTokens,
+        usage.cacheWriteTokens,
+        usage.reportedCostUsd ?? null,
+      );
+    }
     const eventStatement =
       sqlite.prepare(`INSERT INTO activity_events (session_id, external_id, kind, title, detail, occurred_at)
       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, external_id) DO UPDATE SET

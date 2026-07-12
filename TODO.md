@@ -10,13 +10,12 @@ This file tracks work intentionally deferred from Relay v1. Items are ordered by
 - Extend the "unknown workspace" group into a real review flow (manual repository assignment stored as an override).
 - Surface common tasks per project once title normalization improves.
 
-### Usage and Cost
+### Usage and Cost (view shipped; follow-ups remain)
 
-- Normalize input, output, and cached-token usage per provider and model.
-- Add a versioned local pricing table with effective dates and source metadata.
-- Calculate cost only when the provider, model, usage fields, and pricing record all match confidently.
-- Clearly distinguish reported cost, locally calculated cost, and unavailable cost.
-- Add daily, weekly, monthly, provider, model, and project breakdowns.
+- Keep the pricing table (`src/lib/pricing.ts`) current when providers change rates; entries carry effective dates and source URLs.
+- Add a pricing entry for `kimi-k2.6` once a trustworthy rate exists (Pi reports its cost directly, so only non-Pi usage would need it).
+- Consider a cache-savings view (estimated cost avoided by prompt caching).
+- Split Codex usage per model when a session changes models mid-way (today the cumulative total is attributed to the majority turn model).
 
 ### Settings
 
@@ -84,6 +83,8 @@ This file tracks work intentionally deferred from Relay v1. Items are ordered by
 4. Desktop packaging, notifications, or optional sharing based on actual usage.
 
 ## Completed post-v1 (July 2026)
+
+- Usage & Cost at `/usage`: normalized per-model token usage for all four adapters, a checked-in versioned pricing table with sources and effective dates, read-time cost derivation distinguishing reported/estimated/unavailable, window totals, and model/agent/project breakdowns.
 
 - Live Activity stream at `/activity` with grouping, filters, pause/resume, follow-newest, collector health, and throttled server-side ingest.
 - Collector hardening: durable sync/watch leases, per-adapter scan tracking, sync-error pruning, watcher tests for new/appended files, concurrent syncs, and restarts.

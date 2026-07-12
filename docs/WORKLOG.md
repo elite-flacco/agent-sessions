@@ -2,7 +2,7 @@
 
 Running log of autonomous work on TODO.md items. Newest entries at the bottom of each section. Scope agreed with Shuang on 2026-07-11: TODO suggested-order items 1–4 (Live Activity → collector diagnostics/tests → Projects → Overview), commits directly on `main`, fully autonomous with decisions recorded here.
 
-## Status: all four milestones shipped
+## Status: five milestones shipped
 
 One commit per milestone on `main`, each passing `npm run verify`:
 
@@ -10,8 +10,31 @@ One commit per milestone on `main`, each passing `npm run verify`:
 2. `1c7f8a7` — Collector leases, scan tracking, diagnostics, watcher/concurrency tests
 3. `c73c365` — Projects view (`/projects`) with unknown-workspace group
 4. `b6897a0` — Overview home page with drill-down links (Sessions → `/sessions`)
+5. Usage & Cost (`/usage`) — see Milestone 5 below. **Note:** this commit also carries the session-lifecycle improvements (`incomplete` status, `terminalStatus` markers) that a concurrent Codex session left uncommitted in the same working tree; the two features are interleaved in the adapter files and were verified together, so they ship together.
 
 To test at any point: `git checkout <sha>`, then `npm run dev`.
+
+## Milestone 5 — Usage & Cost
+
+### Design
+
+- Spec: `docs/superpowers/specs/2026-07-12-usage-cost-design.md`. Decisions confirmed with Shuang up front: costs presented as clearly-labeled API-equivalent estimates (subscriptions don't bill per token), a dedicated `/usage` page, and a checked-in versioned pricing table (no runtime lookups).
+- Pricing looked up online 2026-07-12: Anthropic (fable-5 $10/$50, opus-4-6/4-7/4-8 $5/$25, sonnet-5 intro $2/$10 through 2026-08-31 then $3/$15, sonnet-4-6 $3/$15, haiku-4-5 $1/$5; cache read 0.1×, write 1.25×), OpenAI (gpt-5.5 and gpt-5.6-sol $5/$0.50 cached/$30, gpt-5.4 $2.50/$0.25/$15, gpt-5-mini $0.25/$0.025/$2), Z.ai GLM-5.2 ($1.40/$0.26 cached/$4.40). Sources and retrieval date are recorded on every entry in `src/lib/pricing.ts`.
+- Normalized per-model usage (uncached input / output / cache read / cache write / optional reported cost) extracted per provider, each verified against real local files: Claude dedupes streaming-repeated `message.id`s and splits models (subagents differ from the main loop); Codex takes the last cumulative `total_token_usage`, subtracts `cached_input_tokens` (a subset of input), and attributes to the majority `turn_context` model — the old adapter stored `model_provider` ("openai") as the model, now fixed; Pi sums per-message usage and its provider-recorded `cost.total` (→ "Reported"); Zcode reads camelCase `response.usage` whose `inputTokens` includes cache traffic, so cache read/write are subtracted back out.
+- New `session_model_usage` table (migration `0002`), replaced per session on re-parse; `NORMALIZATION_VERSION` bumped to force a one-time full re-ingest. Dollar costs are never stored: queries derive them at read time so pricing-table corrections apply retroactively. Per the TODO's trust rule, a session is priced only if every usage row matches (reported or table); otherwise "Unavailable" — no partial dollar figures, and aggregates count the exclusions.
+- `/usage` page: today/7-day/30-day cost+token cards, cache-read share card, 30-day daily cost strip, and model/agent/project breakdowns (quantized meter classes; new `dist-row-wide`/`dist-label` component classes for dollar-width rows). Sessions inspector now shows tokens, cache traffic, and cost with a Reported/Estimated/Unavailable label.
+
+### Decisions
+
+- 2026-07-12: `kimi-k2.6` deliberately has no pricing entry — it appeared once, in Pi, which reports actual cost; an unverified rate would contaminate estimates.
+- 2026-07-12: OpenAI and Z.ai publish no cache-write premium, so cache writes price as ordinary input there; Anthropic writes use the 1.25× 5-minute-TTL rate (Claude Code's default).
+- 2026-07-12: `sessions.estimated_cost_usd` is no longer written (kept for schema stability); reported cost lives on usage rows.
+- 2026-07-12: This milestone ran concurrently with the session-lifecycle work (same working tree). The two features touch the same adapter files; both edit streams were merged carefully on disk (lifecycle's `terminalStatus` kept intact, usage extraction layered on top) and the shared test fixtures were extended rather than reshaped.
+
+### Verified
+
+- Full suite passes (50 tests: adapter usage fixtures per provider, pricing normalization/effective-date/unknown-model tests, query-layer cost-source classification and aggregation).
+- Re-ingested all 173 real sources; browser-checked `/usage` against real data (30-day totals, model/agent/project breakdowns, daily strip) with no console errors.
 
 ## Open questions for Shuang
 
@@ -19,7 +42,7 @@ To test at any point: `git checkout <sha>`, then `npm run dev`.
 2. **Live Activity triggers ingestion server-side** (throttled to once per 10s while the page is open). If you'd rather the web process never touch source files and require `collect:watch` instead, it's a one-line removal in `src/app/activity/page.tsx`.
 3. **Repository aliases** (same repo under moved/multiple paths): needs a home for local config. I'd fold it into the Settings milestone with a small `settings` table — OK to design it that way?
 4. **"Failures this week" reads high** because most providers' files just stop when you close a window, which is indistinguishable from an interruption. Fine as-is until the adapter lifecycle work, or would you rather Overview only count `needs_attention`?
-5. **Usage & Cost** stays untouched pending a decision on the pricing table (source, versioning, effective dates). If you point me at a pricing source you trust, that milestone can start.
+5. ~~**Usage & Cost** stays untouched pending a decision on the pricing table.~~ Shipped as milestone 5 (2026-07-12) after you picked the online lookup + checked-in table approach. Remaining follow-ups are listed under "Usage and Cost" in TODO.md.
 
 ## Milestone 1 — Live Activity
 

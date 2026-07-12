@@ -12,18 +12,32 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { elapsed, relativeTime, runtime } from "@/lib/format";
-import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
+import {
+  elapsed,
+  formatCostUsd,
+  formatTokens,
+  relativeTime,
+  runtime,
+} from "@/lib/format";
+import {
+  costSourceLabels,
+  providerBadges,
+  providerLabels,
+  statusLabels,
+} from "@/lib/labels";
 import type {
   SessionEventRow,
   SessionFilters,
   SessionListItem,
+  SessionUsageDetail,
+  UsageWindow,
 } from "@/lib/queries";
 import { ActivityRow } from "./activity-row";
 
 interface DashboardProps {
   sessions: SessionListItem[];
   selected: SessionListItem | null;
+  usage: SessionUsageDetail | null;
   events: SessionEventRow[];
   summary: {
     sessionsToday: number;
@@ -32,22 +46,23 @@ interface DashboardProps {
     connectedAgents: number;
   };
   syncState: { lastSyncedAt: string | null; errors: number; sources: number };
+  costToday: UsageWindow;
   filters: SessionFilters;
 }
 
 function tokens(session: SessionListItem): string {
   const total = (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
-  return total
-    ? `${(total / 1000).toFixed(total > 10000 ? 1 : 2)}k`
-    : "Unavailable";
+  return total ? formatTokens(total) : "Unavailable";
 }
 
 export function Dashboard({
   sessions,
   selected,
+  usage,
   events,
   summary,
   syncState,
+  costToday,
   filters,
 }: DashboardProps) {
   const router = useRouter();
@@ -143,8 +158,12 @@ export function Dashboard({
         />
         <Metric
           label="Est. cost today"
-          value="Unavailable"
-          note="Shown only with trusted pricing"
+          value={formatCostUsd(costToday.costUsd)}
+          note={
+            costToday.unpricedSessions
+              ? `${costToday.unpricedSessions} sessions without pricing`
+              : "API-equivalent estimate"
+          }
         />
       </div>
 
@@ -263,7 +282,7 @@ export function Dashboard({
             <span>{isPending ? "Updating…" : "Updated from local files"}</span>
           </footer>
         </section>
-        <SessionInspector session={selected} events={events} />
+        <SessionInspector session={selected} usage={usage} events={events} />
       </div>
     </section>
   );
@@ -355,9 +374,11 @@ function EmptyState({
 
 function SessionInspector({
   session,
+  usage,
   events,
 }: {
   session: SessionListItem | null;
+  usage: SessionUsageDetail | null;
   events: SessionEventRow[];
 }) {
   if (!session)
@@ -394,14 +415,20 @@ function SessionInspector({
         <Detail label="Branch" value={session.branch ?? "Unavailable"} mono />
         <Detail label="Tokens" value={tokens(session)} />
         <Detail
-          label="Est. cost"
+          label="Cache"
           value={
-            session.estimatedCostUsd === null
-              ? "Unavailable"
-              : `$${session.estimatedCostUsd.toFixed(2)}`
+            session.cachedTokens ? formatTokens(session.cachedTokens) : "None"
           }
         />
-        <Detail label="Model" value={session.model ?? "Unavailable"} wide />
+        <Detail
+          label="Cost"
+          value={
+            usage && usage.costUsd !== null
+              ? `${formatCostUsd(usage.costUsd)} · ${costSourceLabels[usage.costSource]}`
+              : "Unavailable"
+          }
+        />
+        <Detail label="Model" value={session.model ?? "Unavailable"} mono />
       </div>
       <div className="activity-heading">
         <span className="eyebrow">Activity</span>

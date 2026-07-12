@@ -1,4 +1,4 @@
-import type { AgentProvider, SessionStatus } from "./types";
+import type { AgentProvider, CostSource, SessionStatus } from "./types";
 
 export const providerLabels: Record<AgentProvider, string> = {
   codex: "Codex",
@@ -14,10 +14,17 @@ export const providerBadges: Record<AgentProvider, string> = {
   pi: "badge-2",
 };
 
+export const costSourceLabels: Record<CostSource, string> = {
+  reported: "Reported",
+  estimated: "Estimated",
+  unavailable: "Unavailable",
+};
+
 export const statusLabels: Record<SessionStatus, string> = {
   running: "Running",
   completed: "Completed",
   needs_attention: "Needs attention",
   interrupted: "Interrupted",
+  incomplete: "Incomplete",
   unknown: "Unknown",
 };

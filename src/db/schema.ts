@@ -41,6 +41,25 @@ export const sessions = sqliteTable(
   ],
 );
 
+export const sessionModelUsage = sqliteTable(
+  "session_model_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    cacheReadTokens: integer("cache_read_tokens").notNull(),
+    cacheWriteTokens: integer("cache_write_tokens").notNull(),
+    reportedCostUsd: real("reported_cost_usd"),
+  },
+  (table) => [
+    uniqueIndex("usage_session_model_idx").on(table.sessionId, table.model),
+  ],
+);
+
 export const activityEvents = sqliteTable(
   "activity_events",
   {

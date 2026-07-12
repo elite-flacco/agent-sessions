@@ -117,7 +117,7 @@ export function OverviewView({
               ))
             ) : (
               <p className="overview-empty">
-                Nothing interrupted in the last day.
+                Nothing needs attention in the last day.
               </p>
             )}
           </section>

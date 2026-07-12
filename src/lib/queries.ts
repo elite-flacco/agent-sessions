@@ -1,7 +1,9 @@
 import { sqlite } from "@/db/client";
+import { normalizeModel, usageCostUsd } from "./pricing";
 import {
   UNKNOWN_PROJECT_KEY,
   type AgentProvider,
+  type CostSource,
   type SessionStatus,
 } from "./types";
 
@@ -47,10 +49,11 @@ const STALE_RUNNING_MS = 10 * 60 * 1000;
  * Sessions are stored with the status derived at parse time, which goes
  * stale when a source file stops changing. Derive the effective status at
  * query time instead: a "running" session with no updates inside the stale
- * window reads as interrupted.
+ * window reads as incomplete. Interrupted is reserved for an explicit
+ * provider abort or cancellation marker.
  */
 const statusExpression = (column: string, updatedColumn: string) =>
-  `CASE WHEN ${column} = 'running' AND ${updatedColumn} < ? THEN 'interrupted' ELSE ${column} END`;
+  `CASE WHEN ${column} = 'running' AND ${updatedColumn} < ? THEN 'incomplete' ELSE ${column} END`;
 
 function staleCutoff(): string {
   return new Date(Date.now() - STALE_RUNNING_MS).toISOString();
@@ -437,6 +440,252 @@ export function getCollectorHealth(): CollectorHealth {
     }[]
   ).map((row) => row.provider);
   return { ...sourceState, recentSyncErrors, delayedProviders };
+}
+
+interface UsageJoinRow {
+  sessionId: number;
+  provider: AgentProvider;
+  repository: string | null;
+  startedAt: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reportedCostUsd: number | null;
+}
+
+const USAGE_JOIN = `SELECT u.session_id sessionId, s.provider, s.repository, s.started_at startedAt,
+  u.model, u.input_tokens inputTokens, u.output_tokens outputTokens,
+  u.cache_read_tokens cacheReadTokens, u.cache_write_tokens cacheWriteTokens,
+  u.reported_cost_usd reportedCostUsd
+  FROM session_model_usage u JOIN sessions s ON s.id = u.session_id`;
+
+function rowCost(row: UsageJoinRow): number | undefined {
+  return usageCostUsd(
+    {
+      model: row.model,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      reportedCostUsd: row.reportedCostUsd ?? undefined,
+    },
+    row.startedAt,
+  );
+}
+
+export interface SessionUsageDetail {
+  models: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  }[];
+  costUsd: number | null;
+  costSource: CostSource;
+}
+
+/**
+ * Cost is derived at read time (never stored) so pricing-table updates
+ * apply retroactively. Per the pricing-trust rule, a session only gets a
+ * dollar figure when every token-bearing row is priced — either reported
+ * by the provider or matched to a pricing entry.
+ */
+export function getSessionUsage(sessionId: number): SessionUsageDetail {
+  const rows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE u.session_id = ?`)
+    .all(sessionId) as UsageJoinRow[];
+  let costUsd = 0;
+  let priced = true;
+  let reported = rows.length > 0;
+  for (const row of rows) {
+    const cost = rowCost(row);
+    if (cost === undefined) priced = false;
+    else costUsd += cost;
+    if (row.reportedCostUsd === null) reported = false;
+  }
+  return {
+    models: rows.map((row) => ({
+      model: row.model,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+    })),
+    costUsd: rows.length && priced ? costUsd : null,
+    costSource:
+      rows.length && priced
+        ? reported
+          ? "reported"
+          : "estimated"
+        : "unavailable",
+  };
+}
+
+export interface UsageBucket {
+  key: string;
+  costUsd: number;
+  tokens: number;
+  sessions: number;
+}
+
+export interface UsageWindow {
+  costUsd: number;
+  tokens: number;
+  cacheReadTokens: number;
+  sessions: number;
+  unpricedSessions: number;
+}
+
+export interface UsageSummary {
+  today: UsageWindow;
+  week: UsageWindow;
+  month: UsageWindow;
+  daily: { date: string; costUsd: number; tokens: number }[];
+  byProvider: UsageBucket[];
+  byModel: UsageBucket[];
+  byProject: UsageBucket[];
+}
+
+const USAGE_DAYS = 30;
+
+/**
+ * Aggregates the last 30 days of per-session per-model usage. Sessions with
+ * any unpriced usage are excluded from dollar sums (and counted in
+ * unpricedSessions) but still contribute to token totals. Buckets cover the
+ * full 30-day window; a session's usage is attributed to its start date.
+ */
+export function getUsageSummary(): UsageSummary {
+  const since = new Date(Date.now() - USAGE_DAYS * DAY_MS).toISOString();
+  const rows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
+    .all(since) as UsageJoinRow[];
+
+  interface SessionAccumulator {
+    provider: AgentProvider;
+    repository: string | null;
+    startedAt: string;
+    tokens: number;
+    cacheReadTokens: number;
+    costUsd: number;
+    priced: boolean;
+    models: Map<string, { tokens: number; costUsd: number }>;
+  }
+  const bySession = new Map<number, SessionAccumulator>();
+  for (const row of rows) {
+    const entry = bySession.get(row.sessionId) ?? {
+      provider: row.provider,
+      repository: row.repository,
+      startedAt: row.startedAt,
+      tokens: 0,
+      cacheReadTokens: 0,
+      costUsd: 0,
+      priced: true,
+      models: new Map(),
+    };
+    const tokens =
+      row.inputTokens +
+      row.outputTokens +
+      row.cacheReadTokens +
+      row.cacheWriteTokens;
+    const cost = rowCost(row);
+    entry.tokens += tokens;
+    entry.cacheReadTokens += row.cacheReadTokens;
+    if (cost === undefined) entry.priced = false;
+    else entry.costUsd += cost;
+    const modelKey = normalizeModel(row.model);
+    const model = entry.models.get(modelKey) ?? { tokens: 0, costUsd: 0 };
+    model.tokens += tokens;
+    model.costUsd += cost ?? 0;
+    entry.models.set(modelKey, model);
+    bySession.set(row.sessionId, entry);
+  }
+
+  const emptyWindow = (): UsageWindow => ({
+    costUsd: 0,
+    tokens: 0,
+    cacheReadTokens: 0,
+    sessions: 0,
+    unpricedSessions: 0,
+  });
+  const today = emptyWindow();
+  const week = emptyWindow();
+  const month = emptyWindow();
+  const todayStart = startOfToday();
+  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const daily = new Map<string, { costUsd: number; tokens: number }>();
+  const byProvider = new Map<string, UsageBucket>();
+  const byModel = new Map<string, UsageBucket>();
+  const byProject = new Map<string, UsageBucket>();
+  const addBucket = (
+    map: Map<string, UsageBucket>,
+    key: string,
+    costUsd: number,
+    tokens: number,
+  ) => {
+    const bucket = map.get(key) ?? { key, costUsd: 0, tokens: 0, sessions: 0 };
+    bucket.costUsd += costUsd;
+    bucket.tokens += tokens;
+    bucket.sessions += 1;
+    map.set(key, bucket);
+  };
+
+  for (const session of bySession.values()) {
+    const costUsd = session.priced ? session.costUsd : 0;
+    const windows = [month];
+    if (session.startedAt >= weekStart) windows.push(week);
+    if (session.startedAt >= todayStart) windows.push(today);
+    for (const window of windows) {
+      window.tokens += session.tokens;
+      window.cacheReadTokens += session.cacheReadTokens;
+      window.sessions += 1;
+      if (session.priced) window.costUsd += costUsd;
+      else window.unpricedSessions += 1;
+    }
+    const day = session.startedAt.slice(0, 10);
+    const dayEntry = daily.get(day) ?? { costUsd: 0, tokens: 0 };
+    dayEntry.costUsd += costUsd;
+    dayEntry.tokens += session.tokens;
+    daily.set(day, dayEntry);
+    addBucket(byProvider, session.provider, costUsd, session.tokens);
+    addBucket(
+      byProject,
+      session.repository ?? UNKNOWN_PROJECT_KEY,
+      costUsd,
+      session.tokens,
+    );
+    for (const [model, totals] of session.models) {
+      addBucket(
+        byModel,
+        model,
+        session.priced ? totals.costUsd : 0,
+        totals.tokens,
+      );
+    }
+  }
+
+  const dailySeries = Array.from({ length: USAGE_DAYS }, (_, index) => {
+    const date = new Date(Date.now() - (USAGE_DAYS - 1 - index) * DAY_MS)
+      .toISOString()
+      .slice(0, 10);
+    return { date, ...(daily.get(date) ?? { costUsd: 0, tokens: 0 }) };
+  });
+  const ranked = (map: Map<string, UsageBucket>) =>
+    [...map.values()].sort(
+      (a, b) => b.costUsd - a.costUsd || b.tokens - a.tokens,
+    );
+
+  return {
+    today,
+    week,
+    month,
+    daily: dailySeries,
+    byProvider: ranked(byProvider),
+    byModel: ranked(byModel),
+    byProject: ranked(byProject),
+  };
 }
 
 export function getSyncState(): {

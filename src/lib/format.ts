@@ -23,6 +23,20 @@ export function isOlderThan(value: string, milliseconds: number): boolean {
   return Date.now() - new Date(value).getTime() > milliseconds;
 }
 
+export function formatTokens(value: number): string {
+  if (value >= 1_000_000_000)
+    return `${(value / 1_000_000_000).toFixed(1)}B tok`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M tok`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k tok`;
+  return `${value} tok`;
+}
+
+export function formatCostUsd(value: number): string {
+  if (value === 0) return "$0.00";
+  if (value < 0.01) return "<$0.01";
+  return `$${value.toFixed(2)}`;
+}
+
 export function runtime(value: number): string {
   const minutes = Math.round(value / 60_000);
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;

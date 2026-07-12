@@ -1,6 +1,12 @@
 import type { ProviderAdapter } from "@/lib/types";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
-import { contentText, filenameId, numberedEvent, parseJsonl } from "./shared";
+import {
+  contentText,
+  filenameId,
+  numberedEvent,
+  parseJsonl,
+  tokenCount,
+} from "./shared";
 
 export const codexAdapter: ProviderAdapter = {
   provider: "codex",
@@ -30,36 +36,54 @@ export const codexAdapter: ProviderAdapter = {
           }
         }
       },
-      completed: (rows) => {
+      terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
           const type = record(row.payload)?.type;
-          if (type === "task_complete" || type === "turn_aborted") return true;
-          if (type === "task_started") return false;
+          if (type === "task_complete") return "completed";
+          if (type === "turn_aborted") return "interrupted";
+          if (type === "task_started") return undefined;
         }
-        return false;
+        return undefined;
       },
-      model: (rows) => {
-        const meta = rows.find((row) => row.type === "session_meta");
-        return stringValue(record(meta?.payload)?.model_provider);
-      },
-      tokens: (rows) => {
-        let inputTokens = 0;
-        let outputTokens = 0;
-        let cachedTokens = 0;
+      // token_count events carry cumulative totals (last one wins);
+      // cached_input_tokens is a subset of input_tokens, and output_tokens
+      // already includes reasoning tokens. The session total is attributed
+      // to the model the turns ran on (majority of turn_context rows).
+      usage: (rows) => {
+        let cumulative: Record<string, unknown> | undefined;
+        const turnModels = new Map<string, number>();
         for (const row of rows) {
           const payload = record(row.payload);
-          if (payload?.type !== "token_count") continue;
-          const info = record(payload.info);
-          const usage = record(info?.total_token_usage);
-          inputTokens = Number(usage?.input_tokens ?? inputTokens);
-          outputTokens = Number(usage?.output_tokens ?? outputTokens);
-          cachedTokens = Number(usage?.cached_input_tokens ?? cachedTokens);
+          if (payload?.type === "token_count") {
+            cumulative =
+              record(record(payload.info)?.total_token_usage) ?? cumulative;
+          }
+          if (row.type === "turn_context") {
+            const model = stringValue(payload?.model);
+            if (model) turnModels.set(model, (turnModels.get(model) ?? 0) + 1);
+          }
         }
-        return {
-          inputTokens: inputTokens || undefined,
-          outputTokens: outputTokens || undefined,
-          cachedTokens: cachedTokens || undefined,
-        };
+        if (!cumulative) return [];
+        const model =
+          [...turnModels.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+          stringValue(
+            record(rows.find((row) => row.type === "session_meta")?.payload)
+              ?.model,
+          );
+        if (!model) return [];
+        const cacheRead = tokenCount(cumulative.cached_input_tokens);
+        return [
+          {
+            model,
+            inputTokens: Math.max(
+              0,
+              tokenCount(cumulative.input_tokens) - cacheRead,
+            ),
+            outputTokens: tokenCount(cumulative.output_tokens),
+            cacheReadTokens: cacheRead,
+            cacheWriteTokens: 0,
+          },
+        ];
       },
       events: (rows) =>
         rows.flatMap((row, index) => {

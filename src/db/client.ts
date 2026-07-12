@@ -39,6 +39,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_provider_external_idx ON sessions(provider, external_id);
 CREATE INDEX IF NOT EXISTS sessions_started_idx ON sessions(started_at);
 CREATE INDEX IF NOT EXISTS sessions_status_idx ON sessions(status);
+CREATE TABLE IF NOT EXISTS session_model_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL,
+  cache_write_tokens INTEGER NOT NULL,
+  reported_cost_usd REAL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS usage_session_model_idx ON session_model_usage(session_id, model);
 CREATE TABLE IF NOT EXISTS activity_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

@@ -33,8 +33,11 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 | `/sessions` | The session table with search, provider/status/date filters, and the inspector. Filters and selection are URL-backed.                                                                                                                                                   |
 | `/activity` | Live activity — a cross-session event stream grouped by session, with provider/repository filters, pause/resume, follow-newest, and collector health. While open, it triggers an incremental ingest at most every 10 seconds, so it stays live without `collect:watch`. |
 | `/projects` | Sessions grouped by repository with runtime, branches, agents, and session history. Records without repository context appear under "Unknown workspace" for review.                                                                                                     |
+| `/usage`    | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                        |
 
-Sessions shown as **Running** are derived at query time: a running session with no file updates for 10 minutes reads as Interrupted.
+Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted.
+
+Costs are **API-equivalent estimates**: tokens are priced against a checked-in table of public per-token rates (`src/lib/pricing.ts`, with effective dates and source URLs), because subscription plans don't bill per token. Pi sessions carry the provider's own recorded cost and show as **Reported**. A session whose model has no pricing entry shows **Unavailable** rather than a partial dollar figure; updating the pricing table re-prices history automatically because costs are computed at read time.
 
 ## Data sources
 

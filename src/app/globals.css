@@ -598,6 +598,9 @@
   .status-interrupted {
     color: var(--warning);
   }
+  .status-incomplete {
+    color: var(--muted-foreground);
+  }
   .session-footer {
     display: flex;
     justify-content: space-between;
@@ -928,6 +931,15 @@
   .dist-row .mono {
     text-align: right;
     color: var(--muted-foreground);
+  }
+  .dist-row-wide {
+    grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr) 4.5rem;
+  }
+  .dist-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
   }
   .meter {
     display: block;

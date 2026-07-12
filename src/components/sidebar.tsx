@@ -61,7 +61,12 @@ export function Sidebar({
           icon={<FolderKanban size={15} />}
           label="Projects"
         />
-        <UpcomingRow icon={<BarChart3 size={15} />} label="Usage & cost" />
+        <NavLink
+          href="/usage"
+          active={pathname === "/usage"}
+          icon={<BarChart3 size={15} />}
+          label="Usage & cost"
+        />
       </nav>
       <div className="sidebar-footer">
         <div className="connection-card">

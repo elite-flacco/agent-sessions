@@ -74,10 +74,10 @@ export function repositoryFromCwd(cwd?: string): string | undefined {
 
 export function staleStatus(
   updatedAt: string,
-  completed: boolean,
-): "completed" | "running" | "interrupted" {
-  if (completed) return "completed";
+  terminalStatus?: "completed" | "interrupted" | "needs_attention",
+): "completed" | "running" | "interrupted" | "incomplete" | "needs_attention" {
+  if (terminalStatus) return terminalStatus;
   return Date.now() - new Date(updatedAt).getTime() < 10 * 60 * 1000
     ? "running"
-    : "interrupted";
+    : "incomplete";
 }

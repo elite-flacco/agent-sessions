@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   ActivityEvent,
   AgentProvider,
+  ModelUsage,
   NormalizedSession,
   ParseResult,
 } from "@/lib/types";
@@ -22,14 +23,48 @@ export interface JsonlStrategy {
   cwd(rows: Record<string, unknown>[]): string | undefined;
   branch(rows: Record<string, unknown>[]): string | undefined;
   title(rows: Record<string, unknown>[]): string | undefined;
-  completed(rows: Record<string, unknown>[]): boolean;
+  terminalStatus(
+    rows: Record<string, unknown>[],
+  ): "completed" | "interrupted" | "needs_attention" | undefined;
   events(rows: Record<string, unknown>[]): ActivityEvent[];
-  model?(rows: Record<string, unknown>[]): string | undefined;
-  tokens?(rows: Record<string, unknown>[]): {
-    inputTokens?: number;
-    outputTokens?: number;
-    cachedTokens?: number;
+  usage?(rows: Record<string, unknown>[]): ModelUsage[];
+}
+
+export function tokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
+export function accumulateUsage(
+  map: Map<string, ModelUsage>,
+  model: string,
+  tokens: Pick<
+    ModelUsage,
+    "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens"
+  >,
+  reportedCostUsd?: number,
+): void {
+  const entry = map.get(model) ?? {
+    model,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
   };
+  entry.inputTokens += tokens.inputTokens;
+  entry.outputTokens += tokens.outputTokens;
+  entry.cacheReadTokens += tokens.cacheReadTokens;
+  entry.cacheWriteTokens += tokens.cacheWriteTokens;
+  if (reportedCostUsd !== undefined)
+    entry.reportedCostUsd = (entry.reportedCostUsd ?? 0) + reportedCostUsd;
+  map.set(model, entry);
+}
+
+export function dominantModel(usage: ModelUsage[]): string | undefined {
+  const total = (u: ModelUsage) =>
+    u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+  return [...usage].sort((a, b) => total(b) - total(a))[0]?.model;
 }
 
 export function timestamp(row: Record<string, unknown>): string | undefined {
@@ -114,7 +149,15 @@ export async function parseJsonl(
       .events(rows)
       .filter((event) => event.occurredAt !== new Date(0).toISOString())
       .slice(-40);
-    const usage = strategy.tokens?.(rows);
+    const usage = (strategy.usage?.(rows) ?? []).filter(
+      (entry) =>
+        entry.inputTokens +
+          entry.outputTokens +
+          entry.cacheReadTokens +
+          entry.cacheWriteTokens >
+          0 || entry.reportedCostUsd !== undefined,
+    );
+    const terminalStatus = strategy.terminalStatus(rows);
     const session: NormalizedSession = {
       externalId: strategy.identify(rows, filePath),
       provider: strategy.provider,
@@ -123,11 +166,12 @@ export async function parseJsonl(
       repository: repositoryFromCwd(cwd),
       cwd,
       branch: strategy.branch(rows),
-      status: staleStatus(updatedAt, strategy.completed(rows)),
+      status: staleStatus(updatedAt, terminalStatus),
       startedAt,
-      endedAt: strategy.completed(rows) ? updatedAt : undefined,
+      endedAt: terminalStatus ? updatedAt : undefined,
       updatedAt,
-      usage: { ...usage, model: strategy.model?.(rows) },
+      model: dominantModel(usage),
+      usage,
       events: events.length
         ? events
         : [

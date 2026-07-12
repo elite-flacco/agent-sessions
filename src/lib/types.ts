@@ -6,6 +6,7 @@ export const sessionStatuses = [
   "completed",
   "needs_attention",
   "interrupted",
+  "incomplete",
   "unknown",
 ] as const;
 export type SessionStatus = (typeof sessionStatuses)[number];
@@ -21,13 +22,17 @@ export interface ActivityEvent {
   occurredAt: string;
 }
 
-export interface UsageRecord {
-  inputTokens?: number;
-  outputTokens?: number;
-  cachedTokens?: number;
-  model?: string;
-  estimatedCostUsd?: number;
+export interface ModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reportedCostUsd?: number;
 }
+
+export const costSources = ["reported", "estimated", "unavailable"] as const;
+export type CostSource = (typeof costSources)[number];
 
 export interface NormalizedSession {
   externalId: string;
@@ -44,7 +49,8 @@ export interface NormalizedSession {
   filesChanged?: number;
   additions?: number;
   deletions?: number;
-  usage?: UsageRecord;
+  model?: string;
+  usage: ModelUsage[];
   events: ActivityEvent[];
 }
 

@@ -78,6 +78,12 @@ beforeAll(async () => {
     (provider, last_scan_at, sources, imported, errors) VALUES (?, ?, ?, ?, ?)`);
   insertScan.run("codex", at(30), 1, 0, 0);
   insertScan.run("claude", at(1), 1, 0, 0);
+  const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
+    (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  insertUsage.run(1, "gpt-5.5", 1_000_000, 100_000, 0, 0, null);
+  insertUsage.run(2, "z-ai/glm-5.2", 300, 30, 150, 0, 0.005);
+  insertUsage.run(3, "mystery-model", 1_000, 100, 0, 0, null);
 });
 
 afterAll(async () => {
@@ -114,13 +120,13 @@ describe("session queries", () => {
     });
   });
 
-  it("derives interrupted status for stale running sessions at query time", () => {
+  it("derives incomplete status for stale running sessions at query time", () => {
     const running = queries.getSessions({ status: "running", range: "all" });
     expect(running.map((session) => session.title)).toEqual(["Fresh runner"]);
     const stale = queries
       .getSessions({ range: "all" })
       .find((session) => session.title === "Stale runner");
-    expect(stale?.status).toBe("interrupted");
+    expect(stale?.status).toBe("incomplete");
   });
 });
 
@@ -178,25 +184,27 @@ describe("activity stream queries", () => {
     const unknown = queries.getProjectSessions("(unknown)");
     expect(unknown).toHaveLength(1);
     expect(unknown[0].title).toBe("Stale runner");
-    expect(unknown[0].status).toBe("interrupted");
+    expect(unknown[0].status).toBe("incomplete");
   });
 
   it("summarizes daily and weekly overview windows", () => {
     const overview = queries.getOverview();
     expect(overview.today.sessions).toBe(1);
     expect(overview.week.sessions).toBe(3);
-    expect(overview.week.failures).toBe(1);
+    expect(overview.week.failures).toBe(0);
     expect(overview.daily).toHaveLength(14);
     expect(overview.daily.at(-1)?.count).toBeGreaterThanOrEqual(1);
     expect(overview.providerCounts[0]).toMatchObject({ provider: "codex" });
   });
 
-  it("lists running and attention sessions with derived status", () => {
+  it("keeps incomplete sessions out of the attention list", () => {
     expect(
       queries.getRunningSessions().map((session) => session.title),
     ).toEqual(["Fresh runner"]);
     const attention = queries.getAttentionSessions();
-    expect(attention.map((session) => session.title)).toContain("Stale runner");
+    expect(attention.map((session) => session.title)).not.toContain(
+      "Stale runner",
+    );
     expect(
       attention.every((session) =>
         ["interrupted", "needs_attention"].includes(session.status),
@@ -212,5 +220,47 @@ describe("activity stream queries", () => {
       connectedAgents: 1,
       delayedProviders: ["codex"],
     });
+  });
+});
+
+describe("usage and cost queries", () => {
+  it("estimates session cost from the pricing table", () => {
+    const usage = queries.getSessionUsage(1);
+    // 1M input * $5 + 0.1M output * $30 = $8 for gpt-5.5
+    expect(usage.costUsd).toBeCloseTo(8, 6);
+    expect(usage.costSource).toBe("estimated");
+    expect(usage.models[0]?.model).toBe("gpt-5.5");
+  });
+
+  it("prefers provider-reported cost and labels it reported", () => {
+    const usage = queries.getSessionUsage(2);
+    expect(usage.costUsd).toBeCloseTo(0.005, 9);
+    expect(usage.costSource).toBe("reported");
+  });
+
+  it("marks unpriced models and sessions without usage as unavailable", () => {
+    const unpriced = queries.getSessionUsage(3);
+    expect(unpriced.costUsd).toBeNull();
+    expect(unpriced.costSource).toBe("unavailable");
+    expect(queries.getSessionUsage(4).costSource).toBe("unavailable");
+  });
+
+  it("aggregates windows, buckets, and unpriced exclusions", () => {
+    const summary = queries.getUsageSummary();
+    // Only session 1 started today; session 3 (unpriced) is two days old
+    // and session 2 is outside the 30-day window entirely.
+    expect(summary.today.costUsd).toBeCloseTo(8, 6);
+    expect(summary.today.unpricedSessions).toBe(0);
+    expect(summary.month.unpricedSessions).toBe(1);
+    expect(summary.month.tokens).toBe(1_100_000 + 1_100);
+    const codex = summary.byProvider.find((bucket) => bucket.key === "codex");
+    expect(codex?.costUsd).toBeCloseTo(8, 6);
+    expect(summary.byModel.map((bucket) => bucket.key)).toContain("gpt-5.5");
+    const unknown = summary.byProject.find(
+      (bucket) => bucket.key === "(unknown)",
+    );
+    expect(unknown?.costUsd).toBe(0);
+    expect(summary.daily).toHaveLength(30);
+    expect(summary.daily.at(-1)?.costUsd).toBeCloseTo(8, 6);
   });
 });
