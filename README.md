@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite. Detailed session pages can read messages and tool payloads directly from the original local JSONL file without copying them into Relay's database.
+Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite. Detailed session pages read messages and tool payloads from local provider storage on demand without copying them into Relay's database.
 
 ## Requirements
 
@@ -11,6 +11,7 @@ Relay is a private, local-only operations dashboard for coding-agent sessions. I
 
 ```bash
 npm install
+npm run db:migrate
 npm run collect
 npm run dev
 ```
@@ -27,13 +28,13 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 
 ## Pages
 
-| Route            | What it shows                                                                                                                                                                                                                                                                                                                                         |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                                                                                                                 |
-| `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. While open, it ingests changed local source files and refreshes every 15 seconds. Project rollups reflect the active session filters. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab. |
-| `/sessions/[id]` | A full-width session detail view with metadata and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                                                                   |
-| `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                                                   |
-| `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                                                      |
+| Route            | What it shows                                                                                                                                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (activity heatmap by day/hour, session-length histogram, week cost-at-a-glance). Cards link into filtered views.                                                                                                                                       |
+| `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. While open, it ingests changed local source files and refreshes every 15 seconds. Subagent runs are nested beneath their main session. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab. |
+| `/sessions/[id]` | A full-width session detail view with metadata, links between main and subagent sessions, and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                         |
+| `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                                                    |
+| `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                                                       |
 
 Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted.
 
@@ -50,7 +51,7 @@ Costs are **API-equivalent estimates**: tokens are priced against a checked-in t
 
 Relay stores its normalized database at `data/relay.db`. Override this with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
 
-Zcode's rollout (`model_io`) files carry model usage but no working directory, so Relay resolves each Zcode session's project/workspace from Zcode's own session database (`~/.zcode/cli/db/db.sqlite`, read-only) and falls back to "Unknown workspace" only when a session id isn't found there.
+Zcode's rollout (`model_io`) files carry model usage but no working directory and incomplete conversation data, so Relay uses Zcode's own session database (`~/.zcode/cli/db/db.sqlite`, read-only) for authoritative titles, parent/subagent relationships, missing project/workspace metadata, database-only sessions, and on-demand transcripts. JSONL remains the transcript fallback when that database is unavailable. Codex parent thread metadata and Claude Code sidechain records provide the equivalent hierarchy for those providers.
 
 ## Commands
 
@@ -66,4 +67,4 @@ Zcode's rollout (`model_io`) files carry model usage but no working directory, s
 
 The adapters derive short task titles, workspace metadata, timestamps, model/usage summaries when trustworthy, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are not written to Relay's database.
 
-Each session stores only the path of its original local source file. When `/sessions/[id]` is opened, Relay reads that JSONL file on demand and normalizes supported user messages, assistant messages, tool arguments, and tool results for display. Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view. Provider-injected context can still appear when a provider records it as part of a user or assistant message.
+Each session stores only the path of its original local source file. When `/sessions/[id]` is opened, Relay reads provider storage on demand and normalizes supported user messages, assistant messages, tool arguments, and tool results for display. Most providers use the source JSONL; Zcode prefers its read-only `message` and `part` tables so sessions remain readable when rollout files are absent or contain only model-I/O telemetry. Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view. Provider-injected context can still appear when a provider records it as part of a user or assistant message.
