@@ -908,7 +908,7 @@ export function getOverviewPatterns(): OverviewPatterns {
   const heatRows = sqlite
     .prepare(
       `SELECT
-        (CAST(strftime('%w', started_at, 'weekday 1') AS INTEGER) + 6) % 7 AS dayOfWeek,
+        (CAST(strftime('%w', started_at) AS INTEGER) + 6) % 7 AS dayOfWeek,
         CAST(strftime('%H', started_at) AS INTEGER) AS hour,
         COUNT(*) AS count
        FROM sessions WHERE started_at >= ?
@@ -941,7 +941,7 @@ export function getOverviewPatterns(): OverviewPatterns {
   }));
   const medianMs =
     runtimes.length > 0 ? runtimes[Math.floor(runtimes.length / 2)] : null;
-  const longestMs = runtimes.length > 0 ? runtimes.at(-1)! : null;
+  const longestMs = runtimes.length > 0 ? (runtimes.at(-1) ?? null) : null;
   const longRuntimeMs = runtimes
     .filter((ms) => ms >= 30 * 60_000)
     .reduce((sum, ms) => sum + ms, 0);
@@ -995,7 +995,7 @@ export function getOverviewPatterns(): OverviewPatterns {
       sessionCount: runtimes.length,
     },
     costWeek: {
-      costUsd: usageRows.length && priced ? costUsd : null,
+      costUsd: priced ? costUsd : null,
       tokens,
       topModels,
     },
