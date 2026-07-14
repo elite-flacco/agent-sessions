@@ -61,6 +61,11 @@
   --badge-4-foreground: #e7bc72;
   --badge-5: #3d2420;
   --badge-5-foreground: #e7a18f;
+  --heat-0: var(--muted);
+  --heat-1: color-mix(in srgb, var(--accent) 22%, var(--muted));
+  --heat-2: color-mix(in srgb, var(--accent) 40%, var(--muted));
+  --heat-3: color-mix(in srgb, var(--accent) 60%, var(--muted));
+  --heat-4: color-mix(in srgb, var(--accent) 85%, var(--muted));
   --text-xs: clamp(0.68rem, 0.66rem + 0.08vw, 0.75rem);
   --text-sm: clamp(0.78rem, 0.75rem + 0.1vw, 0.875rem);
   --text-base: clamp(0.9rem, 0.86rem + 0.12vw, 1rem);
@@ -546,6 +551,21 @@
   .session-row:hover {
     background: var(--card-hover);
   }
+  .session-child-row {
+    min-height: 4rem;
+    padding-left: 2.25rem;
+    background: var(--muted);
+  }
+  .session-child-row::before {
+    position: absolute;
+    top: 0;
+    bottom: 50%;
+    left: 1.25rem;
+    width: 0.65rem;
+    border-bottom: 1px solid var(--border-hover);
+    border-left: 1px solid var(--border-hover);
+    content: "";
+  }
   .session-selected {
     background: var(--muted);
   }
@@ -888,6 +908,71 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .session-parent-link {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 1rem;
+    padding: 0.8rem 0.9rem;
+  }
+  .session-parent-link svg {
+    flex: 0 0 auto;
+    color: var(--accent);
+  }
+  .session-parent-link > div {
+    display: grid;
+    gap: 0.2rem;
+  }
+  .session-parent-link a {
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .session-parent-link a:hover {
+    color: var(--accent);
+  }
+  .session-children {
+    margin-top: 0.8rem;
+    overflow: hidden;
+  }
+  .session-children > header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 0.9rem;
+  }
+  .session-children h2 {
+    margin-top: 0.2rem;
+  }
+  .session-children > header > span {
+    color: var(--muted-foreground);
+  }
+  .session-children-list > a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 0.9rem;
+  }
+  .session-children-list > a:hover {
+    background: var(--card-hover);
+  }
+  .session-children-list > a > div {
+    display: grid;
+    min-width: 0;
+    gap: 0.25rem;
+  }
+  .session-children-list strong {
+    overflow: hidden;
+    font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-children-list .mono {
+    color: var(--muted-foreground);
+  }
   .payload-notice {
     display: flex;
     align-items: flex-start;
@@ -1178,6 +1263,134 @@
   }
   .spark-fill-10 {
     height: 100%;
+  }
+  .heatmap {
+    display: grid;
+    grid-template-columns: 1.6rem repeat(24, minmax(0, 1fr));
+    gap: 0.15rem;
+  }
+  .heat-hour-label {
+    color: var(--muted-foreground);
+    font-size: 0.55rem;
+    text-align: center;
+  }
+  .heat-day-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    padding-right: 0.3rem;
+  }
+  .heat-cell {
+    aspect-ratio: 1;
+    border-radius: 0.15rem;
+    background: var(--heat-0);
+  }
+  .heatmap-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.55rem;
+  }
+  .heatmap-legend-cells {
+    display: flex;
+    gap: 0.15rem;
+  }
+  .heatmap-legend-cells span {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 0.15rem;
+  }
+  .heat-fill-0 {
+    background: var(--heat-0);
+  }
+  .heat-fill-1 {
+    background: var(--heat-1);
+  }
+  .heat-fill-2 {
+    background: var(--heat-1);
+  }
+  .heat-fill-3 {
+    background: var(--heat-2);
+  }
+  .heat-fill-4 {
+    background: var(--heat-2);
+  }
+  .heat-fill-5 {
+    background: var(--heat-3);
+  }
+  .heat-fill-6 {
+    background: var(--heat-3);
+  }
+  .heat-fill-7 {
+    background: var(--heat-4);
+  }
+  .heat-fill-8 {
+    background: var(--heat-4);
+  }
+  .heat-fill-9 {
+    background: var(--heat-4);
+  }
+  .heat-fill-10 {
+    background: var(--accent);
+  }
+  .hist-list {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .hist-row {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr) 3.5rem;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .hist-label {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .hist-footnote {
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .hist-footnote strong {
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  .cost-total {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+  .cost-total strong {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .cost-row {
+    display: grid;
+    grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 3.5rem;
+    align-items: center;
+    gap: 0.6rem;
+    padding-block: 0.35rem;
+  }
+  .cost-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+  }
+  .cost-row .mono {
+    text-align: right;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
 }
 
