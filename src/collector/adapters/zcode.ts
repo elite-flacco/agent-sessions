@@ -1,11 +1,10 @@
-import Database from "better-sqlite3";
-import type { Database as BetterSqlite3Database } from "better-sqlite3";
-import { resolve } from "node:path";
 import type { ModelUsage, ProviderAdapter } from "@/lib/types";
+import { __resetZcodeDbCache, getZcodeSessionMetadata } from "@/lib/zcode-db";
 import {
   homePath,
   record,
   repositoryFromCwd,
+  safeTitle,
   stringValue,
   walkJsonl,
 } from "../utils";
@@ -19,55 +18,7 @@ import {
   tokenCount,
 } from "./shared";
 
-// ZCode's interactive ("rollout") JSONL rows carry no `cwd`, so the workspace
-// is unknown from the rollout alone. ZCode's own session DB
-// (`~/.zcode/cli/db/db.sqlite`, `session.directory`) is the authoritative
-// source and is keyed by the same session id present in the JSONL rows. We open
-// it read-only as a fallback; any open/query failure is a silent no-op.
-const zcodeDbPath = (): string =>
-  process.env.ZCODE_DB_PATH
-    ? resolve(process.env.ZCODE_DB_PATH)
-    : homePath(".zcode", "cli", "db", "db.sqlite");
-
-const dbConnections = new Map<string, BetterSqlite3Database>();
-
-function zcodeDirectoryDb(): BetterSqlite3Database | undefined {
-  const dbPath = zcodeDbPath();
-  const cached = dbConnections.get(dbPath);
-  if (cached) return cached;
-  try {
-    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
-    dbConnections.set(dbPath, db);
-    return db;
-  } catch {
-    return undefined;
-  }
-}
-
-function zcodeSessionDirectory(sessionId: string): string | undefined {
-  const db = zcodeDirectoryDb();
-  if (!db) return undefined;
-  try {
-    const row = db
-      .prepare("SELECT directory FROM session WHERE id = ?")
-      .get(sessionId) as { directory?: string } | undefined;
-    return stringValue(row?.directory);
-  } catch {
-    return undefined;
-  }
-}
-
-// Drop cached connections so tests can point ZCODE_DB_PATH at a fresh temp DB.
-export function __resetZcodeDbCache(): void {
-  for (const db of dbConnections.values()) {
-    try {
-      db.close();
-    } catch {
-      // ignore — a closed or locked handle is fine to drop
-    }
-  }
-  dbConnections.clear();
-}
+export { __resetZcodeDbCache };
 
 export const zcodeAdapter: ProviderAdapter = {
   provider: "zcode",
@@ -87,15 +38,22 @@ export const zcodeAdapter: ProviderAdapter = {
       branch: (rows) =>
         stringValue(rows.find((row) => row.gitBranch)?.gitBranch),
       title: (rows) => {
-        const request = rows.map((row) => record(row.request)).find(Boolean);
-        const candidate =
-          contentText(request?.messages) ?? contentText(request?.content);
-        if (
-          candidate?.startsWith("Generate a concise title") ||
-          candidate?.startsWith("You are ZCode")
-        )
-          return undefined;
-        return candidate;
+        for (const row of rows) {
+          const request = record(row.request);
+          const messages = Array.isArray(request?.messages)
+            ? request.messages.map(record).filter(Boolean)
+            : [];
+          const user = messages.find((message) => message?.role === "user");
+          const candidate =
+            contentText(user?.content) ?? contentText(request?.content);
+          if (
+            candidate &&
+            !candidate.startsWith("Generate a concise title") &&
+            !candidate.startsWith("You are ZCode")
+          )
+            return candidate;
+        }
+        return undefined;
       },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
@@ -168,17 +126,25 @@ export const zcodeAdapter: ProviderAdapter = {
         }),
     });
 
-    // Rollout `model_io` rows carry no cwd; enrich from ZCode's session DB so
-    // interactive sessions resolve their workspace/repository. Sessions that
-    // already have a cwd (subagent transcripts) are left untouched.
+    // ZCode's session DB is authoritative for its display title and is also the
+    // fallback for cwd because interactive model_io rows omit that field.
     const session = result.sessions[0];
-    if (session && !session.cwd) {
-      const directory =
-        session.externalId && zcodeSessionDirectory(session.externalId);
-      if (directory) {
-        session.cwd = directory;
-        session.repository = repositoryFromCwd(directory);
-        session.summary = sessionSummary("zcode", directory);
+    if (session?.externalId) {
+      const metadata = getZcodeSessionMetadata(session.externalId);
+      if (metadata?.title)
+        session.title = safeTitle(metadata.title, session.title);
+      if (metadata?.parentId) {
+        session.parentExternalId = metadata.parentId;
+        session.sessionKind = "subagent";
+        session.agentDepth = 1;
+      } else {
+        session.sessionKind = "main";
+        session.agentDepth = 0;
+      }
+      if (!session.cwd && metadata?.directory) {
+        session.cwd = metadata.directory;
+        session.repository = repositoryFromCwd(metadata.directory);
+        session.summary = sessionSummary("zcode", metadata.directory);
       }
     }
     return result;

@@ -23,6 +23,12 @@ export interface JsonlStrategy {
   cwd(rows: Record<string, unknown>[]): string | undefined;
   branch(rows: Record<string, unknown>[]): string | undefined;
   title(rows: Record<string, unknown>[]): string | undefined;
+  hierarchy?(rows: Record<string, unknown>[]): {
+    parentExternalId?: string;
+    sessionKind?: "main" | "subagent";
+    agentLabel?: string;
+    agentDepth?: number;
+  };
   terminalStatus(
     rows: Record<string, unknown>[],
   ): "completed" | "interrupted" | "needs_attention" | undefined;
@@ -172,10 +178,12 @@ export async function parseJsonl(
           0 || entry.reportedCostUsd !== undefined,
     );
     const terminalStatus = strategy.terminalStatus(rows);
+    const hierarchy = strategy.hierarchy?.(rows) ?? {};
     const session: NormalizedSession = {
       externalId: strategy.identify(rows, filePath),
       sourcePath: filePath,
       provider: strategy.provider,
+      ...hierarchy,
       title,
       summary: sessionSummary(strategy.provider, cwd),
       repository: repositoryFromCwd(cwd),

@@ -1,7 +1,13 @@
 import { notFound } from "next/navigation";
 import { SessionDetailView } from "@/components/session-detail";
 import { Sidebar } from "@/components/sidebar";
-import { getCollectorHealth, getSession, getSessionUsage } from "@/lib/queries";
+import {
+  getCollectorHealth,
+  getSession,
+  getSessionChildren,
+  getSessionParent,
+  getSessionUsage,
+} from "@/lib/queries";
 import { readSessionTranscript } from "@/lib/transcript";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +32,8 @@ export default async function SessionPage({ params }: SessionPageProps) {
       />
       <SessionDetailView
         session={session}
+        parent={getSessionParent(session)}
+        subagents={getSessionChildren(session)}
         usage={getSessionUsage(session.id)}
         transcript={transcript}
       />

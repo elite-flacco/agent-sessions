@@ -16,12 +16,32 @@ export const claudeAdapter: ProviderAdapter = {
     parseJsonl(filePath, {
       provider: "claude",
       fallbackTitle: "Claude Code session",
-      identify: (rows) =>
-        stringValue(rows.find((row) => row.sessionId)?.sessionId) ??
-        filenameId(filePath),
+      identify: (rows) => {
+        const child = rows.find(
+          (row) => row.isSidechain === true && stringValue(row.agentId),
+        );
+        return (
+          stringValue(child?.agentId) ??
+          stringValue(rows.find((row) => row.sessionId)?.sessionId) ??
+          filenameId(filePath)
+        );
+      },
       cwd: (rows) => stringValue(rows.find((row) => row.cwd)?.cwd),
       branch: (rows) =>
         stringValue(rows.find((row) => row.gitBranch)?.gitBranch),
+      hierarchy: (rows) => {
+        const child = rows.find(
+          (row) => row.isSidechain === true && stringValue(row.agentId),
+        );
+        return child
+          ? {
+              parentExternalId: stringValue(child.sessionId),
+              sessionKind: "subagent",
+              agentLabel: stringValue(child.agentId),
+              agentDepth: 1,
+            }
+          : { sessionKind: "main", agentDepth: 0 };
+      },
       title: (rows) => {
         for (const row of rows) {
           if (row.type !== "user" || record(row.message)?.role !== "user")

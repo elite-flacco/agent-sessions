@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import type { AgentProvider } from "./types";
+import { readZcodeSessionMessages, type ZcodeStoredMessage } from "./zcode-db";
 
 export type TranscriptEntryKind = "user" | "assistant" | "tool" | "result";
 
@@ -21,6 +22,7 @@ export interface SessionTranscript {
 }
 
 interface TranscriptSession {
+  externalId?: string;
   provider: AgentProvider;
   sourcePath: string | null;
 }
@@ -38,6 +40,12 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function redactString(value: string): string {
@@ -89,6 +97,13 @@ function occurredAt(row: Record<string, unknown>): string | null {
     stringValue(row.completedAt) ??
     null
   );
+}
+
+function occurredAtMilliseconds(value: unknown): string | null {
+  const milliseconds = numberValue(value);
+  if (milliseconds === undefined) return null;
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function textContent(value: unknown): string | null {
@@ -296,17 +311,103 @@ function parseRows(
         row,
         index,
         "assistant",
-        response?.content,
+        response?.content ?? response?.text,
       );
       addBlocks(entries, calls, row, index, response?.content);
+      const toolCalls = Array.isArray(response?.toolCalls)
+        ? response.toolCalls.flatMap((value) => {
+            const toolCall = record(value);
+            return toolCall ? [toolCall] : [];
+          })
+        : [];
+      for (const toolCall of toolCalls)
+        addTool(entries, calls, row, index, toolCall);
     }
   });
+  return entries;
+}
+
+function parseZcodeStoredMessages(
+  messages: ZcodeStoredMessage[],
+): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  for (const message of messages) {
+    const messageData = record(message.data);
+    if (
+      !messageData ||
+      messageData.synthetic === true ||
+      messageData.visibility === "model-only"
+    )
+      continue;
+    const role = stringValue(messageData.role);
+    if (role !== "user" && role !== "assistant") continue;
+    const messageTime = record(messageData.time);
+    const messageOccurredAt =
+      occurredAtMilliseconds(messageTime?.created) ??
+      occurredAtMilliseconds(message.timeCreated);
+
+    for (const part of message.parts) {
+      const partData = record(part.data);
+      if (!partData || partData.synthetic === true) continue;
+      const type = stringValue(partData.type);
+      const partTime = record(partData.time);
+      const partOccurredAt =
+        occurredAtMilliseconds(partTime?.start) ??
+        occurredAtMilliseconds(part.timeCreated) ??
+        messageOccurredAt;
+
+      if (type === "text") {
+        const content = textContent(partData.text);
+        if (!content) continue;
+        entries.push({
+          id: `zcode-${part.id}`,
+          kind: role,
+          title: role === "user" ? "User" : "Assistant",
+          content,
+          input: null,
+          output: null,
+          occurredAt: partOccurredAt,
+          isError: false,
+        });
+        continue;
+      }
+
+      if (type === "tool") {
+        const state = record(partData.state);
+        const status = stringValue(state?.status);
+        const isError = status === "error";
+        entries.push({
+          id: `zcode-${part.id}`,
+          kind: "tool",
+          title: stringValue(partData.tool) ?? "Tool call",
+          content: null,
+          input: formatPayload(state?.input),
+          output: formatPayload(
+            isError ? (state?.error ?? state?.output) : state?.output,
+          ),
+          occurredAt: partOccurredAt,
+          isError,
+        });
+      }
+    }
+  }
   return entries;
 }
 
 export async function readSessionTranscript(
   session: TranscriptSession,
 ): Promise<SessionTranscript> {
+  if (session.provider === "zcode" && session.externalId) {
+    const messages = readZcodeSessionMessages(session.externalId);
+    if (messages?.length) {
+      const allEntries = parseZcodeStoredMessages(messages);
+      return {
+        entries: allEntries.slice(-MAX_ENTRIES),
+        sourceAvailable: true,
+        truncated: allEntries.length > MAX_ENTRIES,
+      };
+    }
+  }
   if (!session.sourcePath)
     return { entries: [], sourceAvailable: false, truncated: false };
   try {

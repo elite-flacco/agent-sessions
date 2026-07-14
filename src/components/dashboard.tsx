@@ -19,14 +19,14 @@ import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type {
   ProjectSummary,
   SessionFilters,
-  SessionListItem,
+  SessionTreeItem,
   UsageWindow,
 } from "@/lib/queries";
 
 export type WorkspaceView = "sessions" | "projects";
 
 interface DashboardProps {
-  sessions: SessionListItem[];
+  sessions: SessionTreeItem[];
   projects: ProjectSummary[];
   summary: {
     sessionsToday: number;
@@ -38,6 +38,13 @@ interface DashboardProps {
   costToday: UsageWindow;
   filters: SessionFilters;
   view: WorkspaceView;
+}
+
+function sessionCount(sessions: SessionTreeItem[]): number {
+  return sessions.reduce(
+    (total, session) => total + 1 + sessionCount(session.children),
+    0,
+  );
 }
 
 export function Dashboard({
@@ -222,7 +229,7 @@ export function Dashboard({
         >
           <Database size={14} />
           Sessions
-          <span>{sessions.length}</span>
+          <span>{sessionCount(sessions)}</span>
         </button>
         <button
           className={
@@ -260,7 +267,7 @@ function SessionsTable({
   isPending,
   onSync,
 }: {
-  sessions: SessionListItem[];
+  sessions: SessionTreeItem[];
   filters: SessionFilters;
   isPending: boolean;
   onSync: () => void;
@@ -279,42 +286,7 @@ function SessionsTable({
       </div>
       {sessions.length ? (
         sessions.map((session) => (
-          <div key={session.id} className="session-row">
-            <div className="session-primary">
-              <div className="session-title-actions">
-                <Link href={`/sessions/${session.id}`}>{session.title}</Link>
-                <Link
-                  href={`/sessions/${session.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="session-open-link"
-                  aria-label={`Open ${session.title} in a new tab`}
-                  title="Open in new tab"
-                >
-                  <ExternalLink size={13} />
-                </Link>
-              </div>
-              <span className="mono">
-                {session.repository ?? "Unknown workspace"}
-                {session.branch ? ` · ${session.branch}` : ""}
-              </span>
-            </div>
-            <div>
-              <span className={`badge ${providerBadges[session.provider]}`}>
-                {providerLabels[session.provider]}
-              </span>
-            </div>
-            <div className={`status-label status-${session.status}`}>
-              <i />
-              {statusLabels[session.status]}
-            </div>
-            <span className="mono session-secondary">
-              {relativeTime(session.startedAt)}
-            </span>
-            <span className="mono session-secondary">
-              {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
-            </span>
-          </div>
+          <SessionRow key={session.id} session={session} depth={0} />
         ))
       ) : (
         <EmptyState
@@ -323,10 +295,69 @@ function SessionsTable({
         />
       )}
       <footer className="session-footer">
-        <span>Showing {sessions.length} sessions</span>
+        <span>Showing {sessionCount(sessions)} sessions</span>
         <span>{isPending ? "Updating…" : "Updated from local files"}</span>
       </footer>
     </section>
+  );
+}
+
+function SessionRow({
+  session,
+  depth,
+}: {
+  session: SessionTreeItem;
+  depth: number;
+}) {
+  return (
+    <>
+      <div className={depth ? "session-row session-child-row" : "session-row"}>
+        <div className="session-primary">
+          <div className="session-title-actions">
+            <Link href={`/sessions/${session.id}`}>{session.title}</Link>
+            <Link
+              href={`/sessions/${session.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="session-open-link"
+              aria-label={`Open ${session.title} in a new tab`}
+              title="Open in new tab"
+            >
+              <ExternalLink size={13} />
+            </Link>
+          </div>
+          <span className="mono">
+            {session.sessionKind === "subagent"
+              ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
+              : (session.repository ?? "Unknown workspace")}
+            {session.sessionKind !== "subagent" && session.branch
+              ? ` · ${session.branch}`
+              : ""}
+            {session.children.length
+              ? ` · ${session.children.length} subagent${session.children.length === 1 ? "" : "s"}`
+              : ""}
+          </span>
+        </div>
+        <div>
+          <span className={`badge ${providerBadges[session.provider]}`}>
+            {providerLabels[session.provider]}
+          </span>
+        </div>
+        <div className={`status-label status-${session.status}`}>
+          <i />
+          {statusLabels[session.status]}
+        </div>
+        <span className="mono session-secondary">
+          {relativeTime(session.startedAt)}
+        </span>
+        <span className="mono session-secondary">
+          {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
+        </span>
+      </div>
+      {session.children.map((child) => (
+        <SessionRow key={child.id} session={child} depth={depth + 1} />
+      ))}
+    </>
   );
 }
 

@@ -37,8 +37,12 @@ export type CostSource = (typeof costSources)[number];
 
 export interface NormalizedSession {
   externalId: string;
-  sourcePath: string;
+  sourcePath?: string;
   provider: AgentProvider;
+  parentExternalId?: string;
+  sessionKind?: "main" | "subagent";
+  agentLabel?: string;
+  agentDepth?: number;
   title: string;
   summary?: string;
   repository?: string;

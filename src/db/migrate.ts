@@ -40,8 +40,15 @@ if (hasSessions) {
     const hasSourcePath = columns.some(
       (column) => column.name === "source_path",
     );
+    const hasSessionHierarchy = columns.some(
+      (column) => column.name === "parent_external_id",
+    );
     const migrations = readMigrationFiles({ migrationsFolder });
-    const baseline = hasSourcePath ? migrations : migrations.slice(0, -1);
+    const baseline = hasSessionHierarchy
+      ? migrations
+      : hasSourcePath
+        ? migrations.slice(0, -1)
+        : migrations.slice(0, -2);
     const insert = sqlite.prepare(
       "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
     );

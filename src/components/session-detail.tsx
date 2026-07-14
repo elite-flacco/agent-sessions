@@ -6,6 +6,7 @@ import {
   Command,
   ShieldCheck,
   User,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -20,11 +21,17 @@ import {
   providerLabels,
   statusLabels,
 } from "@/lib/labels";
-import type { SessionDetail, SessionUsageDetail } from "@/lib/queries";
+import type {
+  SessionDetail,
+  SessionListItem,
+  SessionUsageDetail,
+} from "@/lib/queries";
 import type { SessionTranscript, TranscriptEntry } from "@/lib/transcript";
 
 interface SessionDetailViewProps {
   session: SessionDetail;
+  parent: SessionListItem | null;
+  subagents: SessionListItem[];
   usage: SessionUsageDetail;
   transcript: SessionTranscript;
 }
@@ -36,6 +43,8 @@ function totalTokens(session: SessionDetail): string {
 
 export function SessionDetailView({
   session,
+  parent,
+  subagents,
   usage,
   transcript,
 }: SessionDetailViewProps) {
@@ -70,6 +79,16 @@ export function SessionDetailView({
         </div>
       </header>
 
+      {parent && (
+        <div className="session-parent-link card">
+          <Users size={16} />
+          <div>
+            <span className="eyebrow">Main session</span>
+            <Link href={`/sessions/${parent.id}`}>{parent.title}</Link>
+          </div>
+        </div>
+      )}
+
       <div className="session-detail-grid card" aria-label="Session details">
         <Detail
           label="Repository"
@@ -94,10 +113,39 @@ export function SessionDetailView({
         />
       </div>
 
+      {subagents.length > 0 && (
+        <section
+          className="session-children card"
+          aria-labelledby="subagents-title"
+        >
+          <header>
+            <div>
+              <span className="eyebrow">Delegated work</span>
+              <h2 id="subagents-title">Subagents</h2>
+            </div>
+            <span>{subagents.length} sessions</span>
+          </header>
+          <div className="session-children-list">
+            {subagents.map((child) => (
+              <Link key={child.id} href={`/sessions/${child.id}`}>
+                <div>
+                  <strong>{child.title}</strong>
+                  <span className="mono">{child.agentLabel ?? "Subagent"}</span>
+                </div>
+                <span className={`status-label status-${child.status}`}>
+                  <i />
+                  {statusLabels[child.status]}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="payload-notice">
         <ShieldCheck size={16} />
         <p>
-          This transcript is read from the local source file on demand. Common
+          This transcript is read from local provider storage on demand. Common
           credentials are redacted, raw reasoning records are excluded, and
           payloads are not copied into Relay’s database. Provider-injected
           context may still appear inside user or assistant messages.
@@ -132,7 +180,7 @@ export function SessionDetailView({
             <p>
               {transcript.sourceAvailable
                 ? "This provider did not expose supported message or tool payload records."
-                : "Sync activity once to link this session to its local source file."}
+                : "No readable local transcript source was found for this session."}
             </p>
           </div>
         )}

@@ -14,6 +14,10 @@ export const sessions = sqliteTable(
     externalId: text("external_id").notNull(),
     sourcePath: text("source_path"),
     provider: text("provider").notNull(),
+    parentExternalId: text("parent_external_id"),
+    sessionKind: text("session_kind").notNull().default("main"),
+    agentLabel: text("agent_label"),
+    agentDepth: integer("agent_depth").notNull().default(0),
     title: text("title").notNull(),
     summary: text("summary"),
     repository: text("repository"),
@@ -39,6 +43,7 @@ export const sessions = sqliteTable(
     ),
     index("sessions_started_idx").on(table.startedAt),
     index("sessions_status_idx").on(table.status),
+    index("sessions_parent_idx").on(table.provider, table.parentExternalId),
   ],
 );
 

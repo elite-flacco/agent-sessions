@@ -27,6 +27,28 @@ export const codexAdapter: ProviderAdapter = {
         const meta = rows.find((row) => row.type === "session_meta");
         return stringValue(record(record(meta?.payload)?.git)?.branch);
       },
+      hierarchy: (rows) => {
+        const meta = record(
+          rows.find((row) => row.type === "session_meta")?.payload,
+        );
+        const spawn = record(record(meta?.source)?.subagent);
+        const threadSpawn = record(spawn?.thread_spawn);
+        const parentExternalId =
+          stringValue(meta?.parent_thread_id) ??
+          stringValue(threadSpawn?.parent_thread_id);
+        return parentExternalId
+          ? {
+              parentExternalId,
+              sessionKind: "subagent",
+              agentLabel:
+                stringValue(meta?.agent_nickname) ??
+                stringValue(threadSpawn?.agent_nickname) ??
+                stringValue(meta?.agent_path),
+              agentDepth:
+                typeof threadSpawn?.depth === "number" ? threadSpawn.depth : 1,
+            }
+          : { sessionKind: "main", agentDepth: 0 };
+      },
       title: (rows) => {
         for (const row of rows) {
           const payload = record(row.payload);

@@ -190,6 +190,45 @@ describe("provider adapters", () => {
     });
   });
 
+  it("preserves Codex subagent parentage and label", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-11T10:00:00Z",
+        payload: {
+          id: "codex-child",
+          cwd: "/work/relay",
+          parent_thread_id: "codex-parent",
+          agent_nickname: "Scout",
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "codex-parent",
+                depth: 1,
+              },
+            },
+          },
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Inspect the data model" }],
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "codex-child",
+      parentExternalId: "codex-parent",
+      sessionKind: "subagent",
+      agentLabel: "Scout",
+      agentDepth: 1,
+    });
+  });
+
   it("normalizes Claude Code and tolerates a partially written final line", async () => {
     const result = await parse(
       claudeAdapter,
@@ -257,6 +296,27 @@ describe("provider adapters", () => {
       },
     ]);
     expect(result.sessions[0]?.status).toBe("completed");
+  });
+
+  it("uses Claude's agent id for sidechains and links them to the main session", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-parent",
+        agentId: "agent-child",
+        isSidechain: true,
+        timestamp: "2026-07-11T10:00:00Z",
+        message: { role: "user", content: "Fix the child task" },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "agent-child",
+      parentExternalId: "claude-parent",
+      sessionKind: "subagent",
+      agentLabel: "agent-child",
+      agentDepth: 1,
+    });
   });
 
   it("marks a stale trailing Claude user message as incomplete", async () => {
@@ -396,12 +456,11 @@ describe("provider adapters", () => {
     const dbPath = path.join(dbDir, "db.sqlite");
     const db = new Database(dbPath);
     db.exec(
-      "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL)",
+      "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL)",
     );
-    db.prepare("INSERT INTO session (id, directory) VALUES (?, ?)").run(
-      "z-1",
-      "/projects/relay-demo",
-    );
+    db.prepare(
+      "INSERT INTO session (id, directory, title) VALUES (?, ?, ?)",
+    ).run("z-1", "/projects/relay-demo", "Build the session inspector");
     db.close();
     process.env.ZCODE_DB_PATH = dbPath;
     __resetZcodeDbCache();
@@ -422,6 +481,7 @@ describe("provider adapters", () => {
     expect(session?.cwd).toBe("/projects/relay-demo");
     expect(session?.repository).toBe("relay-demo");
     expect(session?.summary).toBe("Zcode session in relay-demo.");
+    expect(session?.title).toBe("Build the session inspector");
   });
 
   it("leaves the Zcode workspace unknown when the session id is absent from the DB", async () => {

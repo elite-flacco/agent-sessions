@@ -8,12 +8,25 @@ import type {
   ProviderAdapter,
 } from "@/lib/types";
 import { sqlite } from "@/db/client";
+import {
+  getZcodeSessionMetadata,
+  listZcodeSessionMetadata,
+  readZcodeSessionMessages,
+  type ZcodeStoredMessage,
+} from "@/lib/zcode-db";
 import { claudeAdapter } from "./adapters/claude";
 import { codexAdapter } from "./adapters/codex";
 import { piAdapter } from "./adapters/pi";
+import { sessionSummary } from "./adapters/shared";
 import { zcodeAdapter } from "./adapters/zcode";
 import { acquireLease, releaseLease } from "./lock";
-import { homePath } from "./utils";
+import {
+  homePath,
+  record,
+  repositoryFromCwd,
+  safeTitle,
+  staleStatus,
+} from "./utils";
 
 export const adapters: ProviderAdapter[] = [
   codexAdapter,
@@ -39,7 +52,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "5";
+const NORMALIZATION_VERSION = "7";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -65,13 +78,17 @@ function persistSession(session: NormalizedSession): void {
     sqlite
       .prepare(
         `INSERT INTO sessions (
-        external_id, source_path, provider, title, summary, repository, cwd, branch, status, started_at, ended_at,
+        external_id, source_path, provider, parent_external_id, session_kind, agent_label, agent_depth,
+        title, summary, repository, cwd, branch, status, started_at, ended_at,
         updated_at, files_changed, additions, deletions, input_tokens, output_tokens, cached_tokens, model, estimated_cost_usd
       ) VALUES (
-        @externalId, @sourcePath, @provider, @title, @summary, @repository, @cwd, @branch, @status, @startedAt, @endedAt,
+        @externalId, @sourcePath, @provider, @parentExternalId, @sessionKind, @agentLabel, @agentDepth,
+        @title, @summary, @repository, @cwd, @branch, @status, @startedAt, @endedAt,
         @updatedAt, @filesChanged, @additions, @deletions, @inputTokens, @outputTokens, @cachedTokens, @model, @estimatedCostUsd
       ) ON CONFLICT(provider, external_id) DO UPDATE SET
-        source_path=excluded.source_path, title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
+        source_path=COALESCE(excluded.source_path, sessions.source_path), parent_external_id=excluded.parent_external_id,
+        session_kind=excluded.session_kind, agent_label=excluded.agent_label, agent_depth=excluded.agent_depth,
+        title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
         cwd=COALESCE(excluded.cwd, sessions.cwd), branch=COALESCE(excluded.branch, sessions.branch), status=excluded.status,
         started_at=MIN(excluded.started_at, sessions.started_at), ended_at=COALESCE(excluded.ended_at, sessions.ended_at),
         updated_at=MAX(excluded.updated_at, sessions.updated_at), input_tokens=COALESCE(excluded.input_tokens, sessions.input_tokens),
@@ -80,6 +97,11 @@ function persistSession(session: NormalizedSession): void {
       )
       .run({
         ...session,
+        sourcePath: session.sourcePath ?? null,
+        parentExternalId: session.parentExternalId ?? null,
+        sessionKind: session.sessionKind ?? "main",
+        agentLabel: session.agentLabel ?? null,
+        agentDepth: session.agentDepth ?? 0,
         summary: session.summary ?? null,
         repository: session.repository ?? null,
         cwd: session.cwd ?? null,
@@ -157,6 +179,150 @@ function recordSyncError(
       message.slice(0, 500),
       new Date().toISOString(),
     );
+}
+
+function firstZcodeUserText(
+  messages: ZcodeStoredMessage[],
+): string | undefined {
+  for (const message of messages) {
+    if (record(message.data)?.role !== "user") continue;
+    for (const part of message.parts) {
+      const data = record(part.data);
+      if (data?.type === "text" && typeof data.text === "string")
+        return data.text;
+    }
+  }
+}
+
+function zcodeTitle(
+  fallback: string,
+  taskType: string | undefined,
+  messages: ZcodeStoredMessage[],
+): string {
+  if (taskType !== "subagent_child") return fallback;
+  const prompt = firstZcodeUserText(messages);
+  if (!prompt || !/review/i.test(prompt)) return fallback;
+  const categories = [
+    ...new Set(
+      [...prompt.matchAll(/(?<![a-z-])skills\/([a-z-]+)\//gi)].map(
+        (match) => match[1],
+      ),
+    ),
+  ];
+  if (!categories.length) return fallback;
+  const labels = categories.map((category) =>
+    category === "git"
+      ? "Git"
+      : category === "docs"
+        ? "docs"
+        : category.charAt(0).toUpperCase() + category.slice(1),
+  );
+  return safeTitle(`Review ${labels.join(" & ")} skills`, fallback);
+}
+
+function zcodeStoredStatus(
+  messages: ZcodeStoredMessage[],
+  updatedAt: string,
+): "completed" | "running" | "incomplete" | "interrupted" | "needs_attention" {
+  for (const message of [...messages].reverse()) {
+    const data = record(message.data);
+    if (!data) continue;
+    if (data.error) return "needs_attention";
+    if (data.role === "assistant" && record(data.time)?.completed)
+      return "completed";
+    if (data.role === "user") break;
+  }
+  return staleStatus(updatedAt);
+}
+
+function reconcileZcodeMetadata(): void {
+  const sessions = sqlite
+    .prepare(
+      "SELECT id, external_id externalId, title, cwd FROM sessions WHERE provider = 'zcode'",
+    )
+    .all() as Array<{
+    id: number;
+    externalId: string;
+    title: string;
+    cwd: string | null;
+  }>;
+  const update = sqlite.prepare(
+    `UPDATE sessions
+     SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
+         session_kind = ?, agent_depth = ?
+     WHERE id = ?`,
+  );
+  const write = sqlite.transaction(() => {
+    for (const session of sessions) {
+      const metadata = getZcodeSessionMetadata(session.externalId);
+      if (!metadata) continue;
+      const cwd = metadata.directory ?? session.cwd ?? undefined;
+      const messages = readZcodeSessionMessages(session.externalId) ?? [];
+      update.run(
+        zcodeTitle(
+          safeTitle(metadata.title, session.title),
+          metadata.taskType,
+          messages,
+        ),
+        cwd ?? null,
+        repositoryFromCwd(cwd) ?? null,
+        sessionSummary("zcode", cwd),
+        metadata.parentId ?? null,
+        metadata.taskType === "subagent_child" ? "subagent" : "main",
+        metadata.parentId ? 1 : 0,
+        session.id,
+      );
+    }
+  });
+  write();
+
+  const allMetadata = listZcodeSessionMetadata() ?? [];
+  const existingIds = new Set(sessions.map((session) => session.externalId));
+  for (const metadata of allMetadata) {
+    if (
+      !metadata.id ||
+      existingIds.has(metadata.id) ||
+      metadata.timeCreated === undefined ||
+      metadata.timeUpdated === undefined
+    )
+      continue;
+    const startedAt = new Date(metadata.timeCreated).toISOString();
+    const updatedAt = new Date(metadata.timeUpdated).toISOString();
+    const messages = readZcodeSessionMessages(metadata.id) ?? [];
+    const status = zcodeStoredStatus(messages, updatedAt);
+    const title = zcodeTitle(
+      safeTitle(metadata.title, "Zcode coding session"),
+      metadata.taskType,
+      messages,
+    );
+    persistSession({
+      externalId: metadata.id,
+      provider: "zcode",
+      parentExternalId: metadata.parentId,
+      sessionKind: metadata.taskType === "subagent_child" ? "subagent" : "main",
+      agentDepth: metadata.parentId ? 1 : 0,
+      title,
+      summary: sessionSummary("zcode", metadata.directory),
+      repository: repositoryFromCwd(metadata.directory),
+      cwd: metadata.directory,
+      status,
+      startedAt,
+      endedAt:
+        status === "completed" || status === "needs_attention"
+          ? updatedAt
+          : undefined,
+      updatedAt,
+      usage: [],
+      events: [
+        {
+          externalId: "started",
+          kind: "started",
+          title: "Session started",
+          occurredAt: startedAt,
+        },
+      ],
+    });
+  }
 }
 
 async function syncFile(
@@ -289,6 +455,7 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
       totals.imported += scan.imported;
       totals.errors += scan.errors;
     }
+    reconcileZcodeMetadata();
     return totals;
   } finally {
     releaseLease("sync");

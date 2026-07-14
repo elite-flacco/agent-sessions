@@ -155,6 +155,89 @@ describe("collector sync", () => {
     expect(recovered.count).toBe(0);
     expect(sessionCount("recovered-1")).toBe(1);
   });
+
+  it("refreshes metadata for Zcode sessions whose JSONL source is gone", async () => {
+    const zcodeDbPath = path.join(directory, "zcode.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const insertZcode = zcodeDb.prepare(
+      `INSERT INTO session
+       (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertZcode.run(
+      "zcode-orphan",
+      "/work/zcode-project",
+      "Repair stored titles",
+      null,
+      "interactive",
+      "generated",
+      1_750_000_000_000,
+      1_750_000_001_000,
+    );
+    insertZcode.run(
+      "zcode-child",
+      "/work/zcode-project",
+      "Inspect the child task",
+      "zcode-orphan",
+      "subagent_child",
+      "first_input",
+      1_750_000_000_100,
+      1_750_000_000_900,
+    );
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'zcode', 'Zcode coding session', 'completed', ?, ?)`,
+      )
+      .run("zcode-orphan", "2026-07-11T10:00:00Z", "2026-07-11T10:01:00Z");
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT title, repository, cwd FROM sessions WHERE external_id = ?",
+          )
+          .get("zcode-orphan"),
+      ).toEqual({
+        title: "Repair stored titles",
+        repository: "zcode-project",
+        cwd: "/work/zcode-project",
+      });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT parent_external_id parentExternalId, session_kind sessionKind FROM sessions WHERE external_id = ?",
+          )
+          .get("zcode-child"),
+      ).toEqual({
+        parentExternalId: "zcode-orphan",
+        sessionKind: "subagent",
+      });
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
 });
 
 describe("collector watcher", () => {

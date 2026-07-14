@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   external_id TEXT NOT NULL,
   source_path TEXT,
   provider TEXT NOT NULL,
+  parent_external_id TEXT,
+  session_kind TEXT NOT NULL DEFAULT 'main',
+  agent_label TEXT,
+  agent_depth INTEGER NOT NULL DEFAULT 0,
   title TEXT NOT NULL,
   summary TEXT,
   repository TEXT,
@@ -40,6 +44,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_provider_external_idx ON sessions(provider, external_id);
 CREATE INDEX IF NOT EXISTS sessions_started_idx ON sessions(started_at);
 CREATE INDEX IF NOT EXISTS sessions_status_idx ON sessions(status);
+CREATE INDEX IF NOT EXISTS sessions_parent_idx ON sessions(provider, parent_external_id);
 CREATE TABLE IF NOT EXISTS session_model_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
