@@ -1,5 +1,6 @@
 import { Dashboard, type WorkspaceView } from "@/components/dashboard";
 import { Sidebar } from "@/components/sidebar";
+import { refreshIngestedData } from "@/lib/auto-sync";
 import {
   getProjects,
   getSessions,
@@ -20,6 +21,7 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function Home({ searchParams }: HomeProps) {
+  await refreshIngestedData();
   const params = await searchParams;
   const filters: SessionFilters = {
     q: first(params.q),

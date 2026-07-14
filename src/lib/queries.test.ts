@@ -138,6 +138,33 @@ describe("session queries", () => {
     }
   });
 
+  it("nests subagent sessions beneath their main session", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, parent_external_id, session_kind, title, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, ?, ?, 'completed', ?, ?)`);
+    insert.run("hierarchy-parent", null, "main", "Hierarchy parent", now, now);
+    insert.run(
+      "hierarchy-child",
+      "hierarchy-parent",
+      "subagent",
+      "Hierarchy child",
+      now,
+      now,
+    );
+    try {
+      const sessions = queries.getSessions({ q: "Hierarchy", range: "all" });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].children.map((child) => child.externalId)).toEqual([
+        "hierarchy-child",
+      ]);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id LIKE 'hierarchy-%'")
+        .run();
+    }
+  });
+
   it("combines provider, status, and date filters", () => {
     expect(
       queries.getSessions({ provider: "codex", status: "completed" }),
@@ -328,6 +355,87 @@ describe("usage and cost queries", () => {
         .run(sessionId);
       sqlite
         .prepare("DELETE FROM sessions WHERE external_id = 'mixed-1'")
+        .run();
+    }
+  });
+});
+
+describe("overview patterns", () => {
+  it("builds a 7x24 heatmap with counts from recent sessions", () => {
+    const patterns = queries.getOverviewPatterns();
+    expect(patterns.heatmap).toHaveLength(7 * 24);
+    // Each cell carries its grid coordinates.
+    expect(patterns.heatmap[0]).toMatchObject({ dayOfWeek: 0, hour: 0 });
+    expect(patterns.heatmap.at(-1)).toMatchObject({ dayOfWeek: 6, hour: 23 });
+    // Three sessions started within the 30-day window; their cells are > 0.
+    const total = patterns.heatmap.reduce((sum, cell) => sum + cell.count, 0);
+    expect(total).toBe(3);
+  });
+
+  it("buckets session length and summarizes the long tail", () => {
+    const patterns = queries.getOverviewPatterns();
+    expect(patterns.length.buckets).toHaveLength(5);
+    // Bucket labels are stable and ordered shortest to longest; the last
+    // bucket is open-ended so long sessions (> 2h) are not dropped.
+    expect(patterns.length.buckets.map((b) => b.label)).toEqual([
+      "< 2 min",
+      "2–10 min",
+      "10–30 min",
+      "30 min–1h",
+      "1h+",
+    ]);
+    expect(patterns.length.sessionCount).toBe(3);
+    // Session 1 has 0 runtime (started = ended); sessions 3 and 4 are
+    // "running" (no ended_at) so runtime falls back to updated_at, giving
+    // ~2 days — both land in the open-ended "1h+" bucket.
+    expect(patterns.length.buckets[0]?.count).toBe(1);
+    expect(patterns.length.buckets.at(-1)?.count).toBe(2);
+    // All runtime lives in long sessions (> 30 min): the long tail is 100%.
+    expect(patterns.length.longTailShare).toBe(1);
+    expect(patterns.length.longestMs).toBeGreaterThan(60 * 60_000);
+  });
+
+  it("reports week cost as null when any usage row is unpriced", () => {
+    const patterns = queries.getOverviewPatterns();
+    // Session 3 ("Stale runner", mystery-model) is in the 7-day window and
+    // unpriced, so the week total must be unavailable even though other
+    // sessions are priced.
+    expect(patterns.costWeek.costUsd).toBeNull();
+    // Token total still shows regardless of pricing.
+    expect(patterns.costWeek.tokens).toBeGreaterThan(0);
+  });
+
+  it("places heatmap counts in the correct day-of-week cell", () => {
+    // Seed a session at a known timestamp (a Wednesday) and confirm the count
+    // lands in dayOfWeek=2, not collapsed into Monday (0). This guards against
+    // the strftime('weekday N') modifier regression that mapped all days to 0.
+    // 2026-07-15 is a Wednesday; 14:00 local-ish via fixed ISO string.
+    const wednesday = "2026-07-15T14:00:00.000Z";
+    sqlite
+      .prepare(
+        `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
+         VALUES ('heat-wed', 'codex', 'Heatmap placement check', 'completed', ?, ?)`,
+      )
+      .run(wednesday, wednesday);
+    try {
+      const patterns = queries.getOverviewPatterns();
+      // Find the cell for the seeded session's day-of-week and hour.
+      // strftime('%w', '2026-07-15') = '3' (Wednesday, Sun=0); (3+6)%7 = 2.
+      // strftime('%H', '2026-07-15T14:00:00.000Z') depends on TZ; assert the
+      // count appears somewhere in dayOfWeek=2 rather than pinning the hour.
+      const wednesdayCells = patterns.heatmap.filter(
+        (cell) => cell.dayOfWeek === 2 && cell.count > 0,
+      );
+      expect(wednesdayCells.length).toBeGreaterThan(0);
+      // And confirm it did NOT all collapse into Monday (dayOfWeek=0).
+      const total = patterns.heatmap.reduce((sum, cell) => sum + cell.count, 0);
+      const mondayTotal = patterns.heatmap
+        .filter((cell) => cell.dayOfWeek === 0)
+        .reduce((sum, cell) => sum + cell.count, 0);
+      expect(mondayTotal).toBeLessThan(total);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = 'heat-wed'")
         .run();
     }
   });
