@@ -3,22 +3,31 @@
 import {
   AlertTriangle,
   CircleDot,
+  Clock3,
   FolderKanban,
   LayoutDashboard,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { elapsed, relativeTime, runtime } from "@/lib/format";
-import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
+import { Fragment, useEffect } from "react";
+import {
+  elapsed,
+  formatCostUsd,
+  formatTokens,
+  relativeTime,
+  runtime,
+} from "@/lib/format";
+import { providerLabels, statusLabels } from "@/lib/labels";
 import type {
   OverviewData,
+  OverviewPatterns,
   ProjectSummary,
   SessionListItem,
 } from "@/lib/queries";
 
 interface OverviewViewProps {
   overview: OverviewData;
+  patterns: OverviewPatterns;
   running: SessionListItem[];
   attention: SessionListItem[];
   recentProjects: ProjectSummary[];
@@ -31,6 +40,7 @@ function level(value: number, max: number): number {
 
 export function OverviewView({
   overview,
+  patterns,
   running,
   attention,
   recentProjects,
@@ -41,12 +51,6 @@ export function OverviewView({
     const timer = window.setInterval(() => router.refresh(), 15_000);
     return () => window.clearInterval(timer);
   }, [router]);
-
-  const maxProvider = Math.max(
-    1,
-    ...overview.providerCounts.map((entry) => entry.count),
-  );
-  const maxDaily = Math.max(1, ...overview.daily.map((entry) => entry.count));
 
   return (
     <section className="relay-content">
@@ -88,6 +92,12 @@ export function OverviewView({
 
       <div className="overview-grid">
         <div className="overview-column">
+          <ActivityHeatmap cells={patterns.heatmap} />
+          <SessionLength length={patterns.length} />
+          <CostAtAGlance cost={patterns.costWeek} />
+        </div>
+
+        <div className="overview-column">
           <section className="card overview-card" aria-label="Running now">
             <div className="overview-card-head">
               <h3>Running now</h3>
@@ -121,76 +131,19 @@ export function OverviewView({
               </p>
             )}
           </section>
-        </div>
-
-        <div className="overview-column">
-          <section className="card overview-card" aria-label="Agent usage">
-            <div className="overview-card-head">
-              <h3>Agents this week</h3>
-            </div>
-            {overview.providerCounts.length ? (
-              overview.providerCounts.map((entry) => (
-                <Link
-                  key={entry.provider}
-                  className="dist-row"
-                  href={`/sessions?provider=${entry.provider}`}
-                >
-                  <span className={`badge ${providerBadges[entry.provider]}`}>
-                    {providerLabels[entry.provider]}
-                  </span>
-                  <span className="meter" aria-hidden>
-                    <i
-                      className={`meter-fill-${level(entry.count, maxProvider)}`}
-                    />
-                  </span>
-                  <span className="mono">{entry.count}</span>
-                </Link>
-              ))
-            ) : (
-              <p className="overview-empty">No sessions this week.</p>
-            )}
-          </section>
-
-          <section
-            className="card overview-card"
-            aria-label="Daily session activity"
-          >
-            <div className="overview-card-head">
-              <h3>Last 14 days</h3>
-              <span>
-                {overview.daily.reduce((a, d) => a + d.count, 0)} sessions
-              </span>
-            </div>
-            <div className="spark" role="img" aria-label="Sessions per day">
-              {overview.daily.map((day) => (
-                <span
-                  key={day.date}
-                  className="spark-slot"
-                  title={`${day.date}: ${day.count} sessions`}
-                >
-                  <i className={`spark-fill-${level(day.count, maxDaily)}`} />
-                </span>
-              ))}
-            </div>
-          </section>
-
           <section className="card overview-card" aria-label="Recent projects">
             <div className="overview-card-head">
               <h3>
                 <FolderKanban size={14} className="inline-icon" /> Recent
                 projects
               </h3>
-              <Link href="/sessions?view=projects&range=all">View all</Link>
+              <Link href="/projects">View all</Link>
             </div>
             {recentProjects.map((project) => (
               <Link
                 key={project.key}
                 className="project-session-row"
-                href={
-                  project.repository
-                    ? `/sessions?view=projects&range=all&q=${encodeURIComponent(project.repository)}`
-                    : "/sessions?view=projects&range=all"
-                }
+                href={`/projects?selected=${encodeURIComponent(project.key)}`}
               >
                 <span aria-hidden>
                   <LayoutDashboard size={13} />
@@ -214,7 +167,10 @@ export function OverviewView({
 
 function SessionLine({ session }: { session: SessionListItem }) {
   return (
-    <Link className="project-session-row" href={`/sessions/${session.id}`}>
+    <Link
+      className="project-session-row"
+      href={`/sessions?range=all&selected=${session.id}`}
+    >
       <span className={`status-label status-${session.status}`}>
         <i />
       </span>
@@ -228,5 +184,145 @@ function SessionLine({ session }: { session: SessionListItem }) {
       </div>
       <time>{relativeTime(session.updatedAt)}</time>
     </Link>
+  );
+}
+
+function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
+  const maxCount = Math.max(1, ...cells.map((cell) => cell.count));
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // cells[] is in day-major order (dayOfWeek*24 + hour) from the query.
+  const hourLabel = (hour: number) =>
+    hour % 3 === 0
+      ? hour === 0
+        ? "12a"
+        : hour < 12
+          ? `${hour}a`
+          : hour === 12
+            ? "12p"
+            : `${hour - 12}p`
+      : "";
+  return (
+    <section className="card overview-card" aria-label="Activity heatmap">
+      <div className="overview-card-head">
+        <h3>When you&apos;re active</h3>
+        <span>last 30 days</span>
+      </div>
+      <div className="heatmap" role="img" aria-label="Sessions by day and hour">
+        <span aria-hidden />
+        {Array.from({ length: 24 }, (_, hour) => (
+          <span key={`h${hour}`} className="heat-hour-label">
+            {hourLabel(hour)}
+          </span>
+        ))}
+        {days.map((day, dayIndex) => (
+          <Fragment key={day}>
+            <span className="heat-day-label">{day}</span>
+            {Array.from({ length: 24 }, (_, hour) => {
+              const cell = cells[dayIndex * 24 + hour];
+              return (
+                <span
+                  key={`${dayIndex}-${hour}`}
+                  className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
+                  title={`${day} ${hour}:00 — ${cell.count} sessions`}
+                />
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div className="heatmap-legend">
+        <span>fewer</span>
+        <span className="heatmap-legend-cells">
+          <span className="heat-fill-0" />
+          <span className="heat-fill-2" />
+          <span className="heat-fill-4" />
+          <span className="heat-fill-6" />
+          <span className="heat-fill-10" />
+        </span>
+        <span>more</span>
+      </div>
+    </section>
+  );
+}
+
+function SessionLength({ length }: { length: OverviewPatterns["length"] }) {
+  const maxBucket = Math.max(
+    1,
+    ...length.buckets.map((bucket) => bucket.count),
+  );
+  return (
+    <section className="card overview-card" aria-label="Session length">
+      <div className="overview-card-head">
+        <h3>
+          <Clock3 size={14} className="inline-icon" /> Session length
+        </h3>
+        <span>last 7 days · {length.sessionCount} sessions</span>
+      </div>
+      <div className="hist-list">
+        {length.buckets.map((bucket) => (
+          <div
+            key={bucket.label}
+            className="hist-row"
+            title={`${bucket.count} sessions`}
+          >
+            <span className="hist-label">{bucket.label}</span>
+            <span className="meter" aria-hidden>
+              <i className={`meter-fill-${level(bucket.count, maxBucket)}`} />
+            </span>
+            <span className="mono">{bucket.count}</span>
+          </div>
+        ))}
+      </div>
+      {length.medianMs !== null && length.longestMs !== null && (
+        <p className="hist-footnote">
+          Median <strong>{runtime(length.medianMs)}</strong> · longest{" "}
+          <strong>{runtime(length.longestMs)}</strong>
+          {length.longTailShare !== null && length.longTailShare > 0 && (
+            <>
+              {" · "}
+              sessions over 30 min hold{" "}
+              <strong>{Math.round(length.longTailShare * 100)}%</strong> of
+              runtime
+            </>
+          )}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function CostAtAGlance({ cost }: { cost: OverviewPatterns["costWeek"] }) {
+  const maxModel = Math.max(1, ...cost.topModels.map((model) => model.costUsd));
+  return (
+    <section className="card overview-card" aria-label="Cost this week">
+      <div className="overview-card-head">
+        <h3>Cost this week</h3>
+        <Link href="/usage">Full breakdown →</Link>
+      </div>
+      <div className="cost-total">
+        <strong className="mono">
+          {cost.costUsd === null ? "—" : formatCostUsd(cost.costUsd)}
+        </strong>
+        <span>
+          {cost.costUsd === null
+            ? `Unavailable · ${formatTokens(cost.tokens)}`
+            : `estimated · ${formatTokens(cost.tokens)}`}
+        </span>
+      </div>
+      {cost.topModels.length > 0 &&
+        cost.topModels.map((model) => (
+          <div
+            key={model.model}
+            className="cost-row"
+            title={`${model.model}: ${formatCostUsd(model.costUsd)}`}
+          >
+            <span className="cost-label mono">{model.model}</span>
+            <span className="meter" aria-hidden>
+              <i className={`meter-fill-${level(model.costUsd, maxModel)}`} />
+            </span>
+            <span className="mono">{formatCostUsd(model.costUsd)}</span>
+          </div>
+        ))}
+    </section>
   );
 }

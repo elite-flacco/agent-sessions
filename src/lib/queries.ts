@@ -934,14 +934,10 @@ export function getOverviewPatterns(): OverviewPatterns {
        WHERE started_at >= ? AND started_at <= ?`,
     )
     .all(lengthStart, new Date().toISOString()) as { runtimeMs: number }[];
-  const runtimes = lengthRows
-    .map((row) => row.runtimeMs)
-    .sort((a, b) => a - b);
+  const runtimes = lengthRows.map((row) => row.runtimeMs).sort((a, b) => a - b);
   const buckets = LENGTH_BUCKETS.map((bucket) => ({
     label: bucket.label,
-    count: runtimes.filter(
-      (ms) => ms >= bucket.min && ms < bucket.max,
-    ).length,
+    count: runtimes.filter((ms) => ms >= bucket.min && ms < bucket.max).length,
   }));
   const medianMs =
     runtimes.length > 0 ? runtimes[Math.floor(runtimes.length / 2)] : null;
