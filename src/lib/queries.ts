@@ -14,6 +14,10 @@ export interface SessionListItem {
   id: number;
   externalId: string;
   provider: AgentProvider;
+  parentExternalId: string | null;
+  sessionKind: "main" | "subagent";
+  agentLabel: string | null;
+  agentDepth: number;
   title: string;
   summary: string | null;
   repository: string | null;
@@ -28,6 +32,10 @@ export interface SessionListItem {
   cachedTokens: number | null;
   model: string | null;
   estimatedCostUsd: number | null;
+}
+
+export interface SessionTreeItem extends SessionListItem {
+  children: SessionTreeItem[];
 }
 
 export interface SessionDetail extends SessionListItem {
@@ -80,7 +88,27 @@ function cutoff(range?: string): string | undefined {
     : undefined;
 }
 
-export function getSessions(filters: SessionFilters): SessionListItem[] {
+function nestSessions(sessions: SessionListItem[]): SessionTreeItem[] {
+  const nodes = new Map<string, SessionTreeItem>();
+  for (const session of sessions)
+    nodes.set(`${session.provider}:${session.externalId}`, {
+      ...session,
+      children: [],
+    });
+  const roots: SessionTreeItem[] = [];
+  for (const node of nodes.values()) {
+    const parent = node.parentExternalId
+      ? nodes.get(`${node.provider}:${node.parentExternalId}`)
+      : undefined;
+    if (parent && parent !== node) parent.children.push(node);
+    else roots.push(node);
+  }
+  for (const node of nodes.values())
+    node.children.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  return roots;
+}
+
+export function getSessions(filters: SessionFilters): SessionTreeItem[] {
   const status = statusExpression("status", "updated_at");
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -109,13 +137,16 @@ export function getSessions(filters: SessionFilters): SessionListItem[] {
     params.push(date);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  return sqlite
+  const sessions = sqlite
     .prepare(
-      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+      `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+      session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+      title, summary, repository, cwd, branch, ${status} status,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY started_at DESC LIMIT 250`,
     )
     .all(staleCutoff(), ...params) as SessionListItem[];
+  return nestSessions(sessions);
 }
 
 export function getSessionEvents(sessionId: number): SessionEventRow[] {
@@ -131,12 +162,52 @@ export function getSession(sessionId: number): SessionDetail | null {
   return (
     (sqlite
       .prepare(
-        `SELECT id, external_id externalId, source_path sourcePath, provider, title, summary, repository, cwd, branch,
+        `SELECT id, external_id externalId, source_path sourcePath, provider,
+        parent_external_id parentExternalId, session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+        title, summary, repository, cwd, branch,
         ${status} status, started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
         output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
         FROM sessions WHERE id = ?`,
       )
       .get(staleCutoff(), sessionId) as SessionDetail | undefined) ?? null
+  );
+}
+
+export function getSessionChildren(session: SessionDetail): SessionListItem[] {
+  const status = statusExpression("status", "updated_at");
+  return sqlite
+    .prepare(
+      `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+       title, summary, repository, cwd, branch, ${status} status,
+       started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
+       output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
+       FROM sessions WHERE provider = ? AND parent_external_id = ? ORDER BY started_at`,
+    )
+    .all(
+      staleCutoff(),
+      session.provider,
+      session.externalId,
+    ) as SessionListItem[];
+}
+
+export function getSessionParent(
+  session: SessionDetail,
+): SessionListItem | null {
+  if (!session.parentExternalId) return null;
+  const status = statusExpression("status", "updated_at");
+  return (
+    (sqlite
+      .prepare(
+        `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+         session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+         title, summary, repository, cwd, branch, ${status} status,
+         started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
+         output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
+         FROM sessions WHERE provider = ? AND external_id = ?`,
+      )
+      .get(staleCutoff(), session.provider, session.parentExternalId) as
+      SessionListItem | undefined) ?? null
   );
 }
 
@@ -353,12 +424,30 @@ export function getProjectSessions(key: string): SessionListItem[] {
     : [staleCutoff(), key];
   return sqlite
     .prepare(
-      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+      `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+      session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+      title, summary, repository, cwd, branch, ${status} status,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions WHERE ${where}
     ORDER BY started_at DESC LIMIT 50`,
     )
     .all(...params) as SessionListItem[];
+}
+
+export interface OverviewPatterns {
+  heatmap: { dayOfWeek: number; hour: number; count: number }[];
+  length: {
+    buckets: { label: string; count: number }[];
+    medianMs: number | null;
+    longestMs: number | null;
+    longTailShare: number | null;
+    sessionCount: number;
+  };
+  costWeek: {
+    costUsd: number | null;
+    tokens: number;
+    topModels: { model: string; costUsd: number }[];
+  };
 }
 
 export interface OverviewData {
@@ -455,7 +544,9 @@ export function getRunningSessions(limit = 8): SessionListItem[] {
   const status = statusExpression("status", "updated_at");
   return sqlite
     .prepare(
-      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+      `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+      session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+      title, summary, repository, cwd, branch, ${status} status,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
     WHERE status = 'running' AND updated_at >= ? ORDER BY updated_at DESC LIMIT ?`,
@@ -468,7 +559,9 @@ export function getAttentionSessions(limit = 8): SessionListItem[] {
   const dayAgo = new Date(Date.now() - DAY_MS).toISOString();
   return sqlite
     .prepare(
-      `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,
+      `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
+      session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
+      title, summary, repository, cwd, branch, ${status} status,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
     WHERE ${status} IN ('interrupted', 'needs_attention') AND updated_at >= ?
@@ -788,4 +881,127 @@ export function getSyncState(): {
       "SELECT MAX(last_synced_at) lastSyncedAt, SUM(CASE WHEN parse_state = 'error' THEN 1 ELSE 0 END) errors, COUNT(*) sources FROM ingestion_sources",
     )
     .get() as { lastSyncedAt: string | null; errors: number; sources: number };
+}
+
+const PATTERNS_HEATMAP_DAYS = 30;
+const LENGTH_BUCKETS = [
+  { label: "< 2 min", min: 0, max: 2 * 60_000 },
+  { label: "2–10 min", min: 2 * 60_000, max: 10 * 60_000 },
+  { label: "10–30 min", min: 10 * 60_000, max: 30 * 60_000 },
+  { label: "30 min–1h", min: 30 * 60_000, max: 60 * 60_000 },
+  // The top bucket is open-ended so long-running sessions (> 2h) still count.
+  { label: "1h+", min: 60 * 60_000, max: Infinity },
+] as const;
+
+/**
+ * Derives the three overview "pattern" views from existing session and
+ * usage tables. The heatmap aggregates started_at over the trailing 30 days
+ * into a 7 (Mon=0) x 24 (hour) grid; the length histogram buckets the
+ * runtime expression over the trailing 7 days; the week cost reuses the
+ * pricing-trust rule (null when any usage row is unpriced).
+ */
+export function getOverviewPatterns(): OverviewPatterns {
+  // --- heatmap: 7x24 grid of session-start counts over 30 days ---
+  const heatStart = new Date(
+    Date.now() - PATTERNS_HEATMAP_DAYS * DAY_MS,
+  ).toISOString();
+  const heatRows = sqlite
+    .prepare(
+      `SELECT
+        (CAST(strftime('%w', started_at, 'weekday 1') AS INTEGER) + 6) % 7 AS dayOfWeek,
+        CAST(strftime('%H', started_at) AS INTEGER) AS hour,
+        COUNT(*) AS count
+       FROM sessions WHERE started_at >= ?
+       GROUP BY dayOfWeek, hour`,
+    )
+    .all(heatStart) as { dayOfWeek: number; hour: number; count: number }[];
+  const heatMap = new Map(
+    heatRows.map((row) => [row.dayOfWeek * 24 + row.hour, row.count]),
+  );
+  const heatmap = Array.from({ length: 7 * 24 }, (_, index) => ({
+    dayOfWeek: Math.floor(index / 24),
+    hour: index % 24,
+    count: heatMap.get(index) ?? 0,
+  }));
+
+  // --- length histogram: bucket runtime over 7 days ---
+  const lengthStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const lengthRows = sqlite
+    .prepare(
+      `SELECT
+        CAST((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000 AS INTEGER) AS runtimeMs
+       FROM sessions
+       WHERE started_at >= ? AND started_at <= ?`,
+    )
+    .all(lengthStart, new Date().toISOString()) as { runtimeMs: number }[];
+  const runtimes = lengthRows
+    .map((row) => row.runtimeMs)
+    .sort((a, b) => a - b);
+  const buckets = LENGTH_BUCKETS.map((bucket) => ({
+    label: bucket.label,
+    count: runtimes.filter(
+      (ms) => ms >= bucket.min && ms < bucket.max,
+    ).length,
+  }));
+  const medianMs =
+    runtimes.length > 0 ? runtimes[Math.floor(runtimes.length / 2)] : null;
+  const longestMs = runtimes.length > 0 ? runtimes.at(-1)! : null;
+  const longRuntimeMs = runtimes
+    .filter((ms) => ms >= 30 * 60_000)
+    .reduce((sum, ms) => sum + ms, 0);
+  const totalRuntimeMs = runtimes.reduce((sum, ms) => sum + ms, 0);
+  const longTailShare =
+    totalRuntimeMs > 0 ? longRuntimeMs / totalRuntimeMs : null;
+
+  // --- week cost: reuse pricing-trust rule over 7-day window ---
+  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const usageRows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
+    .all(weekStart) as UsageJoinRow[];
+  let costUsd = 0;
+  let tokens = 0;
+  let priced = true;
+  const byModel = new Map<string, { costUsd: number; priced: boolean }>();
+  for (const row of usageRows) {
+    const rowTokens =
+      row.inputTokens +
+      row.outputTokens +
+      row.cacheReadTokens +
+      row.cacheWriteTokens;
+    tokens += rowTokens;
+    const cost = rowCost(row);
+    const modelKey = normalizeModel(row.model);
+    const model = byModel.get(modelKey) ?? { costUsd: 0, priced: true };
+    if (cost === undefined) {
+      priced = false;
+      model.priced = false;
+    } else {
+      costUsd += cost;
+      model.costUsd += cost;
+    }
+    byModel.set(modelKey, model);
+  }
+  const topModels = [...byModel.entries()]
+    .map(([model, totals]) => ({
+      model,
+      costUsd: totals.priced ? totals.costUsd : 0,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd)
+    .slice(0, 3);
+
+  return {
+    heatmap,
+    length: {
+      buckets,
+      medianMs,
+      longestMs,
+      longTailShare,
+      sessionCount: runtimes.length,
+    },
+    costWeek: {
+      costUsd: usageRows.length && priced ? costUsd : null,
+      tokens,
+      topModels,
+    },
+  };
 }
