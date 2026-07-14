@@ -4,6 +4,7 @@ import {
   getAttentionSessions,
   getCollectorHealth,
   getOverview,
+  getOverviewPatterns,
   getProjects,
   getRunningSessions,
 } from "@/lib/queries";
@@ -20,6 +21,7 @@ export default async function OverviewPage() {
       />
       <OverviewView
         overview={getOverview()}
+        patterns={getOverviewPatterns()}
         running={getRunningSessions()}
         attention={getAttentionSessions()}
         recentProjects={getProjects()
