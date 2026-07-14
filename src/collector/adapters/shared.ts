@@ -174,6 +174,7 @@ export async function parseJsonl(
     const terminalStatus = strategy.terminalStatus(rows);
     const session: NormalizedSession = {
       externalId: strategy.identify(rows, filePath),
+      sourcePath: filePath,
       provider: strategy.provider,
       title,
       summary: sessionSummary(strategy.provider, cwd),

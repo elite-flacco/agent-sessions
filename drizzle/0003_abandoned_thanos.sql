@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `source_path` text;

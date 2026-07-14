@@ -39,7 +39,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "4";
+const NORMALIZATION_VERSION = "5";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -65,13 +65,13 @@ function persistSession(session: NormalizedSession): void {
     sqlite
       .prepare(
         `INSERT INTO sessions (
-        external_id, provider, title, summary, repository, cwd, branch, status, started_at, ended_at,
+        external_id, source_path, provider, title, summary, repository, cwd, branch, status, started_at, ended_at,
         updated_at, files_changed, additions, deletions, input_tokens, output_tokens, cached_tokens, model, estimated_cost_usd
       ) VALUES (
-        @externalId, @provider, @title, @summary, @repository, @cwd, @branch, @status, @startedAt, @endedAt,
+        @externalId, @sourcePath, @provider, @title, @summary, @repository, @cwd, @branch, @status, @startedAt, @endedAt,
         @updatedAt, @filesChanged, @additions, @deletions, @inputTokens, @outputTokens, @cachedTokens, @model, @estimatedCostUsd
       ) ON CONFLICT(provider, external_id) DO UPDATE SET
-        title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
+        source_path=excluded.source_path, title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
         cwd=COALESCE(excluded.cwd, sessions.cwd), branch=COALESCE(excluded.branch, sessions.branch), status=excluded.status,
         started_at=MIN(excluded.started_at, sessions.started_at), ended_at=COALESCE(excluded.ended_at, sessions.ended_at),
         updated_at=MAX(excluded.updated_at, sessions.updated_at), input_tokens=COALESCE(excluded.input_tokens, sessions.input_tokens),

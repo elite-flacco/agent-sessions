@@ -1,0 +1,34 @@
+import { notFound } from "next/navigation";
+import { SessionDetailView } from "@/components/session-detail";
+import { Sidebar } from "@/components/sidebar";
+import { getCollectorHealth, getSession, getSessionUsage } from "@/lib/queries";
+import { readSessionTranscript } from "@/lib/transcript";
+
+export const dynamic = "force-dynamic";
+
+interface SessionPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function SessionPage({ params }: SessionPageProps) {
+  const { id } = await params;
+  const sessionId = Number(id);
+  if (!Number.isInteger(sessionId) || sessionId < 1) notFound();
+  const session = getSession(sessionId);
+  if (!session) notFound();
+  const health = getCollectorHealth();
+  const transcript = await readSessionTranscript(session);
+  return (
+    <main className="relay-shell">
+      <Sidebar
+        connectedAgents={health.connectedAgents}
+        sourceErrors={health.parseErrors}
+      />
+      <SessionDetailView
+        session={session}
+        usage={getSessionUsage(session.id)}
+        transcript={transcript}
+      />
+    </main>
+  );
+}

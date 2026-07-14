@@ -5,7 +5,6 @@ import {
   BarChart3,
   CircleDot,
   Database,
-  FolderKanban,
   LayoutDashboard,
   MoreHorizontal,
   Settings,
@@ -39,7 +38,7 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
         />
         <NavLink
           href="/sessions"
-          active={pathname === "/sessions"}
+          active={pathname.startsWith("/sessions") || pathname === "/projects"}
           icon={<Database size={15} />}
           label="Sessions"
         />
@@ -48,12 +47,6 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           active={pathname === "/activity"}
           icon={<Activity size={15} />}
           label="Live activity"
-        />
-        <NavLink
-          href="/projects"
-          active={pathname === "/projects"}
-          icon={<FolderKanban size={15} />}
-          label="Projects"
         />
         <NavLink
           href="/usage"

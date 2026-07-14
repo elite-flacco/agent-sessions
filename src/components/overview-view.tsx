@@ -180,13 +180,17 @@ export function OverviewView({
                 <FolderKanban size={14} className="inline-icon" /> Recent
                 projects
               </h3>
-              <Link href="/projects">View all</Link>
+              <Link href="/sessions?view=projects&range=all">View all</Link>
             </div>
             {recentProjects.map((project) => (
               <Link
                 key={project.key}
                 className="project-session-row"
-                href={`/projects?selected=${encodeURIComponent(project.key)}`}
+                href={
+                  project.repository
+                    ? `/sessions?view=projects&range=all&q=${encodeURIComponent(project.repository)}`
+                    : "/sessions?view=projects&range=all"
+                }
               >
                 <span aria-hidden>
                   <LayoutDashboard size={13} />
@@ -210,10 +214,7 @@ export function OverviewView({
 
 function SessionLine({ session }: { session: SessionListItem }) {
   return (
-    <Link
-      className="project-session-row"
-      href={`/sessions?range=all&selected=${session.id}`}
-    >
+    <Link className="project-session-row" href={`/sessions/${session.id}`}>
       <span className={`status-label status-${session.status}`}>
         <i />
       </span>

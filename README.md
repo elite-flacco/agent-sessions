@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite without retaining full prompts, responses, reasoning, credentials, or tool payload bodies.
+Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite. Detailed session pages can read messages and tool payloads directly from the original local JSONL file without copying them into Relay's database.
 
 ## Requirements
 
@@ -27,13 +27,14 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 
 ## Pages
 
-| Route       | What it shows                                                                                                                                                                                                                                                                                                           |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`         | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                                                                                   |
-| `/sessions` | The session table with search, provider/status/date filters, and the inspector. Filters and selection are URL-backed.                                                                                                                                                                                                   |
-| `/activity` | Live activity — events from sessions with an unfinished turn updated in the last 10 minutes, grouped by session, with provider/repository filters, pause/resume, follow-newest, and collector health. While open, it triggers an incremental ingest at most every 10 seconds, so it stays live without `collect:watch`. |
-| `/projects` | Git-backed work grouped by repository with runtime, branches, agents, and session history. One-off sessions without detectable Git context are combined under "Tasks" instead of appearing as projects.                                                                                                                 |
-| `/usage`    | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                        |
+| Route            | What it shows                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                                                                                   |
+| `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. Project rollups reflect the active session filters. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab.                                                     |
+| `/sessions/[id]` | A full-width session detail view with metadata and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                                     |
+| `/activity`      | Live activity — events from sessions with an unfinished turn updated in the last 10 minutes, grouped by session, with provider/repository filters, pause/resume, follow-newest, and collector health. While open, it triggers an incremental ingest at most every 10 seconds, so it stays live without `collect:watch`. |
+| `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                     |
+| `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                        |
 
 Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted.
 
@@ -65,3 +66,5 @@ Zcode's rollout (`model_io`) files carry model usage but no working directory, s
 ## Privacy boundary
 
 The adapters derive short task titles, workspace metadata, timestamps, model/usage summaries when trustworthy, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are not written to Relay's database.
+
+Each session stores only the path of its original local source file. When `/sessions/[id]` is opened, Relay reads that JSONL file on demand and normalizes supported user messages, assistant messages, tool arguments, and tool results for display. Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view. Provider-injected context can still appear when a provider records it as part of a user or assistant message.

@@ -30,6 +30,10 @@ export interface SessionListItem {
   estimatedCostUsd: number | null;
 }
 
+export interface SessionDetail extends SessionListItem {
+  sourcePath: string | null;
+}
+
 export interface SessionEventRow {
   id: number;
   kind: string;
@@ -120,6 +124,20 @@ export function getSessionEvents(sessionId: number): SessionEventRow[] {
       "SELECT id, kind, title, detail, occurred_at occurredAt FROM activity_events WHERE session_id = ? ORDER BY occurred_at DESC LIMIT 40",
     )
     .all(sessionId) as SessionEventRow[];
+}
+
+export function getSession(sessionId: number): SessionDetail | null {
+  const status = statusExpression("status", "updated_at");
+  return (
+    (sqlite
+      .prepare(
+        `SELECT id, external_id externalId, source_path sourcePath, provider, title, summary, repository, cwd, branch,
+        ${status} status, started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
+        output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
+        FROM sessions WHERE id = ?`,
+      )
+      .get(staleCutoff(), sessionId) as SessionDetail | undefined) ?? null
+  );
 }
 
 export function getSummary(): {
@@ -273,20 +291,51 @@ function isRepositoryBacked(row: ProjectRow): boolean {
   return (row.workdirs?.split(",") ?? []).some((cwd) => gitRoot(cwd));
 }
 
-export function getProjects(): ProjectSummary[] {
-  const rows = sqlite
-    .prepare(
-      `SELECT repository,
-        COUNT(*) sessionCount,
-        SUM(CASE WHEN status = 'running' AND updated_at >= ? THEN 1 ELSE 0 END) activeCount,
-        GROUP_CONCAT(DISTINCT provider) providers,
-        GROUP_CONCAT(DISTINCT branch) branches,
-        GROUP_CONCAT(DISTINCT cwd) workdirs,
-        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) totalRuntimeMs,
-        MAX(updated_at) lastActivityAt
-      FROM sessions GROUP BY repository ORDER BY lastActivityAt DESC`,
-    )
-    .all(staleCutoff()) as ProjectRow[];
+function projectsFromSessions(sessions: SessionListItem[]): ProjectSummary[] {
+  const byRepository = new Map<string | null, SessionListItem[]>();
+  for (const session of sessions) {
+    const group = byRepository.get(session.repository) ?? [];
+    group.push(session);
+    byRepository.set(session.repository, group);
+  }
+  const rows: ProjectRow[] = [...byRepository.entries()].map(
+    ([repository, group]) => {
+      const branches = unique(
+        group.flatMap((session) => (session.branch ? [session.branch] : [])),
+      );
+      const workdirs = unique(
+        group.flatMap((session) => (session.cwd ? [session.cwd] : [])),
+      );
+      return {
+        repository,
+        sessionCount: group.length,
+        activeCount: group.filter((session) => session.status === "running")
+          .length,
+        providers: unique(group.map((session) => session.provider)).join(","),
+        branches: branches.length ? branches.join(",") : null,
+        workdirs: workdirs.length ? workdirs.join(",") : null,
+        totalRuntimeMs: group.reduce(
+          (total, session) =>
+            total +
+            Math.max(
+              0,
+              new Date(session.endedAt ?? session.updatedAt).getTime() -
+                new Date(session.startedAt).getTime(),
+            ),
+          0,
+        ),
+        lastActivityAt: group.reduce(
+          (latest, session) =>
+            session.updatedAt > latest ? session.updatedAt : latest,
+          group[0].updatedAt,
+        ),
+      };
+    },
+  );
+  return summarizeProjects(rows);
+}
+
+function summarizeProjects(rows: ProjectRow[]): ProjectSummary[] {
   const summaries: ProjectSummary[] = rows.map((row) => ({
     key: row.repository ?? UNKNOWN_PROJECT_KEY,
     repository: row.repository,
@@ -326,6 +375,24 @@ export function getProjects(): ProjectSummary[] {
       ),
     },
   ];
+}
+
+export function getProjects(filters?: SessionFilters): ProjectSummary[] {
+  if (filters) return projectsFromSessions(getSessions(filters));
+  const rows = sqlite
+    .prepare(
+      `SELECT repository,
+        COUNT(*) sessionCount,
+        SUM(CASE WHEN status = 'running' AND updated_at >= ? THEN 1 ELSE 0 END) activeCount,
+        GROUP_CONCAT(DISTINCT provider) providers,
+        GROUP_CONCAT(DISTINCT branch) branches,
+        GROUP_CONCAT(DISTINCT cwd) workdirs,
+        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) totalRuntimeMs,
+        MAX(updated_at) lastActivityAt
+      FROM sessions GROUP BY repository ORDER BY lastActivityAt DESC`,
+    )
+    .all(staleCutoff()) as ProjectRow[];
+  return summarizeProjects(rows);
 }
 
 export function getProjectSessions(key: string): SessionListItem[] {

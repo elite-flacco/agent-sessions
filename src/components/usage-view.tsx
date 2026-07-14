@@ -141,7 +141,7 @@ export function UsageView({ usage }: UsageViewProps) {
               <h3>
                 <FolderKanban size={14} className="inline-icon" /> By project
               </h3>
-              <Link href="/projects">View projects</Link>
+              <Link href="/sessions?view=projects">View projects</Link>
             </div>
             {usage.byProject.length ? (
               usage.byProject

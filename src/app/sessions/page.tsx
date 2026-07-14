@@ -1,9 +1,8 @@
-import { Dashboard } from "@/components/dashboard";
+import { Dashboard, type WorkspaceView } from "@/components/dashboard";
 import { Sidebar } from "@/components/sidebar";
 import {
-  getSessionEvents,
+  getProjects,
   getSessions,
-  getSessionUsage,
   getSummary,
   getSyncState,
   getUsageSummary,
@@ -27,14 +26,10 @@ export default async function Home({ searchParams }: HomeProps) {
     provider: first(params.provider),
     status: first(params.status),
     range: first(params.range),
-    selected: first(params.selected),
   };
   const sessions = getSessions(filters);
-  const selected =
-    sessions.find((session) => String(session.id) === filters.selected) ??
-    sessions[0];
-  const events = selected ? getSessionEvents(selected.id) : [];
-  const usage = selected ? getSessionUsage(selected.id) : null;
+  const view: WorkspaceView =
+    first(params.view) === "projects" ? "projects" : "sessions";
   const summary = getSummary();
   const syncState = getSyncState();
   return (
@@ -45,13 +40,12 @@ export default async function Home({ searchParams }: HomeProps) {
       />
       <Dashboard
         sessions={sessions}
-        selected={selected ?? null}
-        usage={usage}
-        events={events}
+        projects={getProjects(filters)}
         summary={summary}
         syncState={syncState}
         costToday={getUsageSummary().today}
         filters={filters}
+        view={view}
       />
     </main>
   );

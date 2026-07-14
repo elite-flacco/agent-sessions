@@ -12,6 +12,7 @@ export const sessions = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     externalId: text("external_id").notNull(),
+    sourcePath: text("source_path"),
     provider: text("provider").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),

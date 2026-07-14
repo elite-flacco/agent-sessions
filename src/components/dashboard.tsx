@@ -5,40 +5,29 @@ import {
   ChevronDown,
   CircleDot,
   Database,
+  ExternalLink,
+  FolderKanban,
   LoaderCircle,
-  MoreHorizontal,
   RefreshCw,
   Search,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import {
-  elapsed,
-  formatCostUsd,
-  formatTokens,
-  relativeTime,
-  runtime,
-} from "@/lib/format";
-import {
-  costSourceLabels,
-  providerBadges,
-  providerLabels,
-  statusLabels,
-} from "@/lib/labels";
+import { elapsed, formatCostUsd, relativeTime, runtime } from "@/lib/format";
+import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type {
-  SessionEventRow,
+  ProjectSummary,
   SessionFilters,
   SessionListItem,
-  SessionUsageDetail,
   UsageWindow,
 } from "@/lib/queries";
-import { ActivityRow } from "./activity-row";
+
+export type WorkspaceView = "sessions" | "projects";
 
 interface DashboardProps {
   sessions: SessionListItem[];
-  selected: SessionListItem | null;
-  usage: SessionUsageDetail | null;
-  events: SessionEventRow[];
+  projects: ProjectSummary[];
   summary: {
     sessionsToday: number;
     activeNow: number;
@@ -48,22 +37,17 @@ interface DashboardProps {
   syncState: { lastSyncedAt: string | null; errors: number; sources: number };
   costToday: UsageWindow;
   filters: SessionFilters;
-}
-
-function tokens(session: SessionListItem): string {
-  const total = (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
-  return total ? formatTokens(total) : "Unavailable";
+  view: WorkspaceView;
 }
 
 export function Dashboard({
   sessions,
-  selected,
-  usage,
-  events,
+  projects,
   summary,
   syncState,
   costToday,
   filters,
+  view,
 }: DashboardProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,10 +60,10 @@ export function Dashboard({
     const isDefault =
       !value ||
       (name !== "range" && value === "all") ||
-      (name === "range" && value === "7d");
+      (name === "range" && value === "7d") ||
+      (name === "view" && value === "sessions");
     if (isDefault) params.delete(name);
     else params.set(name, value);
-    if (name !== "selected") params.delete("selected");
     startTransition(() =>
       router.replace(
         params.size ? `${pathname}?${params.toString()}` : pathname,
@@ -114,7 +98,7 @@ export function Dashboard({
       <header className="page-header">
         <div>
           <h1>Sessions</h1>
-          <p>Every coding agent, one activity stream.</p>
+          <p>Browse individual runs and project-level rollups in one place.</p>
         </div>
         <button
           className="btn btn-outline"
@@ -175,7 +159,7 @@ export function Dashboard({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search sessions, repos, branches…"
-            aria-label="Search sessions"
+            aria-label="Search sessions and projects"
           />
           <kbd>⌘ K</kbd>
         </label>
@@ -226,64 +210,204 @@ export function Dashboard({
           </span>
         </div>
       )}
-      <div className={`workspace-grid ${isPending ? "workspace-loading" : ""}`}>
-        <section className="session-panel" aria-label="Agent sessions">
-          <div className="session-table-head">
-            <span>Session</span>
-            <span>Agent</span>
-            <span>Status</span>
-            <span>Started</span>
-            <span>Duration</span>
-          </div>
-          {sessions.length ? (
-            sessions.map((session) => (
-              <button
-                key={session.id}
-                className={`session-row ${selected?.id === session.id ? "session-selected" : ""}`}
-                onClick={() => updateParam("selected", String(session.id))}
-              >
-                <div className="session-primary">
-                  <strong>{session.title}</strong>
-                  <span className="mono">
-                    {session.repository ?? "Unknown workspace"}
-                    {session.branch ? ` · ${session.branch}` : ""}
-                  </span>
-                </div>
-                <div>
-                  <span className={`badge ${providerBadges[session.provider]}`}>
-                    {providerLabels[session.provider]}
-                  </span>
-                </div>
-                <div className={`status-label status-${session.status}`}>
-                  <i />
-                  {statusLabels[session.status]}
-                </div>
-                <span className="mono session-secondary">
-                  {relativeTime(session.startedAt)}
-                </span>
-                <span className="mono session-secondary">
-                  {elapsed(
-                    session.startedAt,
-                    session.endedAt ?? session.updatedAt,
-                  )}
-                </span>
-              </button>
-            ))
-          ) : (
-            <EmptyState
-              hasFilters={Boolean(
-                filters.q || filters.provider || filters.status,
-              )}
-              onSync={sync}
-            />
-          )}
-          <footer className="session-footer">
-            <span>Showing {sessions.length} sessions</span>
-            <span>{isPending ? "Updating…" : "Updated from local files"}</span>
-          </footer>
-        </section>
-        <SessionInspector session={selected} usage={usage} events={events} />
+
+      <div className="workspace-switcher" role="tablist" aria-label="Browse by">
+        <button
+          className={
+            view === "sessions" ? "workspace-tab tab-active" : "workspace-tab"
+          }
+          role="tab"
+          aria-selected={view === "sessions"}
+          onClick={() => updateParam("view", "sessions")}
+        >
+          <Database size={14} />
+          Sessions
+          <span>{sessions.length}</span>
+        </button>
+        <button
+          className={
+            view === "projects" ? "workspace-tab tab-active" : "workspace-tab"
+          }
+          role="tab"
+          aria-selected={view === "projects"}
+          onClick={() => updateParam("view", "projects")}
+        >
+          <FolderKanban size={14} />
+          Projects
+          <span>{projects.length}</span>
+        </button>
       </div>
+
+      <div className={isPending ? "workspace-loading" : ""}>
+        {view === "projects" ? (
+          <ProjectsTable projects={projects} isPending={isPending} />
+        ) : (
+          <SessionsTable
+            sessions={sessions}
+            filters={filters}
+            isPending={isPending}
+            onSync={sync}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SessionsTable({
+  sessions,
+  filters,
+  isPending,
+  onSync,
+}: {
+  sessions: SessionListItem[];
+  filters: SessionFilters;
+  isPending: boolean;
+  onSync: () => void;
+}) {
+  return (
+    <section
+      className="session-panel workspace-table"
+      aria-label="Agent sessions"
+    >
+      <div className="session-table-head">
+        <span>Session</span>
+        <span>Agent</span>
+        <span>Status</span>
+        <span>Started</span>
+        <span>Duration</span>
+      </div>
+      {sessions.length ? (
+        sessions.map((session) => (
+          <div key={session.id} className="session-row">
+            <div className="session-primary">
+              <div className="session-title-actions">
+                <Link href={`/sessions/${session.id}`}>{session.title}</Link>
+                <Link
+                  href={`/sessions/${session.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="session-open-link"
+                  aria-label={`Open ${session.title} in a new tab`}
+                  title="Open in new tab"
+                >
+                  <ExternalLink size={13} />
+                </Link>
+              </div>
+              <span className="mono">
+                {session.repository ?? "Unknown workspace"}
+                {session.branch ? ` · ${session.branch}` : ""}
+              </span>
+            </div>
+            <div>
+              <span className={`badge ${providerBadges[session.provider]}`}>
+                {providerLabels[session.provider]}
+              </span>
+            </div>
+            <div className={`status-label status-${session.status}`}>
+              <i />
+              {statusLabels[session.status]}
+            </div>
+            <span className="mono session-secondary">
+              {relativeTime(session.startedAt)}
+            </span>
+            <span className="mono session-secondary">
+              {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
+            </span>
+          </div>
+        ))
+      ) : (
+        <EmptyState
+          hasFilters={Boolean(filters.q || filters.provider || filters.status)}
+          onSync={onSync}
+        />
+      )}
+      <footer className="session-footer">
+        <span>Showing {sessions.length} sessions</span>
+        <span>{isPending ? "Updating…" : "Updated from local files"}</span>
+      </footer>
+    </section>
+  );
+}
+
+function ProjectsTable({
+  projects,
+  isPending,
+}: {
+  projects: ProjectSummary[];
+  isPending: boolean;
+}) {
+  const projectCount = projects.filter(
+    (project) => project.category === "project",
+  ).length;
+  const taskGroup = projects.find((project) => project.category === "task");
+  return (
+    <section className="session-panel workspace-table" aria-label="Projects">
+      <div className="project-table-head session-table-head">
+        <span>Project</span>
+        <span>Agents</span>
+        <span>Sessions</span>
+        <span>Runtime</span>
+        <span>Last activity</span>
+      </div>
+      {projects.length ? (
+        projects.map((project) => (
+          <div key={project.key} className="project-row session-row">
+            <div className="session-primary">
+              <strong>
+                {project.category === "task" ? "Tasks" : project.repository}
+                {project.activeCount > 0 && (
+                  <span className="project-active-dot" aria-hidden />
+                )}
+              </strong>
+              <span className="mono">
+                {project.category === "task"
+                  ? `${project.workdirs.length} one-off workspaces without Git context`
+                  : project.workdirs.length
+                    ? project.workdirs.join(" · ")
+                    : "No working directory recorded"}
+              </span>
+            </div>
+            <div className="project-badges">
+              {project.providers.map((provider) => (
+                <span
+                  key={provider}
+                  className={`badge ${providerBadges[provider]}`}
+                >
+                  {providerLabels[provider]}
+                </span>
+              ))}
+            </div>
+            <span className="mono session-secondary">
+              {project.sessionCount}
+              {project.activeCount > 0
+                ? ` (${project.activeCount} active)`
+                : ""}
+            </span>
+            <span className="mono session-secondary">
+              {runtime(project.totalRuntimeMs)}
+            </span>
+            <span className="mono session-secondary">
+              {relativeTime(project.lastActivityAt)}
+            </span>
+          </div>
+        ))
+      ) : (
+        <div className="empty-state">
+          <FolderKanban size={24} />
+          <h3>No matching projects</h3>
+          <p>Adjust the shared filters to widen the project rollup.</p>
+        </div>
+      )}
+      <footer className="session-footer">
+        <span>
+          Showing {projectCount} projects
+          {taskGroup ? ` · ${taskGroup.sessionCount} tasks` : ""}
+        </span>
+        <span>
+          {isPending ? "Updating…" : "Updated from filtered sessions"}
+        </span>
+      </footer>
     </section>
   );
 }
@@ -318,6 +442,7 @@ interface FilterSelectProps {
   options: { value: string; label: string }[];
   compact?: boolean;
 }
+
 function FilterSelect({
   label,
   value,
@@ -368,98 +493,6 @@ function EmptyState({
           Sync activity
         </button>
       )}
-    </div>
-  );
-}
-
-function SessionInspector({
-  session,
-  usage,
-  events,
-}: {
-  session: SessionListItem | null;
-  usage: SessionUsageDetail | null;
-  events: SessionEventRow[];
-}) {
-  if (!session)
-    return (
-      <aside className="inspector inspector-empty">
-        <Database size={24} />
-        <p>Select a session to inspect its activity.</p>
-      </aside>
-    );
-  return (
-    <aside className="inspector">
-      <div className="inspector-heading">
-        <span className="mono">
-          {session.provider.toUpperCase()} · {session.externalId.slice(0, 8)}
-        </span>
-        <MoreHorizontal size={16} />
-      </div>
-      <h2>{session.title}</h2>
-      <div className="inspector-badges">
-        <span className={`badge ${providerBadges[session.provider]}`}>
-          {providerLabels[session.provider]}
-        </span>
-        <span className={`status-label status-${session.status}`}>
-          <i />
-          {statusLabels[session.status]}
-        </span>
-      </div>
-      <p>{session.summary}</p>
-      <div className="detail-grid">
-        <Detail
-          label="Repository"
-          value={session.repository ?? "Unavailable"}
-        />
-        <Detail label="Branch" value={session.branch ?? "Unavailable"} mono />
-        <Detail label="Tokens" value={tokens(session)} />
-        <Detail
-          label="Cache"
-          value={
-            session.cachedTokens ? formatTokens(session.cachedTokens) : "None"
-          }
-        />
-        <Detail
-          label="Cost"
-          value={
-            usage && usage.costUsd !== null
-              ? `${formatCostUsd(usage.costUsd)} · ${costSourceLabels[usage.costSource]}`
-              : "Unavailable"
-          }
-        />
-        <Detail label="Model" value={session.model ?? "Unavailable"} mono />
-      </div>
-      <div className="activity-heading">
-        <span className="eyebrow">Activity</span>
-        <span>{events.length} events</span>
-      </div>
-      <div className="activity-list">
-        {events.length ? (
-          events.map((event) => <ActivityRow key={event.id} event={event} />)
-        ) : (
-          <p>No normalized activity events are available for this session.</p>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-function Detail({
-  label,
-  value,
-  mono,
-  wide,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  wide?: boolean;
-}) {
-  return (
-    <div className={wide ? "detail-wide" : ""}>
-      <span className="eyebrow">{label}</span>
-      <strong className={mono ? "mono" : ""}>{value}</strong>
     </div>
   );
 }

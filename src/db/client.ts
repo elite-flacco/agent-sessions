@@ -17,6 +17,7 @@ sqlite.exec(`
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   external_id TEXT NOT NULL,
+  source_path TEXT,
   provider TEXT NOT NULL,
   title TEXT NOT NULL,
   summary TEXT,

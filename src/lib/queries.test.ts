@@ -216,6 +216,14 @@ describe("activity stream queries", () => {
     });
   });
 
+  it("applies the shared session filters to project rollups", () => {
+    const projects = queries.getProjects({ provider: "codex", range: "all" });
+    expect(projects.map((project) => project.key).sort()).toEqual([
+      "beacon",
+      "relay",
+    ]);
+  });
+
   it("lists session history for a project", () => {
     expect(queries.getProjectSessions("relay")[0].title).toBe(
       "Build Relay filters",
