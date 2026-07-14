@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Blocks,
   CircleDot,
   Database,
   LayoutDashboard,
@@ -46,6 +47,12 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           active={pathname === "/usage"}
           icon={<BarChart3 size={15} />}
           label="Usage & cost"
+        />
+        <NavLink
+          href="/agents"
+          active={pathname === "/agents"}
+          icon={<Blocks size={15} />}
+          label="Agent setup"
         />
       </nav>
       <div className="sidebar-footer">
