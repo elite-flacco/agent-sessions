@@ -1,7 +1,10 @@
+import fs from "node:fs";
+import path from "node:path";
 import { sqlite } from "@/db/client";
 import { normalizeModel, usageCostUsd } from "./pricing";
 import {
   UNKNOWN_PROJECT_KEY,
+  TASKS_PROJECT_KEY,
   type AgentProvider,
   type CostSource,
   type SessionStatus,
@@ -179,8 +182,8 @@ export function getActivityStream(
   filters: ActivityStreamFilters,
   limit = 120,
 ): ActivityStreamRow[] {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+  const clauses = ["s.status = 'running' AND s.updated_at >= ?"];
+  const params: unknown[] = [staleCutoff()];
   if (filters.provider && filters.provider !== "all") {
     clauses.push("s.provider = ?");
     params.push(filters.provider);
@@ -225,6 +228,7 @@ export function countSessions(): number {
 export interface ProjectSummary {
   key: string;
   repository: string | null;
+  category: "project" | "task";
   sessionCount: number;
   activeCount: number;
   providers: AgentProvider[];
@@ -245,6 +249,30 @@ interface ProjectRow {
   lastActivityAt: string;
 }
 
+function gitRoot(cwd: string): string | null {
+  let current = path.resolve(cwd);
+  while (true) {
+    if (fs.existsSync(path.join(current, ".git"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
+}
+
+function isRepositoryBacked(row: ProjectRow): boolean {
+  if (
+    (row.branches?.split(",") ?? []).some(
+      (branch) => branch.toUpperCase() !== "HEAD",
+    )
+  )
+    return true;
+  return (row.workdirs?.split(",") ?? []).some((cwd) => gitRoot(cwd));
+}
+
 export function getProjects(): ProjectSummary[] {
   const rows = sqlite
     .prepare(
@@ -259,9 +287,10 @@ export function getProjects(): ProjectSummary[] {
       FROM sessions GROUP BY repository ORDER BY lastActivityAt DESC`,
     )
     .all(staleCutoff()) as ProjectRow[];
-  return rows.map((row) => ({
+  const summaries: ProjectSummary[] = rows.map((row) => ({
     key: row.repository ?? UNKNOWN_PROJECT_KEY,
     repository: row.repository,
+    category: isRepositoryBacked(row) ? "project" : "task",
     sessionCount: row.sessionCount,
     activeCount: row.activeCount,
     providers: (row.providers?.split(",") ?? []) as AgentProvider[],
@@ -270,14 +299,49 @@ export function getProjects(): ProjectSummary[] {
     totalRuntimeMs: row.totalRuntimeMs,
     lastActivityAt: row.lastActivityAt,
   }));
+  const projects = summaries.filter(
+    (summary) => summary.category === "project",
+  );
+  const tasks = summaries.filter((summary) => summary.category === "task");
+  if (!tasks.length) return projects;
+  return [
+    ...projects,
+    {
+      key: TASKS_PROJECT_KEY,
+      repository: null,
+      category: "task",
+      sessionCount: tasks.reduce((total, task) => total + task.sessionCount, 0),
+      activeCount: tasks.reduce((total, task) => total + task.activeCount, 0),
+      providers: unique(tasks.flatMap((task) => task.providers)),
+      branches: [],
+      workdirs: unique(tasks.flatMap((task) => task.workdirs)),
+      totalRuntimeMs: tasks.reduce(
+        (total, task) => total + task.totalRuntimeMs,
+        0,
+      ),
+      lastActivityAt: tasks.reduce(
+        (latest, task) =>
+          task.lastActivityAt > latest ? task.lastActivityAt : latest,
+        tasks[0].lastActivityAt,
+      ),
+    },
+  ];
 }
 
 export function getProjectSessions(key: string): SessionListItem[] {
   const status = statusExpression("status", "updated_at");
-  const where =
-    key === UNKNOWN_PROJECT_KEY ? "repository IS NULL" : "repository = ?";
-  const params: unknown[] =
-    key === UNKNOWN_PROJECT_KEY ? [staleCutoff()] : [staleCutoff(), key];
+  const repositoryKeys = getProjects()
+    .filter((project) => project.category === "project")
+    .map((project) => project.key);
+  const isTasks = key === TASKS_PROJECT_KEY || key === UNKNOWN_PROJECT_KEY;
+  const where = isTasks
+    ? repositoryKeys.length
+      ? `repository IS NULL OR repository NOT IN (${repositoryKeys.map(() => "?").join(", ")})`
+      : "1 = 1"
+    : "repository = ?";
+  const params: unknown[] = isTasks
+    ? [staleCutoff(), ...repositoryKeys]
+    : [staleCutoff(), key];
   return sqlite
     .prepare(
       `SELECT id, external_id externalId, provider, title, summary, repository, cwd, branch, ${status} status,

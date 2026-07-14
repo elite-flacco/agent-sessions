@@ -29,10 +29,17 @@ export const piAdapter: ProviderAdapter = {
         );
         return contentText(record(message?.message)?.content);
       },
-      terminalStatus: (rows) =>
-        rows.some((row) => row.type === "session_end")
-          ? "completed"
-          : undefined,
+      terminalStatus: (rows) => {
+        for (const row of [...rows].reverse()) {
+          if (row.type === "session_end") return "completed";
+          if (row.type !== "message") continue;
+          const message = record(row.message);
+          if (message?.role === "user") return undefined;
+          if (message?.role === "assistant" && message.stopReason === "stop")
+            return "completed";
+        }
+        return undefined;
+      },
       // Pi records normalized usage and the actual billed cost on each
       // assistant message; cost.total becomes the reported (not estimated)
       // session cost.

@@ -12,6 +12,7 @@ export const sessionStatuses = [
 export type SessionStatus = (typeof sessionStatuses)[number];
 
 export const UNKNOWN_PROJECT_KEY = "(unknown)";
+export const TASKS_PROJECT_KEY = "(tasks)";
 
 export interface ActivityEvent {
   externalId: string;

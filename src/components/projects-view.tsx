@@ -4,7 +4,7 @@ import {
   CircleDot,
   FolderKanban,
   GitBranch,
-  HelpCircle,
+  ListTodo,
   MoreHorizontal,
 } from "lucide-react";
 import Link from "next/link";
@@ -13,7 +13,6 @@ import { useEffect, useTransition } from "react";
 import { elapsed, relativeTime, runtime } from "@/lib/format";
 import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type { ProjectSummary, SessionListItem } from "@/lib/queries";
-import { UNKNOWN_PROJECT_KEY } from "@/lib/types";
 
 interface ProjectsViewProps {
   projects: ProjectSummary[];
@@ -29,6 +28,10 @@ export function ProjectsView({
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
+  const projectCount = projects.filter(
+    (project) => project.category === "project",
+  ).length;
+  const taskGroup = projects.find((project) => project.category === "task");
 
   useEffect(() => {
     const timer = window.setInterval(() => router.refresh(), 15_000);
@@ -46,7 +49,7 @@ export function ProjectsView({
       <header className="page-header">
         <div>
           <h1>Projects</h1>
-          <p>Sessions grouped by repository and working directory.</p>
+          <p>Git repositories, with one-off work grouped under Tasks.</p>
         </div>
       </header>
 
@@ -68,15 +71,17 @@ export function ProjectsView({
               >
                 <div className="session-primary">
                   <strong>
-                    {project.repository ?? "Unknown workspace"}
+                    {project.category === "task" ? "Tasks" : project.repository}
                     {project.activeCount > 0 && (
                       <span className="project-active-dot" aria-hidden />
                     )}
                   </strong>
                   <span className="mono">
-                    {project.workdirs.length
-                      ? project.workdirs.join(" · ")
-                      : "No working directory recorded"}
+                    {project.category === "task"
+                      ? `${project.workdirs.length} one-off workspaces without Git context`
+                      : project.workdirs.length
+                        ? project.workdirs.join(" · ")
+                        : "No working directory recorded"}
                   </span>
                 </div>
                 <div className="project-badges">
@@ -111,7 +116,10 @@ export function ProjectsView({
             </div>
           )}
           <footer className="session-footer">
-            <span>Showing {projects.length} projects</span>
+            <span>
+              Showing {projectCount} projects
+              {taskGroup ? ` · ${taskGroup.sessionCount} tasks` : ""}
+            </span>
             <span>{isPending ? "Updating…" : "Updated from local files"}</span>
           </footer>
         </section>
@@ -135,17 +143,16 @@ function ProjectInspector({
         <p>Select a project to inspect its sessions.</p>
       </aside>
     );
-  const isUnknown = project.key === UNKNOWN_PROJECT_KEY;
+  const isTasks = project.category === "task";
   return (
     <aside className="inspector">
       <div className="inspector-heading">
         <span className="mono">
-          {isUnknown ? "NEEDS REVIEW" : "PROJECT"} · {project.sessionCount}{" "}
-          sessions
+          {isTasks ? "TASKS" : "PROJECT"} · {project.sessionCount} sessions
         </span>
         <MoreHorizontal size={16} />
       </div>
-      <h2>{project.repository ?? "Unknown workspace"}</h2>
+      <h2>{isTasks ? "Tasks" : project.repository}</h2>
       <div className="inspector-badges">
         {project.providers.map((provider) => (
           <span key={provider} className={`badge ${providerBadges[provider]}`}>
@@ -153,12 +160,11 @@ function ProjectInspector({
           </span>
         ))}
       </div>
-      {isUnknown ? (
+      {isTasks ? (
         <p>
-          <HelpCircle size={13} className="inline-icon" /> These sessions have
-          no repository context in their source files (typical for Zcode
-          model-I/O histories). They stay grouped here for review until their
-          provider exposes a working directory.
+          <ListTodo size={13} className="inline-icon" /> One-off sessions with
+          no detectable Git repository are grouped here instead of appearing as
+          projects.
         </p>
       ) : (
         <p>

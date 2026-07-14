@@ -1050,6 +1050,7 @@
     }
     .relay-sidebar {
       position: static;
+      min-width: 0;
       height: auto;
       flex-direction: row;
       align-items: center;
@@ -1063,8 +1064,11 @@
       display: none;
     }
     .primary-nav {
+      min-width: 0;
+      flex: 1;
       margin: 0 0 0 auto;
       grid-auto-flow: column;
+      overflow-x: auto;
     }
     .nav-active {
       width: auto;
@@ -1142,7 +1146,10 @@
       margin-top: 0.2rem;
     }
     .project-row {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .project-row .project-badges {
+      display: none;
     }
     .project-row > :nth-child(n + 3) {
       display: none;

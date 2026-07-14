@@ -1,7 +1,6 @@
 import { ProjectsView } from "@/components/projects-view";
 import { Sidebar } from "@/components/sidebar";
 import {
-  countSessions,
   getCollectorHealth,
   getProjects,
   getProjectSessions,
@@ -32,7 +31,6 @@ export default async function ProjectsPage({
   return (
     <main className="relay-shell">
       <Sidebar
-        sessionCount={countSessions()}
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}
       />

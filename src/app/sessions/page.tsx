@@ -40,7 +40,6 @@ export default async function Home({ searchParams }: HomeProps) {
   return (
     <main className="relay-shell">
       <Sidebar
-        sessionCount={sessions.length}
         connectedAgents={summary.connectedAgents}
         sourceErrors={syncState.errors}
       />

@@ -317,6 +317,36 @@ describe("provider adapters", () => {
     expect(result.sessions[0].model).toBe("gpt-5");
   });
 
+  it("recognizes a Pi assistant stop as a completed turn", async () => {
+    const timestamp = new Date().toISOString();
+    const result = await parse(piAdapter, [
+      {
+        type: "session",
+        id: "pi-stopped",
+        timestamp,
+        cwd: "/work/relay",
+      },
+      {
+        type: "message",
+        id: "u1",
+        timestamp,
+        message: { role: "user", content: "Inspect local sessions" },
+      },
+      {
+        type: "message",
+        id: "a1",
+        timestamp,
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "PRIVATE_RESPONSE_BODY" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.status).toBe("completed");
+  });
+
   it("normalizes Zcode model I/O without storing request or response bodies", async () => {
     const result = await parse(zcodeAdapter, [
       {

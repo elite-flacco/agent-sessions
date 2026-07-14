@@ -1,7 +1,6 @@
 import { OverviewView } from "@/components/overview-view";
 import { Sidebar } from "@/components/sidebar";
 import {
-  countSessions,
   getAttentionSessions,
   getCollectorHealth,
   getOverview,
@@ -16,7 +15,6 @@ export default async function OverviewPage() {
   return (
     <main className="relay-shell">
       <Sidebar
-        sessionCount={countSessions()}
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}
       />
@@ -24,7 +22,9 @@ export default async function OverviewPage() {
         overview={getOverview()}
         running={getRunningSessions()}
         attention={getAttentionSessions()}
-        recentProjects={getProjects().slice(0, 5)}
+        recentProjects={getProjects()
+          .filter((project) => project.category === "project")
+          .slice(0, 5)}
       />
     </main>
   );

@@ -3,7 +3,6 @@ import { Sidebar } from "@/components/sidebar";
 import { groupStream } from "@/lib/activity";
 import { refreshIngestedData } from "@/lib/live-sync";
 import {
-  countSessions,
   getActivityStream,
   getCollectorHealth,
   getRepositories,
@@ -34,7 +33,6 @@ export default async function ActivityPage({
   return (
     <main className="relay-shell">
       <Sidebar
-        sessionCount={countSessions()}
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}
       />

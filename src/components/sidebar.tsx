@@ -15,16 +15,11 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 interface SidebarProps {
-  sessionCount: number;
   connectedAgents: number;
   sourceErrors: number;
 }
 
-export function Sidebar({
-  sessionCount,
-  connectedAgents,
-  sourceErrors,
-}: SidebarProps) {
+export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
   const pathname = usePathname();
   return (
     <aside className="relay-sidebar">
@@ -47,7 +42,6 @@ export function Sidebar({
           active={pathname === "/sessions"}
           icon={<Database size={15} />}
           label="Sessions"
-          count={sessionCount}
         />
         <NavLink
           href="/activity"
@@ -99,13 +93,11 @@ function NavLink({
   active,
   icon,
   label,
-  count,
 }: {
   href: string;
   active: boolean;
   icon: ReactNode;
   label: string;
-  count?: number;
 }) {
   return (
     <Link
@@ -115,7 +107,6 @@ function NavLink({
     >
       {icon}
       <span>{label}</span>
-      {count !== undefined && <small>{count}</small>}
     </Link>
   );
 }

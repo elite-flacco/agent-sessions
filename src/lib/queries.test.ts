@@ -55,7 +55,7 @@ beforeAll(async () => {
     "codex",
     "Fresh runner",
     "beacon",
-    null,
+    "feature/beacon",
     "running",
     new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     now.toISOString(),
@@ -67,8 +67,10 @@ beforeAll(async () => {
     new Date(now.getTime() - minutes * 60_000).toISOString();
   insertEvent.run(1, "e1", "started", "Session started", at(30));
   insertEvent.run(1, "e2", "tool", "Used Bash", at(20));
+  insertEvent.run(3, "e-stale", "started", "Task started", at(25));
   insertEvent.run(2, "e3", "tool", "Used Read", at(10));
   insertEvent.run(1, "e4", "completed", "Session completed", at(5));
+  insertEvent.run(4, "e5", "started", "Task started", at(1));
   const insertSource = sqlite.prepare(`INSERT INTO ingestion_sources
     (path, provider, size, modified_at, fingerprint, last_synced_at, parse_state)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
@@ -166,21 +168,21 @@ describe("session queries", () => {
 });
 
 describe("activity stream queries", () => {
-  it("returns newest events first with session context", () => {
+  it("returns events only from live sessions", () => {
     const rows = queries.getActivityStream({});
-    expect(rows.map((row) => row.title)).toEqual([
-      "Session completed",
-      "Used Read",
-      "Used Bash",
-      "Session started",
-    ]);
-    expect(rows[0].sessionTitle).toBe("Build Relay filters");
-    expect(rows[1].provider).toBe("pi");
+    expect(rows.map((row) => row.title)).toEqual(["Task started"]);
+    expect(rows[0]).toMatchObject({
+      sessionTitle: "Fresh runner",
+      provider: "codex",
+      sessionStatus: "running",
+    });
   });
 
   it("filters by provider and repository", () => {
-    expect(queries.getActivityStream({ provider: "pi" })).toHaveLength(1);
-    expect(queries.getActivityStream({ repo: "relay" })).toHaveLength(3);
+    expect(queries.getActivityStream({ provider: "pi" })).toHaveLength(0);
+    expect(queries.getActivityStream({ provider: "codex" })).toHaveLength(1);
+    expect(queries.getActivityStream({ repo: "beacon" })).toHaveLength(1);
+    expect(queries.getActivityStream({ repo: "relay" })).toHaveLength(0);
     expect(queries.getActivityStream({ repo: "unknown" })).toHaveLength(0);
   });
 
@@ -193,11 +195,10 @@ describe("activity stream queries", () => {
     expect(queries.countSessions()).toBe(4);
   });
 
-  it("groups sessions into projects with an unknown-workspace bucket", () => {
+  it("shows Git-backed projects and groups other sessions as tasks", () => {
     const projects = queries.getProjects();
     expect(projects.map((project) => project.key).sort()).toEqual([
-      "(unknown)",
-      "ai-compass",
+      "(tasks)",
       "beacon",
       "relay",
     ]);
@@ -207,19 +208,25 @@ describe("activity stream queries", () => {
       activeCount: 1,
       providers: ["codex"],
     });
-    const unknown = projects.find((project) => project.key === "(unknown)");
-    expect(unknown?.repository).toBeNull();
-    expect(unknown?.sessionCount).toBe(1);
+    const tasks = projects.find((project) => project.key === "(tasks)");
+    expect(tasks).toMatchObject({
+      repository: null,
+      category: "task",
+      sessionCount: 2,
+    });
   });
 
   it("lists session history for a project", () => {
     expect(queries.getProjectSessions("relay")[0].title).toBe(
       "Build Relay filters",
     );
-    const unknown = queries.getProjectSessions("(unknown)");
-    expect(unknown).toHaveLength(1);
-    expect(unknown[0].title).toBe("Stale runner");
-    expect(unknown[0].status).toBe("incomplete");
+    const tasks = queries.getProjectSessions("(tasks)");
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map((session) => session.title)).toEqual([
+      "Stale runner",
+      "Inspect agent cost",
+    ]);
+    expect(tasks[0].status).toBe("incomplete");
   });
 
   it("summarizes daily and weekly overview windows", () => {
