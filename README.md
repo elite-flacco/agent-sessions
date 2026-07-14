@@ -15,7 +15,7 @@ npm run collect
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Sync activity** in the app or run `npm run collect` again to import changed files.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). While the Sessions page is open, it checks for changed local source files every 15 seconds. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line.
 
 For continuous collection in a second terminal:
 
@@ -27,13 +27,13 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 
 ## Pages
 
-| Route            | What it shows                                                                                                                                                                                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                               |
-| `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. Project rollups reflect the active session filters. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab. |
-| `/sessions/[id]` | A full-width session detail view with metadata and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                 |
-| `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                 |
-| `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                    |
+| Route            | What it shows                                                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, weekly agent distribution, 14-day activity, recent projects. Cards link into filtered views.                                                                                                                                                                                 |
+| `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. While open, it ingests changed local source files and refreshes every 15 seconds. Project rollups reflect the active session filters. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab. |
+| `/sessions/[id]` | A full-width session detail view with metadata and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                                                                   |
+| `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                                                   |
+| `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                                                      |
 
 Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted.
 
