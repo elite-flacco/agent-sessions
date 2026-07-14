@@ -167,31 +167,8 @@ describe("session queries", () => {
   });
 });
 
-describe("activity stream queries", () => {
-  it("returns events only from live sessions", () => {
-    const rows = queries.getActivityStream({});
-    expect(rows.map((row) => row.title)).toEqual(["Task started"]);
-    expect(rows[0]).toMatchObject({
-      sessionTitle: "Fresh runner",
-      provider: "codex",
-      sessionStatus: "running",
-    });
-  });
-
-  it("filters by provider and repository", () => {
-    expect(queries.getActivityStream({ provider: "pi" })).toHaveLength(0);
-    expect(queries.getActivityStream({ provider: "codex" })).toHaveLength(1);
-    expect(queries.getActivityStream({ repo: "beacon" })).toHaveLength(1);
-    expect(queries.getActivityStream({ repo: "relay" })).toHaveLength(0);
-    expect(queries.getActivityStream({ repo: "unknown" })).toHaveLength(0);
-  });
-
-  it("lists distinct repositories and counts sessions", () => {
-    expect(queries.getRepositories()).toEqual([
-      "ai-compass",
-      "beacon",
-      "relay",
-    ]);
+describe("project and overview queries", () => {
+  it("counts sessions", () => {
     expect(queries.countSessions()).toBe(4);
   });
 

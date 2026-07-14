@@ -86,7 +86,7 @@ This file tracks work intentionally deferred from Relay v1. Items are ordered by
 
 - Usage & Cost at `/usage`: normalized per-model token usage for all four adapters, a checked-in versioned pricing table with sources and effective dates, read-time cost derivation distinguishing reported/estimated/unavailable, window totals, and model/agent/project breakdowns.
 
-- Live Activity stream at `/activity` with grouping, filters, pause/resume, follow-newest, collector health, and throttled server-side ingest.
+- The experimental Live Activity stream was retired after the Sessions view became the preferred way to reach running work.
 - Collector hardening: durable sync/watch leases, per-adapter scan tracking, sync-error pruning, watcher tests for new/appended files, concurrent syncs, and restarts.
 - Projects view at `/projects` with repository grouping, branches, runtime, session history, and an unknown-workspace review group.
 - Overview home page with daily/weekly summaries, running and needs-attention lists, agent distribution, 14-day activity, and drill-down links (Sessions moved to `/sessions`).

@@ -730,38 +730,6 @@
     display: grid;
     margin-top: 0.5rem;
   }
-  .activity-row {
-    display: grid;
-    grid-template-columns: 1.8rem minmax(0, 1fr) auto;
-    gap: 0.55rem;
-    padding-block: 0.65rem;
-  }
-  .activity-row + .activity-row {
-    border-top: 1px solid var(--border);
-  }
-  .event-icon {
-    display: grid;
-    width: 1.8rem;
-    height: 1.8rem;
-    place-items: center;
-    border-radius: 0.35rem;
-    background: var(--muted);
-    color: var(--muted-foreground);
-  }
-  .activity-row > div:nth-child(2) {
-    min-width: 0;
-  }
-  .activity-row strong {
-    font-size: var(--text-xs);
-  }
-  .activity-row p {
-    color: var(--muted-foreground);
-  }
-  .activity-row time {
-    color: var(--muted-foreground);
-    font-family: var(--font-geist-mono), ui-monospace, monospace;
-    font-size: var(--text-xs);
-  }
   .empty-state {
     display: grid;
     min-height: 20rem;
@@ -774,82 +742,6 @@
   }
   .empty-state h3 {
     color: var(--foreground);
-  }
-
-  .stream-actions {
-    display: flex;
-    gap: 0.55rem;
-  }
-  .health-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.55rem 1.1rem;
-    margin-top: 1.55rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--card);
-    padding: 0.75rem 0.9rem;
-    color: var(--muted-foreground);
-  }
-  .health-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: var(--text-xs);
-  }
-  .health-warning {
-    color: var(--warning);
-  }
-  .stream-filter-row {
-    display: grid;
-    grid-template-columns: 9.5rem 12rem minmax(0, 1fr);
-    align-items: center;
-    gap: 0.55rem;
-    margin-top: 0.9rem;
-  }
-  .stream-count {
-    color: var(--muted-foreground);
-    text-align: right;
-  }
-  .stream-list {
-    display: grid;
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-    transition: opacity 120ms ease;
-  }
-  .stream-block {
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--card);
-    overflow: hidden;
-  }
-  .stream-block-head {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    border-bottom: 1px solid var(--border);
-    padding: 0.7rem 0.9rem;
-  }
-  .stream-block-title {
-    display: grid;
-    flex: 1;
-    min-width: 0;
-    gap: 0.15rem;
-  }
-  .stream-block-title strong {
-    overflow: hidden;
-    font-size: var(--text-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .stream-block-title span {
-    overflow: hidden;
-    color: var(--muted-foreground);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .stream-block-events {
-    padding: 0.2rem 0.9rem;
   }
 
   .project-table-head,
@@ -1449,15 +1341,6 @@
       display: none;
     }
     .project-row > :nth-child(n + 3) {
-      display: none;
-    }
-    .stream-filter-row {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .stream-count {
-      display: none;
-    }
-    .stream-block-head .status-label {
       display: none;
     }
   }

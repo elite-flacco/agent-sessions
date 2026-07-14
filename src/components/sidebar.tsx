@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Activity,
   BarChart3,
   CircleDot,
   Database,
@@ -41,12 +40,6 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           active={pathname.startsWith("/sessions") || pathname === "/projects"}
           icon={<Database size={15} />}
           label="Sessions"
-        />
-        <NavLink
-          href="/activity"
-          active={pathname === "/activity"}
-          icon={<Activity size={15} />}
-          label="Live activity"
         />
         <NavLink
           href="/usage"

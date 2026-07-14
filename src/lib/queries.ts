@@ -177,64 +177,6 @@ export function getSummary(): {
   return { sessionsToday, activeNow, totalRuntimeMs, connectedAgents };
 }
 
-export interface ActivityStreamRow {
-  id: number;
-  kind: string;
-  title: string;
-  detail: string | null;
-  occurredAt: string;
-  sessionId: number;
-  sessionTitle: string;
-  provider: AgentProvider;
-  repository: string | null;
-  branch: string | null;
-  sessionStatus: SessionStatus;
-}
-
-export interface ActivityStreamFilters {
-  provider?: string;
-  repo?: string;
-}
-
-export function getActivityStream(
-  filters: ActivityStreamFilters,
-  limit = 120,
-): ActivityStreamRow[] {
-  const clauses = ["s.status = 'running' AND s.updated_at >= ?"];
-  const params: unknown[] = [staleCutoff()];
-  if (filters.provider && filters.provider !== "all") {
-    clauses.push("s.provider = ?");
-    params.push(filters.provider);
-  }
-  if (filters.repo && filters.repo !== "all") {
-    if (filters.repo === "unknown") clauses.push("s.repository IS NULL");
-    else {
-      clauses.push("s.repository = ?");
-      params.push(filters.repo);
-    }
-  }
-  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  return sqlite
-    .prepare(
-      `SELECT e.id, e.kind, e.title, e.detail, e.occurred_at occurredAt,
-        s.id sessionId, s.title sessionTitle, s.provider, s.repository, s.branch,
-        ${statusExpression("s.status", "s.updated_at")} sessionStatus
-      FROM activity_events e JOIN sessions s ON s.id = e.session_id ${where}
-      ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?`,
-    )
-    .all(staleCutoff(), ...params, limit) as ActivityStreamRow[];
-}
-
-export function getRepositories(): string[] {
-  return (
-    sqlite
-      .prepare(
-        "SELECT DISTINCT repository FROM sessions WHERE repository IS NOT NULL ORDER BY repository COLLATE NOCASE",
-      )
-      .all() as { repository: string }[]
-  ).map((row) => row.repository);
-}
-
 export function countSessions(): number {
   return (
     sqlite.prepare("SELECT COUNT(*) count FROM sessions").get() as {
