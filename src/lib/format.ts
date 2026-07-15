@@ -11,12 +11,30 @@ export function elapsed(start: string, end?: string | null): string {
 
 export function relativeTime(value: string): string {
   const date = new Date(value);
-  const diffMinutes = Math.round((Date.now() - date.getTime()) / 60_000);
+  const now = new Date();
+  const diffMinutes = Math.round((now.getTime() - date.getTime()) / 60_000);
   if (diffMinutes < 1) return "Just now";
   if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  if (diffMinutes < 1440)
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === now.toDateString()) return time;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString())
+    return `Yesterday ${time}`;
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+export function absoluteTime(value: string): string {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export function isOlderThan(value: string, milliseconds: number): boolean {
@@ -39,5 +57,6 @@ export function formatCostUsd(value: number): string {
 
 export function runtime(value: number): string {
   const minutes = Math.round(value / 60_000);
+  if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

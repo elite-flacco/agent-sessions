@@ -9,7 +9,9 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { Fragment } from "react";
 import {
+  absoluteTime,
   elapsed,
   formatCostUsd,
   formatTokens,
@@ -72,7 +74,9 @@ export function SessionDetailView({
           </div>
         </div>
         <div className="detail-time">
-          <span>Started {relativeTime(session.startedAt)}</span>
+          <span title={relativeTime(session.startedAt)}>
+            Started {absoluteTime(session.startedAt)}
+          </span>
           <strong>
             {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
           </strong>
@@ -169,9 +173,7 @@ export function SessionDetailView({
 
         {transcript.entries.length ? (
           <div className="transcript-list">
-            {transcript.entries.map((entry) => (
-              <TranscriptRow key={entry.id} entry={entry} />
-            ))}
+            <TranscriptEntries entries={transcript.entries} />
           </div>
         ) : (
           <div className="empty-state card">
@@ -187,6 +189,36 @@ export function SessionDetailView({
       </section>
     </section>
   );
+}
+
+function TranscriptEntries({ entries }: { entries: TranscriptEntry[] }) {
+  // Transcript rows show clock times only, so mark calendar-day changes for
+  // sessions that span midnight.
+  let lastDay = "";
+  return entries.map((entry) => {
+    let divider = null;
+    if (entry.occurredAt) {
+      const day = new Date(entry.occurredAt).toDateString();
+      if (lastDay && day !== lastDay) {
+        divider = (
+          <div className="transcript-day-divider" role="separator">
+            {new Date(entry.occurredAt).toLocaleDateString([], {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            })}
+          </div>
+        );
+      }
+      lastDay = day;
+    }
+    return (
+      <Fragment key={entry.id}>
+        {divider}
+        <TranscriptRow entry={entry} />
+      </Fragment>
+    );
+  });
 }
 
 function TranscriptRow({ entry }: { entry: TranscriptEntry }) {

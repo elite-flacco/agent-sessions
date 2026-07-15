@@ -13,8 +13,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { elapsed, formatCostUsd, relativeTime, runtime } from "@/lib/format";
+import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  absoluteTime,
+  elapsed,
+  formatCostUsd,
+  relativeTime,
+  runtime,
+} from "@/lib/format";
 import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type {
   ProjectSummary,
@@ -61,6 +67,19 @@ export function Dashboard({
   const [query, setQuery] = useState(filters.q ?? "");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function focusSearch(event: globalThis.KeyboardEvent): void {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
 
   function updateParam(name: string, value?: string): void {
     const params = new URLSearchParams(window.location.search);
@@ -162,6 +181,7 @@ export function Dashboard({
         <label className="search-control">
           <Search size={14} />
           <input
+            ref={searchRef}
             className="input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -188,6 +208,7 @@ export function Dashboard({
           onChange={(value) => updateParam("status", value)}
           options={[
             { value: "all", label: "All statuses" },
+            { value: "attention", label: "Attention (failed)" },
             ...Object.entries(statusLabels).map(([value, label]) => ({
               value,
               label,
@@ -347,7 +368,10 @@ function SessionRow({
           <i />
           {statusLabels[session.status]}
         </div>
-        <span className="mono session-secondary">
+        <span
+          className="mono session-secondary"
+          title={absoluteTime(session.startedAt)}
+        >
           {relativeTime(session.startedAt)}
         </span>
         <span className="mono session-secondary">
@@ -418,7 +442,10 @@ function ProjectsTable({
             <span className="mono session-secondary">
               {runtime(project.totalRuntimeMs)}
             </span>
-            <span className="mono session-secondary">
+            <span
+              className="mono session-secondary"
+              title={absoluteTime(project.lastActivityAt)}
+            >
               {relativeTime(project.lastActivityAt)}
             </span>
           </div>
