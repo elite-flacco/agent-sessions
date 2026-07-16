@@ -30,7 +30,7 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 
 | Route            | What it shows                                                                                                                                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (activity heatmap by day/hour, session-length histogram, week cost-at-a-glance). Cards link into filtered views.                                                                                                                                       |
+| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (activity heatmap by Eastern day/hour, session-length histogram, week cost-at-a-glance). Cards link into filtered views.                                                                                                                               |
 | `/sessions`      | Shared summary cards and URL-backed search/provider/status/date filters with switchable Sessions and Projects tables. While open, it ingests changed local source files and refreshes every 15 seconds. Subagent runs are nested beneath their main session. Session titles open a dedicated detail page, and the adjacent icon opens it in a new tab. |
 | `/sessions/[id]` | A full-width session detail view with metadata, links between main and subagent sessions, and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                         |
 | `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                                                    |
@@ -45,12 +45,14 @@ Costs are **API-equivalent estimates**: tokens are priced against a checked-in t
 
 | Provider    | Local source                                                        |
 | ----------- | ------------------------------------------------------------------- |
-| Codex       | `~/.codex/sessions/**/*.jsonl`                                      |
+| Codex       | `~/.codex/sessions/**/*.jsonl` and `~/.codex/state_5.sqlite`        |
 | Claude Code | `~/.claude/projects/**/*.jsonl`                                     |
 | Zcode       | `~/.zcode/cli/rollout/*.jsonl` and `~/.zcode/cli/agents/**/*.jsonl` |
 | Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                   |
 
 Relay stores its normalized database at `data/relay.db`. Override this with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
+
+Relay prefers provider-authored display titles when they are available. Codex titles come from the read-only `threads.title` field in `~/.codex/state_5.sqlite`; Claude Code prefers the latest JSONL `custom-title`, then the latest `ai-title`. Both fall back to the first meaningful user message when an authoritative title is unavailable. A collection pass also reconciles Codex title-only changes that do not modify the rollout JSONL.
 
 Zcode's rollout (`model_io`) files carry model usage but no working directory and incomplete conversation data, so Relay uses Zcode's own session database (`~/.zcode/cli/db/db.sqlite`, read-only) for authoritative titles, parent/subagent relationships, missing project/workspace metadata, database-only sessions, and on-demand transcripts. JSONL remains the transcript fallback when that database is unavailable. Codex parent thread metadata and Claude Code sidechain records provide the equivalent hierarchy for those providers.
 

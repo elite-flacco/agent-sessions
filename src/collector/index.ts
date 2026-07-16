@@ -7,6 +7,7 @@ import type {
   NormalizedSession,
   ProviderAdapter,
 } from "@/lib/types";
+import { getCodexThreadTitle } from "@/lib/codex-db";
 import { sqlite } from "@/db/client";
 import {
   getZcodeSessionMetadata,
@@ -52,7 +53,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "7";
+const NORMALIZATION_VERSION = "8";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -233,6 +234,22 @@ function zcodeStoredStatus(
     if (data.role === "user") break;
   }
   return staleStatus(updatedAt);
+}
+
+function reconcileCodexTitles(): void {
+  const sessions = sqlite
+    .prepare(
+      "SELECT id, external_id externalId, title FROM sessions WHERE provider = 'codex'",
+    )
+    .all() as Array<{ id: number; externalId: string; title: string }>;
+  const update = sqlite.prepare("UPDATE sessions SET title = ? WHERE id = ?");
+  const write = sqlite.transaction(() => {
+    for (const session of sessions) {
+      const title = getCodexThreadTitle(session.externalId);
+      if (title) update.run(safeTitle(title, session.title), session.id);
+    }
+  });
+  write();
 }
 
 function reconcileZcodeMetadata(): void {
@@ -455,6 +472,7 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
       totals.imported += scan.imported;
       totals.errors += scan.errors;
     }
+    reconcileCodexTitles();
     reconcileZcodeMetadata();
     return totals;
   } finally {

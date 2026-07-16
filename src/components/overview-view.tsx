@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect } from "react";
 import {
+  absoluteTime,
   elapsed,
   formatCostUsd,
   formatTokens,
@@ -80,10 +81,7 @@ export function OverviewView({
           <strong>{overview.week.sessions}</strong>
           <span>{runtime(overview.week.runtimeMs)} total runtime</span>
         </Link>
-        <Link
-          className="metric metric-link"
-          href="/sessions?status=interrupted"
-        >
+        <Link className="metric metric-link" href="/sessions?status=attention">
           <span className="eyebrow">Failures this week</span>
           <strong>{overview.week.failures}</strong>
           <span>Interrupted or needing attention</span>
@@ -119,7 +117,7 @@ export function OverviewView({
                 <AlertTriangle size={14} className="inline-icon" /> Needs
                 attention
               </h3>
-              <Link href="/sessions?status=interrupted">View all</Link>
+              <Link href="/sessions?status=attention">View all</Link>
             </div>
             {attention.length ? (
               attention.map((session) => (
@@ -137,13 +135,13 @@ export function OverviewView({
                 <FolderKanban size={14} className="inline-icon" /> Recent
                 projects
               </h3>
-              <Link href="/projects">View all</Link>
+              <Link href="/sessions?view=projects">View all</Link>
             </div>
             {recentProjects.map((project) => (
               <Link
                 key={project.key}
                 className="project-session-row"
-                href={`/projects?selected=${encodeURIComponent(project.key)}`}
+                href="/sessions?view=projects"
               >
                 <span aria-hidden>
                   <LayoutDashboard size={13} />
@@ -155,7 +153,9 @@ export function OverviewView({
                     {runtime(project.totalRuntimeMs)}
                   </p>
                 </div>
-                <time>{relativeTime(project.lastActivityAt)}</time>
+                <time title={absoluteTime(project.lastActivityAt)}>
+                  {relativeTime(project.lastActivityAt)}
+                </time>
               </Link>
             ))}
           </section>
@@ -167,10 +167,7 @@ export function OverviewView({
 
 function SessionLine({ session }: { session: SessionListItem }) {
   return (
-    <Link
-      className="project-session-row"
-      href={`/sessions?range=all&selected=${session.id}`}
-    >
+    <Link className="project-session-row" href={`/sessions/${session.id}`}>
       <span className={`status-label status-${session.status}`}>
         <i />
       </span>
@@ -182,7 +179,9 @@ function SessionLine({ session }: { session: SessionListItem }) {
           {session.repository ?? "Unknown workspace"}
         </p>
       </div>
-      <time>{relativeTime(session.updatedAt)}</time>
+      <time title={absoluteTime(session.updatedAt)}>
+        {relativeTime(session.updatedAt)}
+      </time>
     </Link>
   );
 }
@@ -229,17 +228,6 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
             })}
           </Fragment>
         ))}
-      </div>
-      <div className="heatmap-legend">
-        <span>fewer</span>
-        <span className="heatmap-legend-cells">
-          <span className="heat-fill-0" />
-          <span className="heat-fill-2" />
-          <span className="heat-fill-4" />
-          <span className="heat-fill-6" />
-          <span className="heat-fill-10" />
-        </span>
-        <span>more</span>
       </div>
     </section>
   );

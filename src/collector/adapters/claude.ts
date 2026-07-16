@@ -43,6 +43,18 @@ export const claudeAdapter: ProviderAdapter = {
           : { sessionKind: "main", agentDepth: 0 };
       },
       title: (rows) => {
+        for (const row of [...rows].reverse()) {
+          if (row.type === "custom-title") {
+            const title = stringValue(row.customTitle);
+            if (title) return title;
+          }
+        }
+        for (const row of [...rows].reverse()) {
+          if (row.type === "ai-title") {
+            const title = stringValue(row.aiTitle);
+            if (title) return title;
+          }
+        }
         for (const row of rows) {
           if (row.type !== "user" || record(row.message)?.role !== "user")
             continue;

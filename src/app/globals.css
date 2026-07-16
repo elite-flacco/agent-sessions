@@ -76,6 +76,10 @@
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.65;
+  --radius-pill: 9999px;
+  --tag-marker-size: 0.5rem;
+  --tag-marker-gap: 0.45rem;
+  --tag-icon-gap: 0.35rem;
 }
 
 @layer base {
@@ -530,8 +534,30 @@
     display: grid;
     grid-template-columns:
       minmax(15rem, 2.1fr) minmax(6rem, 0.8fr) minmax(6rem, 0.8fr)
-      minmax(5rem, 0.65fr) minmax(5rem, 0.6fr);
+      minmax(5rem, 0.65fr) minmax(4.5rem, 0.55fr) minmax(4.5rem, 0.55fr);
     align-items: center;
+  }
+  .subagent-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    color: var(--muted-foreground);
+    font: inherit;
+    cursor: pointer;
+  }
+  .subagent-toggle:hover {
+    border-color: var(--border-hover);
+    color: var(--foreground);
+  }
+  .subagent-toggle svg {
+    transition: transform 0.15s ease;
+  }
+  .subagent-toggle .chevron-collapsed {
+    transform: rotate(-90deg);
   }
   .session-table-head {
     min-height: 2.3rem;
@@ -1009,6 +1035,70 @@
     gap: 0.7rem;
     margin-top: 0.8rem;
   }
+  .transcript-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-top: 0.8rem;
+  }
+  .transcript-filter {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  .transcript-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--card);
+    padding: 0.3rem 0.65rem;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .transcript-filter-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--foreground);
+  }
+  .transcript-filter-active {
+    border-color: var(--border-hover);
+    background: var(--card-hover);
+    color: var(--foreground);
+  }
+  .transcript-clamp-toggle {
+    justify-self: start;
+    width: fit-content;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 0.78rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .transcript-clamp-toggle:hover {
+    color: var(--foreground);
+  }
+  .transcript-day-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.35rem 0;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .transcript-day-divider::before,
+  .transcript-day-divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--border);
+  }
   .transcript-entry {
     display: grid;
     grid-template-columns: 2.2rem minmax(0, 1fr);
@@ -1287,24 +1377,6 @@
     border-radius: 0.15rem;
     background: var(--heat-0);
   }
-  .heatmap-legend {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    margin-top: 0.5rem;
-    color: var(--muted-foreground);
-    font-size: 0.55rem;
-  }
-  .heatmap-legend-cells {
-    display: flex;
-    gap: 0.15rem;
-  }
-  .heatmap-legend-cells span {
-    width: 0.6rem;
-    height: 0.6rem;
-    border-radius: 0.15rem;
-  }
   .heat-fill-0 {
     background: var(--heat-0);
   }
@@ -1463,7 +1535,7 @@
     display: grid;
     grid-template-columns:
       minmax(14rem, 1fr) repeat(3, minmax(7rem, 9rem))
-      auto auto;
+      auto;
     align-items: end;
     gap: 0.55rem;
     margin-top: 0.9rem;
@@ -1481,9 +1553,6 @@
   }
   .agent-discrepancy-toggle input {
     accent-color: var(--accent);
-  }
-  .agent-filter-row .btn {
-    height: 2.75rem;
   }
   .agent-inventory-list {
     display: grid;
@@ -1553,6 +1622,38 @@
   .agent-capability-primary span,
   .agent-packaging {
     color: var(--muted-foreground);
+  }
+  .agent-origin-tag {
+    width: fit-content;
+    justify-self: start;
+    border: 1px solid currentColor;
+    background: transparent;
+    padding-inline: 0.45rem;
+  }
+  .agent-kind-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tag-marker-gap);
+    color: var(--foreground);
+    white-space: nowrap;
+  }
+  .agent-kind-label i {
+    width: var(--tag-marker-size);
+    height: var(--tag-marker-size);
+    flex: 0 0 auto;
+    border-radius: var(--radius-pill);
+  }
+  .agent-kind-plugin i {
+    background: var(--badge-3-foreground);
+  }
+  .agent-kind-skill i {
+    background: var(--badge-2-foreground);
+  }
+  .agent-kind-mcp i {
+    background: var(--badge-4-foreground);
+  }
+  .agent-kind-instruction i {
+    background: var(--badge-5-foreground);
   }
   .status-disabled,
   .status-unavailable {
@@ -1626,22 +1727,60 @@
   .agent-comparison-table tbody th {
     background: var(--card);
   }
-  .agent-comparison-table tbody th strong,
-  .agent-comparison-table tbody th span {
+  .agent-comparison-name {
     display: block;
+    font-size: var(--text-sm);
+    font-weight: 400;
   }
-  .agent-comparison-table tbody th span {
+  .agent-comparison-kind {
     margin-top: 0.2rem;
+  }
+  .agent-comparison-origin {
+    display: flex;
+    margin-top: 0.35rem;
+  }
+  .agent-origin-mixed {
+    border-color: var(--border-hover);
     color: var(--muted-foreground);
-    text-transform: uppercase;
   }
   .agent-row-discrepancy {
     background: color-mix(in srgb, var(--warning) 7%, var(--card));
   }
   .agent-compare-detail summary {
-    gap: 0.35rem;
-    color: var(--foreground);
+    gap: var(--tag-icon-gap);
     cursor: pointer;
+  }
+  .agent-compare-detail .agent-instruction-summary {
+    display: grid;
+    align-items: start;
+    font-size: var(--text-xs);
+  }
+  .agent-instruction-summary > span {
+    display: flex;
+    align-items: center;
+    gap: var(--tag-icon-gap);
+  }
+  .agent-instruction-summary code {
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    font-weight: 400;
+    overflow-wrap: anywhere;
+  }
+  .agent-status-tag {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    gap: var(--tag-icon-gap);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    padding: 0.2rem 0.55rem;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+  .agent-status-missing {
+    background: var(--card-hover);
+    color: var(--muted-foreground);
   }
   .agent-compare-detail > span,
   .agent-compare-detail > code {

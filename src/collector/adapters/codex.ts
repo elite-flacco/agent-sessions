@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from "@/lib/types";
+import { getCodexThreadTitle } from "@/lib/codex-db";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   contentText,
@@ -11,8 +12,8 @@ import {
 export const codexAdapter: ProviderAdapter = {
   provider: "codex",
   discover: () => walkJsonl(homePath(".codex", "sessions")),
-  parse: (filePath) =>
-    parseJsonl(filePath, {
+  parse: async (filePath) => {
+    const result = await parseJsonl(filePath, {
       provider: "codex",
       fallbackTitle: "Codex coding session",
       identify: (rows) => {
@@ -129,5 +130,12 @@ export const codexAdapter: ProviderAdapter = {
           }
           return [];
         }),
-    }),
+    });
+    const session = result.sessions[0];
+    if (session?.externalId) {
+      const title = getCodexThreadTitle(session.externalId);
+      if (title) session.title = safeTitle(title, session.title);
+    }
+    return result;
+  },
 };

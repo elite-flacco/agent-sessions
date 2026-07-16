@@ -13,6 +13,7 @@ let claudeAdapter: ProviderAdapter;
 beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-collector-"));
   process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
+  process.env.CODEX_STATE_DB_PATH = path.join(directory, "missing-codex.db");
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
   collector = await import("./index");
@@ -23,6 +24,7 @@ beforeAll(async () => {
 afterAll(async () => {
   sqlite.close();
   delete process.env.RELAY_DATABASE_PATH;
+  delete process.env.CODEX_STATE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });
 
@@ -236,6 +238,46 @@ describe("collector sync", () => {
     } finally {
       delete process.env.ZCODE_DB_PATH;
       __resetZcodeDbCache();
+    }
+  });
+
+  it("refreshes Codex titles when the app database changes without a JSONL change", async () => {
+    const codexDbPath = path.join(directory, "codex-state.db");
+    const Database = (await import("better-sqlite3")).default;
+    const codexDb = new Database(codexDbPath);
+    codexDb.exec(
+      "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL)",
+    );
+    codexDb
+      .prepare("INSERT INTO threads (id, title) VALUES (?, ?)")
+      .run("codex-renamed", "Renamed in Codex");
+    codexDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'codex', 'Original user request', 'completed', ?, ?)`,
+      )
+      .run("codex-renamed", "2026-07-11T10:00:00Z", "2026-07-11T10:01:00Z");
+
+    process.env.CODEX_STATE_DB_PATH = codexDbPath;
+    const { __resetCodexDbCache } = await import("@/lib/codex-db");
+    __resetCodexDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT title FROM sessions WHERE provider = 'codex' AND external_id = ?",
+          )
+          .get("codex-renamed"),
+      ).toEqual({ title: "Renamed in Codex" });
+    } finally {
+      process.env.CODEX_STATE_DB_PATH = path.join(
+        directory,
+        "missing-codex.db",
+      );
+      __resetCodexDbCache();
     }
   });
 });

@@ -1,5 +1,13 @@
-import { AlertTriangle, Check, Minus, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  CircleSlash2,
+  CircleX,
+  Minus,
+  Search,
+} from "lucide-react";
 import Link from "next/link";
+import { AgentFilterForm } from "@/components/agent-filter-form";
 import {
   buildComparisonRows,
   type AgentCapability,
@@ -35,6 +43,26 @@ const kindLabels: Record<AgentSetupKind, string> = {
   instruction: "Instructions",
 };
 
+const kindSortOrder: Record<CapabilityKind, number> = {
+  plugin: 0,
+  skill: 1,
+  mcp: 2,
+};
+
+const capabilityKindLabels: Record<AgentSetupKind, string> = {
+  plugin: "Plugin",
+  skill: "Skill",
+  mcp: "MCP",
+  instruction: "Instruction",
+};
+
+const kindMarkers: Record<AgentSetupKind, string> = {
+  plugin: "agent-kind-plugin",
+  skill: "agent-kind-skill",
+  mcp: "agent-kind-mcp",
+  instruction: "agent-kind-instruction",
+};
+
 const statusLabels: Record<CapabilityStatus, string> = {
   enabled: "Enabled",
   disabled: "Disabled",
@@ -42,8 +70,15 @@ const statusLabels: Record<CapabilityStatus, string> = {
   unavailable: "Unavailable",
 };
 
+const statusBadges: Record<CapabilityStatus, string> = {
+  enabled: "badge-1",
+  installed: "badge-1",
+  disabled: "badge-4",
+  unavailable: "badge-4",
+};
+
 const originLabels: Record<AgentCapability["origin"], string> = {
-  personal: "Personal/local",
+  personal: "Personal",
   skills_sh: "skills.sh",
   marketplace: "Marketplace",
   built_in: "Built in",
@@ -120,6 +155,18 @@ function matchesCapability(
     capability.sourceRepository,
     capability.sourcePath,
   ].some((value) => value?.toLocaleLowerCase().includes(query));
+}
+
+function compareInventoryCapabilities(
+  left: AgentCapability,
+  right: AgentCapability,
+): number {
+  return (
+    kindSortOrder[left.kind] - kindSortOrder[right.kind] ||
+    originLabels[left.origin].localeCompare(originLabels[right.origin]) ||
+    left.name.localeCompare(right.name) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
@@ -243,7 +290,7 @@ function ProviderSummary({
 
 function FilterForm({ filters }: { filters: AgentSetupFilters }) {
   return (
-    <form className="agent-filter-row" action="/agents" method="get">
+    <AgentFilterForm>
       {filters.view === "compare" ? (
         <input type="hidden" name="view" value="compare" />
       ) : null}
@@ -314,10 +361,7 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           <span>Discrepancies only</span>
         </label>
       ) : null}
-      <button className="btn btn-outline" type="submit">
-        Apply filters
-      </button>
-    </form>
+    </AgentFilterForm>
   );
 }
 
@@ -385,9 +429,9 @@ function ProviderInventory({
   inventory: AgentInventory;
   filters: AgentSetupFilters;
 }) {
-  const capabilities = inventory.capabilities.filter((capability) =>
-    matchesCapability(capability, filters),
-  );
+  const capabilities = inventory.capabilities
+    .filter((capability) => matchesCapability(capability, filters))
+    .sort(compareInventoryCapabilities);
   const instructionVisible = showsInstruction(inventory, filters);
   if (
     capabilities.length === 0 &&
@@ -443,6 +487,13 @@ function ProviderInventory({
 }
 
 function CapabilityRow({ capability }: { capability: AgentCapability }) {
+  const StatusIcon =
+    capability.status === "disabled"
+      ? CircleSlash2
+      : capability.status === "unavailable"
+        ? CircleX
+        : Check;
+
   return (
     <div className="agent-capability-row">
       <div className="agent-capability-primary">
@@ -453,15 +504,17 @@ function CapabilityRow({ capability }: { capability: AgentCapability }) {
             capability.sourcePath}
         </span>
       </div>
-      <span className="badge badge-5">{capability.kind.toUpperCase()}</span>
-      <span className={`badge ${originBadges[capability.origin]}`}>
+      <span className={`agent-kind-label ${kindMarkers[capability.kind]}`}>
+        <i aria-hidden="true" />
+        {capabilityKindLabels[capability.kind]}
+      </span>
+      <span
+        className={`badge ${originBadges[capability.origin]} agent-origin-tag`}
+      >
         {originLabels[capability.origin]}
       </span>
-      <span className="agent-packaging">
-        {capability.packaging.replace("_", " ")}
-      </span>
-      <span className={`status-label status-${capability.status}`}>
-        <i /> {statusLabels[capability.status]}
+      <span className={`agent-status-tag ${statusBadges[capability.status]}`}>
+        <StatusIcon size={13} /> {statusLabels[capability.status]}
       </span>
     </div>
   );
@@ -531,29 +584,61 @@ function ComparisonView({
 }
 
 function ComparisonTableRow({ row }: { row: ComparisonRow }) {
+  const origins = new Set(
+    Object.values(row.cells).map((capability) => capability.origin),
+  );
+  const sharedOrigin =
+    origins.size === 1 ? origins.values().next().value : undefined;
+
   return (
     <tr className={row.isDiscrepancy ? "agent-row-discrepancy" : undefined}>
       <th scope="row">
-        <strong>{row.name}</strong>
-        <span>{row.kind}</span>
+        <div className="agent-comparison-name">{row.name}</div>
+        <span
+          className={`agent-kind-label ${kindMarkers[row.kind]} agent-comparison-kind`}
+        >
+          <i aria-hidden="true" />
+          {capabilityKindLabels[row.kind]}
+        </span>
+        {sharedOrigin ? (
+          <span
+            className={`badge ${originBadges[sharedOrigin]} agent-origin-tag agent-comparison-origin`}
+          >
+            {originLabels[sharedOrigin]}
+          </span>
+        ) : origins.size > 1 ? (
+          <span className="badge agent-origin-tag agent-origin-mixed agent-comparison-origin">
+            Mixed sources
+          </span>
+        ) : null}
       </th>
       {agentProviders.map((provider) => {
         const instruction = row.instructionCells?.[provider];
         const capability = row.cells[provider];
+        const StatusIcon =
+          capability?.status === "disabled"
+            ? CircleSlash2
+            : capability?.status === "unavailable"
+              ? CircleX
+              : Check;
         return (
           <td key={provider}>
             {instruction ? (
               <details className="agent-compare-detail">
-                <summary>
-                  <Check size={13} /> {instruction.filename}
+                <summary className="agent-instruction-summary">
+                  <span>
+                    <Check size={13} /> {instruction.filename}
+                  </span>
+                  <code>{instruction.sourcePath}</code>
                 </summary>
-                <code>{instruction.sourcePath}</code>
                 <pre>{instruction.content}</pre>
               </details>
             ) : capability ? (
               <details className="agent-compare-detail">
-                <summary>
-                  <Check size={13} /> {statusLabels[capability.status]}
+                <summary
+                  className={`agent-status-tag ${statusBadges[capability.status]}`}
+                >
+                  <StatusIcon size={13} /> {statusLabels[capability.status]}
                 </summary>
                 <span>{originLabels[capability.origin]}</span>
                 <span>{capability.packaging.replace("_", " ")}</span>
@@ -565,7 +650,7 @@ function ComparisonTableRow({ row }: { row: ComparisonRow }) {
                 ) : null}
               </details>
             ) : (
-              <span className="agent-missing">
+              <span className="agent-missing agent-status-tag agent-status-missing">
                 <Minus size={13} /> Missing
               </span>
             )}

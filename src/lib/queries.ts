@@ -32,6 +32,8 @@ export interface SessionListItem {
   cachedTokens: number | null;
   model: string | null;
   estimatedCostUsd: number | null;
+  /** Read-time derived cost (pricing-trust rule); absent when not computed. */
+  costUsd?: number | null;
 }
 
 export interface SessionTreeItem extends SessionListItem {
@@ -55,7 +57,7 @@ export interface SessionFilters {
   provider?: string;
   status?: string;
   range?: string;
-  selected?: string;
+  sort?: string;
 }
 
 const STALE_RUNNING_MS = 10 * 60 * 1000;
@@ -108,6 +110,13 @@ function nestSessions(sessions: SessionListItem[]): SessionTreeItem[] {
   return roots;
 }
 
+function sessionRuntimeMs(session: SessionListItem): number {
+  return (
+    new Date(session.endedAt ?? session.updatedAt).getTime() -
+    new Date(session.startedAt).getTime()
+  );
+}
+
 export function getSessions(filters: SessionFilters): SessionTreeItem[] {
   const status = statusExpression("status", "updated_at");
   const clauses: string[] = [];
@@ -128,8 +137,15 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
     params.push(filters.provider);
   }
   if (filters.status && filters.status !== "all") {
-    clauses.push(`${status} = ?`);
-    params.push(staleCutoff(), filters.status);
+    // "attention" is a pseudo-status matching every session that failed:
+    // it must stay in sync with the overview failure count and lists.
+    if (filters.status === "attention") {
+      clauses.push(`${status} IN ('interrupted', 'needs_attention')`);
+      params.push(staleCutoff());
+    } else {
+      clauses.push(`${status} = ?`);
+      params.push(staleCutoff(), filters.status);
+    }
   }
   const date = cutoff(filters.range);
   if (date) {
@@ -146,7 +162,15 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY started_at DESC LIMIT 250`,
     )
     .all(staleCutoff(), ...params) as SessionListItem[];
-  return nestSessions(sessions);
+  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+  for (const session of sessions)
+    session.costUsd = costs.get(session.id) ?? null;
+  const roots = nestSessions(sessions);
+  if (filters.sort === "duration")
+    roots.sort((a, b) => sessionRuntimeMs(b) - sessionRuntimeMs(a));
+  else if (filters.sort === "cost")
+    roots.sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1));
+  return roots;
 }
 
 export function getSessionEvents(sessionId: number): SessionEventRow[] {
@@ -647,6 +671,31 @@ function rowCost(row: UsageJoinRow): number | undefined {
   );
 }
 
+/**
+ * Bulk read-time cost for a set of sessions, following the same
+ * pricing-trust rule as getSessionUsage: a session maps to a dollar figure
+ * only when every one of its usage rows is priced, and to null otherwise.
+ * Sessions without usage rows are absent from the map.
+ */
+export function getSessionsCostUsd(
+  sessionIds: number[],
+): Map<number, number | null> {
+  if (!sessionIds.length) return new Map();
+  const rows = sqlite
+    .prepare(
+      `${USAGE_JOIN} WHERE u.session_id IN (${sessionIds.map(() => "?").join(", ")})`,
+    )
+    .all(...sessionIds) as UsageJoinRow[];
+  const totals = new Map<number, number | null>();
+  for (const row of rows) {
+    const cost = rowCost(row);
+    const current = totals.get(row.sessionId);
+    if (cost === undefined || current === null) totals.set(row.sessionId, null);
+    else totals.set(row.sessionId, (current ?? 0) + cost);
+  }
+  return totals;
+}
+
 export interface SessionUsageDetail {
   models: {
     model: string;
@@ -884,6 +933,33 @@ export function getSyncState(): {
 }
 
 const PATTERNS_HEATMAP_DAYS = 30;
+const PATTERNS_HEATMAP_TIME_ZONE = "America/New_York";
+const PATTERNS_HEATMAP_WEEKDAYS = [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun",
+] as const;
+const patternsHeatmapFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: PATTERNS_HEATMAP_TIME_ZONE,
+  weekday: "short",
+  hour: "numeric",
+  hourCycle: "h23",
+});
+
+function patternsHeatmapCell(startedAt: string): number {
+  const parts = patternsHeatmapFormatter.formatToParts(new Date(startedAt));
+  const weekday = parts.find((part) => part.type === "weekday")?.value;
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const dayOfWeek = PATTERNS_HEATMAP_WEEKDAYS.indexOf(
+    weekday as (typeof PATTERNS_HEATMAP_WEEKDAYS)[number],
+  );
+  return dayOfWeek * 24 + hour;
+}
+
 const LENGTH_BUCKETS = [
   { label: "< 2 min", min: 0, max: 2 * 60_000 },
   { label: "2–10 min", min: 2 * 60_000, max: 10 * 60_000 },
@@ -896,9 +972,9 @@ const LENGTH_BUCKETS = [
 /**
  * Derives the three overview "pattern" views from existing session and
  * usage tables. The heatmap aggregates started_at over the trailing 30 days
- * into a 7 (Mon=0) x 24 (hour) grid; the length histogram buckets the
- * runtime expression over the trailing 7 days; the week cost reuses the
- * pricing-trust rule (null when any usage row is unpriced).
+ * into a 7 (Mon=0) x 24 (hour) grid in America/New_York time; the length
+ * histogram buckets the runtime expression over the trailing 7 days; the week
+ * cost reuses the pricing-trust rule (null when any usage row is unpriced).
  */
 export function getOverviewPatterns(): OverviewPatterns {
   // --- heatmap: 7x24 grid of session-start counts over 30 days ---
@@ -907,17 +983,15 @@ export function getOverviewPatterns(): OverviewPatterns {
   ).toISOString();
   const heatRows = sqlite
     .prepare(
-      `SELECT
-        (CAST(strftime('%w', started_at) AS INTEGER) + 6) % 7 AS dayOfWeek,
-        CAST(strftime('%H', started_at) AS INTEGER) AS hour,
-        COUNT(*) AS count
-       FROM sessions WHERE started_at >= ?
-       GROUP BY dayOfWeek, hour`,
+      `SELECT started_at startedAt
+       FROM sessions WHERE started_at >= ?`,
     )
-    .all(heatStart) as { dayOfWeek: number; hour: number; count: number }[];
-  const heatMap = new Map(
-    heatRows.map((row) => [row.dayOfWeek * 24 + row.hour, row.count]),
-  );
+    .all(heatStart) as { startedAt: string }[];
+  const heatMap = new Map<number, number>();
+  for (const row of heatRows) {
+    const cell = patternsHeatmapCell(row.startedAt);
+    heatMap.set(cell, (heatMap.get(cell) ?? 0) + 1);
+  }
   const heatmap = Array.from({ length: 7 * 24 }, (_, index) => ({
     dayOfWeek: Math.floor(index / 24),
     hour: index % 24,

@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProviderAdapter } from "@/lib/types";
+import { __resetCodexDbCache } from "@/lib/codex-db";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
 import { piAdapter } from "./pi";
@@ -33,12 +34,17 @@ afterEach(async () => {
 // read-only `fileMustExist` open fails gracefully. Tests that exercise the
 // enrichment set ZCODE_DB_PATH to their own temp DB.
 const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
+const CODEX_DB_GUARD = "/dev/null/nonexistent-codex-db";
 beforeEach(() => {
   process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+  process.env.CODEX_STATE_DB_PATH = CODEX_DB_GUARD;
+  __resetCodexDbCache();
   __resetZcodeDbCache();
 });
 afterEach(() => {
   delete process.env.ZCODE_DB_PATH;
+  delete process.env.CODEX_STATE_DB_PATH;
+  __resetCodexDbCache();
   __resetZcodeDbCache();
 });
 
@@ -166,6 +172,39 @@ describe("provider adapters", () => {
     expect(result.sessions[0].title).toBe("Fix the sidebar layout");
   });
 
+  it("uses the Codex app database title when it is available", async () => {
+    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-codex-db-"));
+    temporaryDirectories.push(dbDir);
+    const dbPath = path.join(dbDir, "state_5.sqlite");
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL)");
+    db.prepare("INSERT INTO threads (id, title) VALUES (?, ?)").run(
+      "codex-app-title",
+      "Title shown in Codex",
+    );
+    db.close();
+    process.env.CODEX_STATE_DB_PATH = dbPath;
+
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-11T10:00:00Z",
+        payload: { id: "codex-app-title", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Original user request" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Title shown in Codex");
+  });
+
   it("marks Codex as interrupted only for an explicit abort marker", async () => {
     const result = await parse(codexAdapter, [
       {
@@ -272,6 +311,59 @@ describe("provider adapters", () => {
     expect(
       result.sessions[0].events.some((event) => event.title === "Used Read"),
     ).toBe(true);
+  });
+
+  it("prefers Claude's latest custom title over generated titles and user messages", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-title",
+        timestamp: "2026-07-11T10:00:00Z",
+        message: { role: "user", content: "Original user request" },
+      },
+      {
+        type: "ai-title",
+        sessionId: "claude-title",
+        aiTitle: "Generated session title",
+      },
+      {
+        type: "custom-title",
+        sessionId: "claude-title",
+        customTitle: "First custom title",
+      },
+      {
+        type: "custom-title",
+        sessionId: "claude-title",
+        customTitle: "Latest custom title",
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Latest custom title");
+  });
+
+  it("uses Claude's latest generated title when no custom title exists", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-ai-title",
+        timestamp: "2026-07-11T10:00:00Z",
+        message: { role: "user", content: "Original user request" },
+      },
+      {
+        type: "ai-title",
+        sessionId: "claude-ai-title",
+        aiTitle: "First generated title",
+      },
+      {
+        type: "ai-title",
+        sessionId: "claude-ai-title",
+        aiTitle: "Latest generated title",
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Latest generated title");
   });
 
   it("recognizes a current-format Claude end turn as completed", async () => {

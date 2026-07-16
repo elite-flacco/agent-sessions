@@ -405,37 +405,29 @@ describe("overview patterns", () => {
     expect(patterns.costWeek.tokens).toBeGreaterThan(0);
   });
 
-  it("places heatmap counts in the correct day-of-week cell", () => {
-    // Seed a session at a known timestamp (a Wednesday) and confirm the count
-    // lands in dayOfWeek=2, not collapsed into Monday (0). This guards against
-    // the strftime('weekday N') modifier regression that mapped all days to 0.
-    // 2026-07-15 is a Wednesday; 14:00 local-ish via fixed ISO string.
-    const wednesday = "2026-07-15T14:00:00.000Z";
+  it("buckets heatmap sessions in America/New_York time", () => {
+    // This instant is Tuesday 00:30 UTC but Monday 20:30 EDT. Assert the
+    // Eastern-time cell changes even when the UTC date belongs to another day.
+    const tuesdayUtcMondayEastern = "2026-07-14T00:30:00.000Z";
+    const before = queries.getOverviewPatterns();
+    const beforeEasternCount =
+      before.heatmap.find((cell) => cell.dayOfWeek === 0 && cell.hour === 20)
+        ?.count ?? 0;
     sqlite
       .prepare(
         `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
-         VALUES ('heat-wed', 'codex', 'Heatmap placement check', 'completed', ?, ?)`,
+         VALUES ('heat-eastern', 'codex', 'Heatmap placement check', 'completed', ?, ?)`,
       )
-      .run(wednesday, wednesday);
+      .run(tuesdayUtcMondayEastern, tuesdayUtcMondayEastern);
     try {
       const patterns = queries.getOverviewPatterns();
-      // Find the cell for the seeded session's day-of-week and hour.
-      // strftime('%w', '2026-07-15') = '3' (Wednesday, Sun=0); (3+6)%7 = 2.
-      // strftime('%H', '2026-07-15T14:00:00.000Z') depends on TZ; assert the
-      // count appears somewhere in dayOfWeek=2 rather than pinning the hour.
-      const wednesdayCells = patterns.heatmap.filter(
-        (cell) => cell.dayOfWeek === 2 && cell.count > 0,
+      const easternCell = patterns.heatmap.find(
+        (cell) => cell.dayOfWeek === 0 && cell.hour === 20,
       );
-      expect(wednesdayCells.length).toBeGreaterThan(0);
-      // And confirm it did NOT all collapse into Monday (dayOfWeek=0).
-      const total = patterns.heatmap.reduce((sum, cell) => sum + cell.count, 0);
-      const mondayTotal = patterns.heatmap
-        .filter((cell) => cell.dayOfWeek === 0)
-        .reduce((sum, cell) => sum + cell.count, 0);
-      expect(mondayTotal).toBeLessThan(total);
+      expect(easternCell?.count).toBe(beforeEasternCount + 1);
     } finally {
       sqlite
-        .prepare("DELETE FROM sessions WHERE external_id = 'heat-wed'")
+        .prepare("DELETE FROM sessions WHERE external_id = 'heat-eastern'")
         .run();
     }
   });
