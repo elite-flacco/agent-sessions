@@ -35,7 +35,7 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 | `/sessions/[id]` | A full-width session detail view with metadata, links between main and subagent sessions, and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                         |
 | `/projects`      | Redirects to the Projects view on `/sessions` for compatibility with old bookmarks.                                                                                                                                                                                                                                                                    |
 | `/usage`         | Usage & cost — today/7-day/30-day cost and token totals, a 30-day daily cost strip, and breakdowns by model, agent, and project.                                                                                                                                                                                                                       |
-| `/agents`        | Agent setup — a live, read-only global inventory of plugins, skills, MCP servers, and instruction files for Codex, Claude Code, Zcode, and Pi. Inventory and comparison views expose status and provenance differences without rendering secret-bearing configuration.                                                                                 |
+| `/agents`        | Agent setup — a live, read-only global inventory of plugins, skills, MCP servers, and instruction files for Codex, Claude Code, Zcode, and Pi. Compare opens a consensus-based Needs attention view, while Complete matrix preserves the full provider-by-provider inventory.                                                                          |
 
 Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted.
 
@@ -61,6 +61,13 @@ Zcode's rollout (`model_io`) files carry model usage but no working directory an
 The **Agent setup** page reads global configuration live when `/agents` is
 opened; it does not persist the inventory in Relay's database. This first
 version is global-only. Project-level configuration is not included yet.
+
+**Needs attention** evaluates every capability type across all four agents. It
+labels unavailable capabilities, missing instructions, and three-to-one gaps
+as **Fix**; two-to-two splits and shared configuration differences are
+**Review** items. Capabilities found on only one provider remain contextual in
+**Complete matrix** instead of being treated as errors. These labels are
+read-only heuristics and never modify agent configuration.
 
 | Provider    | Global sources                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
