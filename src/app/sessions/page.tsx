@@ -28,6 +28,7 @@ export default async function Home({ searchParams }: HomeProps) {
     provider: first(params.provider),
     status: first(params.status),
     range: first(params.range),
+    sort: first(params.sort),
   };
   const sessions = getSessions(filters);
   const view: WorkspaceView =

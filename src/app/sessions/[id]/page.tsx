@@ -6,6 +6,7 @@ import {
   getSession,
   getSessionChildren,
   getSessionParent,
+  getSessionsCostUsd,
   getSessionUsage,
 } from "@/lib/queries";
 import { readSessionTranscript } from "@/lib/transcript";
@@ -24,6 +25,10 @@ export default async function SessionPage({ params }: SessionPageProps) {
   if (!session) notFound();
   const health = getCollectorHealth();
   const transcript = await readSessionTranscript(session);
+  const subagents = getSessionChildren(session);
+  const subagentCosts = getSessionsCostUsd(subagents.map((child) => child.id));
+  for (const child of subagents)
+    child.costUsd = subagentCosts.get(child.id) ?? null;
   return (
     <main className="relay-shell">
       <Sidebar
@@ -33,7 +38,7 @@ export default async function SessionPage({ params }: SessionPageProps) {
       <SessionDetailView
         session={session}
         parent={getSessionParent(session)}
-        subagents={getSessionChildren(session)}
+        subagents={subagents}
         usage={getSessionUsage(session.id)}
         transcript={transcript}
       />

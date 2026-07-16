@@ -87,6 +87,7 @@ export function Dashboard({
       !value ||
       (name !== "range" && value === "all") ||
       (name === "range" && value === "7d") ||
+      (name === "sort" && value === "started") ||
       (name === "view" && value === "sessions");
     if (isDefault) params.delete(name);
     else params.set(name, value);
@@ -227,6 +228,17 @@ export function Dashboard({
           ]}
           compact
         />
+        <FilterSelect
+          label="Sort sessions"
+          value={filters.sort ?? "started"}
+          onChange={(value) => updateParam("sort", value)}
+          options={[
+            { value: "started", label: "Newest first" },
+            { value: "duration", label: "Longest first" },
+            { value: "cost", label: "Costliest first" },
+          ]}
+          compact
+        />
       </div>
 
       {syncState.errors > 0 && (
@@ -304,6 +316,7 @@ function SessionsTable({
         <span>Status</span>
         <span>Started</span>
         <span>Duration</span>
+        <span>Cost</span>
       </div>
       {sessions.length ? (
         sessions.map((session) => (
@@ -330,6 +343,7 @@ function SessionRow({
   session: SessionTreeItem;
   depth: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
   return (
     <>
       <div className={depth ? "session-row session-child-row" : "session-row"}>
@@ -354,9 +368,20 @@ function SessionRow({
             {session.sessionKind !== "subagent" && session.branch
               ? ` · ${session.branch}`
               : ""}
-            {session.children.length
-              ? ` · ${session.children.length} subagent${session.children.length === 1 ? "" : "s"}`
-              : ""}
+            {session.children.length > 0 && (
+              <button
+                className="subagent-toggle"
+                onClick={() => setExpanded((value) => !value)}
+                aria-expanded={expanded}
+              >
+                <ChevronDown
+                  size={12}
+                  className={expanded ? "" : "chevron-collapsed"}
+                />
+                {session.children.length} subagent
+                {session.children.length === 1 ? "" : "s"}
+              </button>
+            )}
           </span>
         </div>
         <div>
@@ -377,10 +402,14 @@ function SessionRow({
         <span className="mono session-secondary">
           {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
         </span>
+        <span className="mono session-secondary">
+          {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}
+        </span>
       </div>
-      {session.children.map((child) => (
-        <SessionRow key={child.id} session={child} depth={depth + 1} />
-      ))}
+      {expanded &&
+        session.children.map((child) => (
+          <SessionRow key={child.id} session={child} depth={depth + 1} />
+        ))}
     </>
   );
 }
