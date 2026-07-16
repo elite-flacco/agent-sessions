@@ -106,9 +106,112 @@ describe("parseAgentSetupFilters", () => {
       parseAgentSetupFilters({ provider: "other" }).provider,
     ).toBeUndefined();
   });
+
+  test("parses the consensus attention comparison mode", () => {
+    expect(
+      parseAgentSetupFilters({
+        view: "compare",
+        comparison: "attention",
+      }),
+    ).toMatchObject({
+      view: "compare",
+      comparisonMode: "attention",
+    });
+  });
 });
 
 describe("AgentSetupView", () => {
+  test("opens the primary Compare tab in Needs attention mode", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).toContain(
+      'href="/agents?view=compare&amp;comparison=attention"',
+    );
+  });
+
+  test("Needs attention includes fixes and reviews but excludes context rows", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    expect(html).toContain("Global instructions");
+    expect(html).toContain("agent-browser");
+    expect(html).not.toContain(">frontend-rules<");
+    expect(html).not.toContain(">langsmith<");
+    expect(html).toContain("1 fix");
+    expect(html).toContain("1 review");
+    expect(html.indexOf("Global instructions")).toBeLessThan(
+      html.indexOf("agent-browser"),
+    );
+  });
+
+  test("Complete matrix preserves context rows and legacy discrepancies", () => {
+    const complete = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+    const discrepancies = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare", discrepanciesOnly: true }}
+      />,
+    );
+
+    expect(complete).toContain("frontend-rules");
+    expect(complete).toContain("langsmith");
+    expect(discrepancies).toContain("langsmith");
+    expect(discrepancies).not.toContain(">frontend-rules<");
+  });
+
+  test("Complete matrix collapses unanimous capabilities into one all-agent cell", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+    const rowStart = html.indexOf(">frontend-rules<");
+    const rowEnd = html.indexOf("</tr>", rowStart);
+    const row = html.slice(rowStart, rowEnd);
+
+    expect(row).toContain('<td colSpan="4"');
+    expect(row).toContain("All agents");
+  });
+
+  test("Needs attention empty state links to the complete matrix", () => {
+    const uniformInventories: AgentInventory[] = [
+      "codex",
+      "claude",
+      "zcode",
+      "pi",
+    ].map((provider) => ({
+      provider: provider as AgentInventory["provider"],
+      scope: "global",
+      capabilities: [skill(provider as AgentInventory["provider"], "shared")],
+      warnings: [],
+    }));
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={uniformInventories}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    expect(html).toContain("No consensus drift needs attention");
+    expect(html).toContain('href="/agents?view=compare"');
+    expect(html).toContain("Complete matrix");
+  });
+
   test("comparison mode shows only discrepant rows when requested", () => {
     const html = renderToStaticMarkup(
       <AgentSetupView

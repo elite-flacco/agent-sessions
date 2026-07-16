@@ -1508,6 +1508,9 @@
   .agent-provider-heading,
   .agent-provider-heading > div,
   .agent-warning-count,
+  .agent-comparison-toolbar,
+  .agent-comparison-switcher,
+  .agent-attention-summary,
   .agent-discrepancy-toggle,
   .agent-missing,
   .agent-compare-detail summary {
@@ -1689,6 +1692,39 @@
   .agent-empty-state {
     margin-top: 0.9rem;
   }
+  .agent-empty-state .btn {
+    margin-top: 0.7rem;
+  }
+  .agent-comparison-toolbar {
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+  }
+  .agent-comparison-switcher {
+    width: fit-content;
+    gap: 0.2rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background: var(--muted);
+    padding: 0.2rem;
+  }
+  .agent-comparison-tab {
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.65rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    text-decoration: none;
+  }
+  .agent-comparison-tab:hover {
+    color: var(--foreground);
+  }
+  .agent-comparison-tab-active {
+    background: var(--card);
+    color: var(--foreground);
+  }
+  .agent-attention-summary {
+    gap: 0.4rem;
+  }
   .agent-comparison-region {
     margin-top: 0.9rem;
     overflow-x: auto;
@@ -1738,6 +1774,16 @@
   .agent-comparison-origin {
     display: flex;
     margin-top: 0.35rem;
+  }
+  .agent-assessment {
+    display: grid;
+    justify-items: start;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+  }
+  .agent-assessment-reason {
+    color: var(--muted-foreground);
+    line-height: var(--leading-normal);
   }
   .agent-origin-mixed {
     border-color: var(--border-hover);
@@ -1795,6 +1841,12 @@
     max-height: 18rem;
     margin-top: 0.55rem;
     border: 1px solid var(--border);
+  }
+  .agent-all-agents-cell {
+    background: color-mix(in srgb, var(--accent) 3%, var(--card));
+  }
+  .agent-all-agents-detail {
+    width: fit-content;
   }
   .agent-missing {
     gap: 0.35rem;
@@ -1973,6 +2025,10 @@
     }
     .agent-summary-grid {
       grid-template-columns: 1fr;
+    }
+    .agent-comparison-toolbar {
+      align-items: flex-start;
+      flex-direction: column;
     }
     .agent-filter-row {
       grid-template-columns: 1fr;
