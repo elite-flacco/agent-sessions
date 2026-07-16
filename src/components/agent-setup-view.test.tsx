@@ -153,6 +153,27 @@ describe("AgentSetupView", () => {
     );
   });
 
+  test("uses the correct plural for multiple fixes", () => {
+    const multipleFixInventories = inventories.map((inventory) => ({
+      ...inventory,
+      capabilities: [
+        ...inventory.capabilities,
+        skill(inventory.provider, "broken-shared-skill", {
+          status: "unavailable",
+        }),
+      ],
+    }));
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={multipleFixInventories}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    expect(html).toContain("2 fixes");
+    expect(html).not.toContain("2 fixs");
+  });
+
   test("Complete matrix preserves context rows and legacy discrepancies", () => {
     const complete = renderToStaticMarkup(
       <AgentSetupView

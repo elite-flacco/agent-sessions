@@ -115,8 +115,12 @@ const originBadges: Record<AgentCapability["origin"], string> = {
   unknown: "badge-5",
 };
 
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+function countLabel(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -638,7 +642,9 @@ function ComparisonView({
           </Link>
         </nav>
         <div className="agent-attention-summary" aria-label="Attention summary">
-          <span className="badge badge-5">{countLabel(fixCount, "fix")}</span>
+          <span className="badge badge-5">
+            {countLabel(fixCount, "fix", "fixes")}
+          </span>
           <span className="badge badge-4">
             {countLabel(reviewCount, "review")}
           </span>
