@@ -42,6 +42,24 @@ export interface AgentInventory {
   warnings: InventoryWarning[];
 }
 
+export type ComparisonAssessmentLevel = "fix" | "review" | "context";
+
+export type ComparisonAssessmentReason =
+  | "unavailable"
+  | "missing_instruction"
+  | "missing_from_one_provider"
+  | "split_presence"
+  | "configuration_drift"
+  | "instruction_drift"
+  | "provider_specific"
+  | "consistent";
+
+export interface ComparisonAssessment {
+  level: ComparisonAssessmentLevel;
+  reason: ComparisonAssessmentReason;
+  message: string;
+}
+
 export interface ComparisonRow {
   key: string;
   name: string;
@@ -49,4 +67,6 @@ export interface ComparisonRow {
   cells: Partial<Record<AgentProvider, AgentCapability>>;
   instructionCells?: Partial<Record<AgentProvider, InstructionFile>>;
   isDiscrepancy: boolean;
+  assessment: ComparisonAssessment;
+  isUniformAcrossProviders: boolean;
 }
