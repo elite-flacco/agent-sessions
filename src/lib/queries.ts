@@ -580,7 +580,9 @@ export function getRunningSessions(limit = 8): SessionListItem[] {
 
 export function getAttentionSessions(limit = 8): SessionListItem[] {
   const status = statusExpression("status", "updated_at");
-  const dayAgo = new Date(Date.now() - DAY_MS).toISOString();
+  const yesterdayStart = new Date();
+  yesterdayStart.setHours(0, 0, 0, 0);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
   return sqlite
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
@@ -591,7 +593,12 @@ export function getAttentionSessions(limit = 8): SessionListItem[] {
     WHERE ${status} IN ('interrupted', 'needs_attention') AND updated_at >= ?
     ORDER BY updated_at DESC LIMIT ?`,
     )
-    .all(staleCutoff(), staleCutoff(), dayAgo, limit) as SessionListItem[];
+    .all(
+      staleCutoff(),
+      staleCutoff(),
+      yesterdayStart.toISOString(),
+      limit,
+    ) as SessionListItem[];
 }
 
 export interface CollectorHealth {

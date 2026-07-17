@@ -251,19 +251,46 @@ describe("project and overview queries", () => {
     expect(overview.providerCounts[0]).toMatchObject({ provider: "codex" });
   });
 
-  it("keeps incomplete sessions out of the attention list", () => {
-    expect(
-      queries.getRunningSessions().map((session) => session.title),
-    ).toEqual(["Fresh runner"]);
-    const attention = queries.getAttentionSessions();
-    expect(attention.map((session) => session.title)).not.toContain(
-      "Stale runner",
-    );
-    expect(
-      attention.every((session) =>
-        ["interrupted", "needs_attention"].includes(session.status),
-      ),
-    ).toBe(true);
+  it("keeps incomplete sessions out and includes all of yesterday", () => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(12, 0, 0, 0);
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "waiting-approval",
+        "zcode",
+        "Waiting for approval",
+        "needs_attention",
+        new Date(now.getTime() - 2 * 24 * 60 * 60_000).toISOString(),
+        yesterday.toISOString(),
+      );
+    try {
+      expect(
+        queries.getRunningSessions().map((session) => session.title),
+      ).toEqual(["Fresh runner"]);
+      const attention = queries.getAttentionSessions();
+      expect(attention.map((session) => session.title)).not.toContain(
+        "Stale runner",
+      );
+      expect(
+        attention.every((session) =>
+          ["interrupted", "needs_attention"].includes(session.status),
+        ),
+      ).toBe(true);
+      expect(attention.map((session) => session.title)).toContain(
+        "Waiting for approval",
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("waiting-approval");
+    }
   });
 
   it("reports collector health from ingestion and scan state", () => {

@@ -241,6 +241,102 @@ describe("collector sync", () => {
     }
   });
 
+  it("reconciles a Zcode session waiting for user input as needs attention", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-waiting.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const startedAt = Date.now() - 60 * 60_000;
+    const updatedAt = Date.now() - 30 * 60_000;
+    zcodeDb
+      .prepare(
+        `INSERT INTO session
+         (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-waiting",
+        "/work/zcode-project",
+        "Waiting for a decision",
+        null,
+        "interactive",
+        "generated",
+        startedAt,
+        updatedAt,
+      );
+    zcodeDb
+      .prepare(
+        "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        "assistant-1",
+        "zcode-waiting",
+        updatedAt - 1_000,
+        JSON.stringify({
+          role: "assistant",
+          time: { completed: updatedAt - 1_000 },
+        }),
+      );
+    zcodeDb
+      .prepare(
+        "INSERT INTO part (id, message_id, session_id, time_created, data) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        "question-1",
+        "assistant-1",
+        "zcode-waiting",
+        updatedAt,
+        JSON.stringify({
+          type: "tool",
+          tool: "AskUserQuestion",
+          state: { status: "running" },
+        }),
+      );
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at, ended_at)
+         VALUES (?, 'zcode', ?, 'completed', ?, ?, ?)`,
+      )
+      .run(
+        "zcode-waiting",
+        "Waiting for a decision",
+        new Date(startedAt).toISOString(),
+        new Date(updatedAt - 1_000).toISOString(),
+        new Date(updatedAt - 1_000).toISOString(),
+      );
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT status FROM sessions WHERE external_id = 'zcode-waiting'",
+          )
+          .get(),
+      ).toEqual({ status: "needs_attention" });
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
+
   it("refreshes Codex titles when the app database changes without a JSONL change", async () => {
     const codexDbPath = path.join(directory, "codex-state.db");
     const Database = (await import("better-sqlite3")).default;

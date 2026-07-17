@@ -226,6 +226,18 @@ function zcodeStoredStatus(
   updatedAt: string,
 ): "completed" | "running" | "incomplete" | "interrupted" | "needs_attention" {
   for (const message of [...messages].reverse()) {
+    for (const part of [...message.parts].reverse()) {
+      const data = record(part.data);
+      const state = record(data?.state);
+      if (
+        data?.type === "tool" &&
+        data.tool === "AskUserQuestion" &&
+        state?.status === "running"
+      )
+        return "needs_attention";
+    }
+  }
+  for (const message of [...messages].reverse()) {
     const data = record(message.data);
     if (!data) continue;
     if (data.error) return "needs_attention";
@@ -255,18 +267,19 @@ function reconcileCodexTitles(): void {
 function reconcileZcodeMetadata(): void {
   const sessions = sqlite
     .prepare(
-      "SELECT id, external_id externalId, title, cwd FROM sessions WHERE provider = 'zcode'",
+      "SELECT id, external_id externalId, title, cwd, status FROM sessions WHERE provider = 'zcode'",
     )
     .all() as Array<{
     id: number;
     externalId: string;
     title: string;
     cwd: string | null;
+    status: string;
   }>;
   const update = sqlite.prepare(
     `UPDATE sessions
      SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-         session_kind = ?, agent_depth = ?
+         session_kind = ?, agent_depth = ?, status = ?, ended_at = ?
      WHERE id = ?`,
   );
   const write = sqlite.transaction(() => {
@@ -275,6 +288,19 @@ function reconcileZcodeMetadata(): void {
       if (!metadata) continue;
       const cwd = metadata.directory ?? session.cwd ?? undefined;
       const messages = readZcodeSessionMessages(session.externalId) ?? [];
+      const updatedAt =
+        metadata.timeUpdated === undefined
+          ? undefined
+          : new Date(metadata.timeUpdated).toISOString();
+      const storedStatus =
+        messages.length && updatedAt
+          ? zcodeStoredStatus(messages, updatedAt)
+          : undefined;
+      const status =
+        session.status === "interrupted" &&
+        (storedStatus === "running" || storedStatus === "incomplete")
+          ? session.status
+          : (storedStatus ?? session.status);
       update.run(
         zcodeTitle(
           safeTitle(metadata.title, session.title),
@@ -287,6 +313,10 @@ function reconcileZcodeMetadata(): void {
         metadata.parentId ?? null,
         metadata.taskType === "subagent_child" ? "subagent" : "main",
         metadata.parentId ? 1 : 0,
+        status,
+        status === "completed" || status === "needs_attention"
+          ? (updatedAt ?? null)
+          : null,
         session.id,
       );
     }
