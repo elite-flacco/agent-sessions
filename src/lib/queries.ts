@@ -1142,8 +1142,11 @@ function aggregateCache(rows: UsageJoinRow[]) {
     } else {
       const pricing = findPricing(row.model, row.startedAt);
       // $ saved only meaningful when we can price both the actual read rate
-      // and the counterfactual input rate. rowCost being defined guarantees
-      // pricing exists; recompute the cache-read contribution explicitly.
+      // and the counterfactual input rate. rowCost can be defined from a
+      // provider-reported cost alone (reported wins even with no pricing
+      // entry), so it does NOT guarantee pricing exists. With a pricing entry
+      // we can build the counterfactual; a reported-cost row with no pricing
+      // entry cannot, so it is treated as unpriced for $-saved purposes.
       if (pricing) {
         grossCost += cost;
         counterfactual +=
@@ -1182,6 +1185,8 @@ function aggregateCache(rows: UsageJoinRow[]) {
       tokens: m.tokens,
     }))
     .sort((a, b) => b.tokens - a.tokens);
+  // NOTE: happy-path $-saved has no regression test because the shared fixture's
+  // unpriced s4 forces null across the week window (pricing-trust rule).
   return { hitRate, savedUsd, savedSharePct, byModel: byModelOut, read, input };
 }
 
@@ -1207,6 +1212,23 @@ export function getInsights(): Insights {
   const trendRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
     .all(trendStart) as UsageJoinRow[];
+
+  // --- cost outliers: per-session cost + runtime over the week window ---
+  interface CostRow {
+    id: number;
+    title: string;
+    model: string | null;
+    provider: AgentProvider;
+    startedAt: string;
+    runtimeMs: number;
+  }
+  const costSessionRows = sqlite
+    .prepare(
+      `SELECT s.id, s.title, s.model, s.provider, s.started_at startedAt,
+        CAST((julianday(COALESCE(s.ended_at, s.updated_at)) - julianday(s.started_at)) * 86400000 AS INTEGER) AS runtimeMs
+       FROM sessions s WHERE s.started_at >= ?`,
+    )
+    .all(weekStart) as CostRow[];
 
   // --- cache effectiveness ---
   const weekCache = aggregateCache(weekRows);
@@ -1248,7 +1270,70 @@ export function getInsights(): Insights {
     };
   });
 
-  // Cost half is filled in by Task 3; stubbed to empty/safe values here.
+  // --- cost outliers ---
+  // Per-session usage cost over the week, keyed by session id. A session's
+  // cost is the sum of its priced usage rows; unpriced rows contribute nothing
+  // to that session's cost. runtimeMs comes from costSessionRows.
+  const sessionCost = new Map<number, number>();
+  let weekTotalUsd: number | null = 0;
+  let anyUnpriced = false;
+  for (const row of weekRows) {
+    const cost = rowCost(row);
+    if (cost === undefined) {
+      anyUnpriced = true;
+      continue;
+    }
+    weekTotalUsd += cost; // accumulate the priced grand total
+    sessionCost.set(
+      row.sessionId,
+      (sessionCost.get(row.sessionId) ?? 0) + cost,
+    );
+  }
+  if (anyUnpriced) weekTotalUsd = null; // trust rule: null when any row unpriced
+
+  // Outliers: top 5 by session cost. usdPerMin excludes zero/negative runtime.
+  const runtimeById = new Map(
+    costSessionRows.map((r) => [r.id, { row: r, runtimeMs: r.runtimeMs }]),
+  );
+  const outliers = [...sessionCost.entries()]
+    .map(([id, costUsd]) => {
+      const meta = runtimeById.get(id);
+      const runtimeMs = meta?.runtimeMs ?? 0;
+      const minutes = Math.max(runtimeMs / 60_000, 1);
+      return {
+        id,
+        title: meta?.row.title ?? "Untitled",
+        model: meta?.row.model ?? null,
+        costUsd,
+        runtimeMs,
+        usdPerMin: costUsd / minutes,
+      };
+    })
+    .sort((a, b) => b.costUsd - a.costUsd)
+    .slice(0, 5);
+
+  // Pareto: share of week cost held by the top 3 sessions. Null when the
+  // week total is unpriced (trust rule) or there is no priced spend.
+  const top3Cost = outliers.slice(0, 3).reduce((sum, o) => sum + o.costUsd, 0);
+  let paretoSharePct: number | null = null;
+  if (weekTotalUsd !== null && weekTotalUsd > 0) {
+    paretoSharePct = (top3Cost / weekTotalUsd) * 100;
+  }
+  const costSignal: InsightSignal | null =
+    paretoSharePct !== null && paretoSharePct >= 50
+      ? {
+          tone: "warning",
+          text: `Three sessions drove ${Math.round(paretoSharePct)}% of this week's cost — inspect them for loops or retries.`,
+        }
+      : null;
+
+  // Cost trend reuses the existing getUsageSummary daily series rather than
+  // recomputing it (keeps a single source of truth for daily cost).
+  const costTrend = getUsageSummary().daily.map((d) => ({
+    day: d.date,
+    costUsd: d.costUsd,
+  }));
+
   return {
     cache: {
       week: {
@@ -1262,10 +1347,10 @@ export function getInsights(): Insights {
       signal: cacheSignal,
     },
     cost: {
-      week: { totalUsd: null, paretoSharePct: null },
-      outliers: [],
-      trend: [],
-      signal: null,
+      week: { totalUsd: weekTotalUsd, paretoSharePct },
+      outliers,
+      trend: costTrend,
+      signal: costSignal,
     },
   };
 }

@@ -130,3 +130,60 @@ describe("getInsights — cache effectiveness", () => {
     ).toBe(true);
   });
 });
+
+describe("getInsights — cost outliers", () => {
+  beforeAll(() => {
+    const now = new Date();
+    const iso = (offsetMs: number) =>
+      new Date(now.getTime() - offsetMs).toISOString();
+    // s5, s6: this week, priced, so a total + Pareto share exist. Insert via
+    // a fresh prepared statement (the ones in the top-level beforeAll are out
+    // of scope here).
+    const insertSession = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, model, status, started_at, updated_at, ended_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    insertSession.run(
+      "s5",
+      "codex",
+      "Big spend",
+      "gpt-5.5",
+      "completed",
+      iso(0),
+      iso(0),
+      iso(0),
+    );
+    insertUsage.run(5, "gpt-5.5", 2_000_000, 200_000, 0, 0, 1.0); // reported $1.00
+    insertSession.run(
+      "s6",
+      "codex",
+      "Small spend",
+      "gpt-5.5",
+      "completed",
+      iso(0),
+      iso(0),
+      iso(0),
+    );
+    insertUsage.run(6, "gpt-5.5", 20_000, 0, 0, 0, 0.01); // reported $0.01
+  });
+
+  it("reports null week totals when any this-week session is unpriced", () => {
+    // s4 (mystery-model) is unpriced and in this-week window.
+    const { cost } = queries.getInsights();
+    expect(cost.week.totalUsd).toBeNull();
+    expect(cost.week.paretoSharePct).toBeNull();
+  });
+
+  it("lists cost outliers with $/min even when the week total is unpriced", () => {
+    // Outliers are ranked by per-row cost; pricing-trust does not gate the
+    // list (rows with a cost contribute, rows without are skipped).
+    const { cost } = queries.getInsights();
+    expect(cost.outliers.length).toBeGreaterThan(0);
+    const big = cost.outliers.find((o) => o.title === "Big spend");
+    expect(big).toBeDefined();
+    expect(big!.costUsd).toBe(1.0);
+    expect(big!.usdPerMin).toBeGreaterThanOrEqual(0);
+  });
+});
