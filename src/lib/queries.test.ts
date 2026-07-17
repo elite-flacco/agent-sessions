@@ -251,24 +251,33 @@ describe("project and overview queries", () => {
     expect(overview.providerCounts[0]).toMatchObject({ provider: "codex" });
   });
 
-  it("keeps incomplete sessions out and includes all of yesterday", () => {
+  it("keeps incomplete sessions out and includes the past three calendar days", () => {
     const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(12, 0, 0, 0);
+    const twoDaysAgo = new Date(now);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(12, 0, 0, 0);
+    const threeDaysAgo = new Date(now);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    threeDaysAgo.setHours(12, 0, 0, 0);
     sqlite
       .prepare(
         `INSERT INTO sessions
          (external_id, provider, title, status, started_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         "waiting-approval",
         "zcode",
         "Waiting for approval",
         "needs_attention",
-        new Date(now.getTime() - 2 * 24 * 60 * 60_000).toISOString(),
-        yesterday.toISOString(),
+        new Date(now.getTime() - 3 * 24 * 60 * 60_000).toISOString(),
+        twoDaysAgo.toISOString(),
+        "old-attention",
+        "zcode",
+        "Old attention",
+        "needs_attention",
+        new Date(now.getTime() - 4 * 24 * 60 * 60_000).toISOString(),
+        threeDaysAgo.toISOString(),
       );
     try {
       expect(
@@ -286,10 +295,13 @@ describe("project and overview queries", () => {
       expect(attention.map((session) => session.title)).toContain(
         "Waiting for approval",
       );
+      expect(attention.map((session) => session.title)).not.toContain(
+        "Old attention",
+      );
     } finally {
       sqlite
-        .prepare("DELETE FROM sessions WHERE external_id = ?")
-        .run("waiting-approval");
+        .prepare("DELETE FROM sessions WHERE external_id IN (?, ?)")
+        .run("waiting-approval", "old-attention");
     }
   });
 

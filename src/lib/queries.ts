@@ -580,9 +580,9 @@ export function getRunningSessions(limit = 8): SessionListItem[] {
 
 export function getAttentionSessions(limit = 8): SessionListItem[] {
   const status = statusExpression("status", "updated_at");
-  const yesterdayStart = new Date();
-  yesterdayStart.setHours(0, 0, 0, 0);
-  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  const threeDayStart = new Date();
+  threeDayStart.setHours(0, 0, 0, 0);
+  threeDayStart.setDate(threeDayStart.getDate() - 2);
   return sqlite
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
@@ -596,7 +596,7 @@ export function getAttentionSessions(limit = 8): SessionListItem[] {
     .all(
       staleCutoff(),
       staleCutoff(),
-      yesterdayStart.toISOString(),
+      threeDayStart.toISOString(),
       limit,
     ) as SessionListItem[];
 }
