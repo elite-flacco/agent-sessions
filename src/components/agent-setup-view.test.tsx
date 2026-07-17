@@ -151,6 +151,15 @@ describe("AgentSetupView", () => {
     expect(html.indexOf("Global instructions")).toBeLessThan(
       html.indexOf("agent-browser"),
     );
+    expect(html).toContain(
+      '<tr class="agent-comparison-group-row agent-comparison-group-fix"><th scope="rowgroup" colSpan="5"><span>Fixes</span><span>1</span></th></tr>',
+    );
+    expect(html).toContain(
+      '<tr class="agent-comparison-group-row agent-comparison-group-review"><th scope="rowgroup" colSpan="5"><span>Reviews</span><span>1</span></th></tr>',
+    );
+    expect(html).not.toContain(
+      "Present on 2 of 4 agents; review whether parity is intended.",
+    );
   });
 
   test("uses the correct plural for multiple fixes", () => {
@@ -192,6 +201,18 @@ describe("AgentSetupView", () => {
     expect(complete).toContain("langsmith");
     expect(discrepancies).toContain("langsmith");
     expect(discrepancies).not.toContain(">frontend-rules<");
+  });
+
+  test("comparison tables expose compact capability and provider columns", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    expect(html).toContain('<col class="agent-comparison-capability-column"/>');
+    expect(html.match(/agent-comparison-provider-column/g)).toHaveLength(4);
   });
 
   test("Complete matrix collapses unanimous capabilities into one all-agent cell", () => {
@@ -272,8 +293,10 @@ describe("AgentSetupView", () => {
     );
 
     expect(html).toContain(
-      '<span class="agent-kind-label agent-kind-mcp agent-comparison-kind"><i aria-hidden="true"></i>MCP</span>',
+      'class="lucide lucide-waypoints" aria-hidden="true"',
     );
+    expect(html).toContain("MCP</span>");
+    expect(html).toContain('<div class="agent-comparison-metadata">');
   });
 
   test("comparison rows show a shared capability source", () => {
@@ -285,6 +308,12 @@ describe("AgentSetupView", () => {
     );
 
     expect(html).toContain(
+      '<span class="agent-comparison-origin">Personal</span>',
+    );
+    expect(html).toContain(
+      '<span class="agent-comparison-separator" aria-hidden="true">·</span><span class="agent-comparison-origin">Personal</span>',
+    );
+    expect(html).not.toContain(
       '<span class="badge badge-1 agent-origin-tag agent-comparison-origin">Personal</span>',
     );
   });
@@ -310,11 +339,11 @@ describe("AgentSetupView", () => {
     );
 
     expect(html).toContain(
-      '<span class="badge agent-origin-tag agent-origin-mixed agent-comparison-origin">Mixed sources</span>',
+      '<span class="agent-comparison-origin agent-origin-mixed">Mixed sources</span>',
     );
   });
 
-  test("instruction cells use a compact summary with a visible path", () => {
+  test("instruction cells keep paths out of the compact summary", () => {
     const html = renderToStaticMarkup(
       <AgentSetupView
         inventories={inventories}
@@ -327,7 +356,8 @@ describe("AgentSetupView", () => {
     const summaryEnd = html.indexOf("</summary>", summaryStart);
 
     expect(summaryStart).toBeGreaterThanOrEqual(0);
-    expect(html.slice(summaryStart, summaryEnd)).toContain(
+    expect(html.slice(summaryStart, summaryEnd)).not.toContain("<code>");
+    expect(html.slice(summaryEnd)).toContain(
       "<code>/safe/.codex/AGENTS.md</code>",
     );
   });
@@ -458,6 +488,19 @@ describe("AgentSetupView", () => {
     expect(html).toContain("# Codex instructions");
   });
 
+  test("uses compact typography for instruction filenames", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "claude" }}
+      />,
+    );
+
+    expect(html).toContain(
+      '<strong class="agent-instruction-title">CLAUDE.md</strong>',
+    );
+  });
+
   test("sorts inventory capabilities by type, source, then name", () => {
     const unsortedInventory: AgentInventory = {
       provider: "codex",
@@ -538,14 +581,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
+    expect(html).toContain('class="lucide lucide-plug" aria-hidden="true"');
     expect(html).toContain(
-      '<span class="agent-kind-label agent-kind-plugin"><i aria-hidden="true"></i>Plugin</span>',
+      'class="lucide lucide-wand-sparkles" aria-hidden="true"',
     );
     expect(html).toContain(
-      '<span class="agent-kind-label agent-kind-skill"><i aria-hidden="true"></i>Skill</span>',
-    );
-    expect(html).toContain(
-      '<span class="agent-kind-label agent-kind-mcp"><i aria-hidden="true"></i>MCP</span>',
+      'class="lucide lucide-waypoints" aria-hidden="true"',
     );
     expect(html).toContain(
       '<span class="badge badge-1 agent-origin-tag">Personal</span>',

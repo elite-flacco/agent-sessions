@@ -2,10 +2,11 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
+  Circle,
   CircleDot,
   Clock3,
   FolderKanban,
-  LayoutDashboard,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -96,7 +97,14 @@ export function OverviewView({
         <div className="overview-column">
           <section className="card overview-card" aria-label="Running now">
             <div className="overview-card-head">
-              <h3>Running now</h3>
+              <h3 className="overview-card-title">
+                <CircleDot
+                  aria-hidden="true"
+                  className="running-icon"
+                  size={14}
+                />
+                Running now
+              </h3>
               <Link href="/sessions?status=running">View all</Link>
             </div>
             {running.length ? (
@@ -111,8 +119,12 @@ export function OverviewView({
           </section>
           <section className="card overview-card" aria-label="Needs attention">
             <div className="overview-card-head">
-              <h3>
-                <AlertTriangle size={14} className="inline-icon warning-icon" />{" "}
+              <h3 className="overview-card-title">
+                <AlertTriangle
+                  aria-hidden="true"
+                  className="warning-icon"
+                  size={14}
+                />
                 Needs attention
               </h3>
               <Link href="/sessions?status=attention">View all</Link>
@@ -123,27 +135,25 @@ export function OverviewView({
               ))
             ) : (
               <p className="overview-empty">
-                Nothing needs attention today or yesterday.
+                Nothing needs attention in the past 3 days.
               </p>
             )}
           </section>
           <section className="card overview-card" aria-label="Recent projects">
             <div className="overview-card-head">
-              <h3>
-                <FolderKanban size={14} className="inline-icon" /> Recent
-                projects
+              <h3 className="overview-card-title">
+                <FolderKanban aria-hidden="true" size={14} />
+                Recent projects
               </h3>
               <Link href="/sessions?view=projects">View all</Link>
             </div>
             {recentProjects.map((project) => (
               <Link
                 key={project.key}
-                className="project-session-row"
+                className="project-session-row recent-project-row"
                 href="/sessions?view=projects"
               >
-                <span aria-hidden>
-                  <LayoutDashboard size={13} />
-                </span>
+                <span className="project-list-marker" aria-hidden />
                 <div>
                   <strong>{project.repository ?? "Unknown workspace"}</strong>
                   <p>
@@ -172,7 +182,7 @@ function SessionLine({ session }: { session: SessionListItem }) {
       <span
         className={`status-label status-${session.status} session-line-status`}
       >
-        <i />
+        <Circle aria-hidden="true" fill="currentColor" size={6} />
       </span>
       <div>
         <strong>{session.title}</strong>
@@ -288,7 +298,10 @@ function CostAtAGlance({ cost }: { cost: OverviewPatterns["costWeek"] }) {
     <section className="card overview-card" aria-label="Cost this week">
       <div className="overview-card-head">
         <h3>Cost this week</h3>
-        <Link href="/usage">Full breakdown →</Link>
+        <Link href="/usage">
+          Full breakdown{" "}
+          <ArrowRight aria-hidden="true" className="inline-icon" size={12} />
+        </Link>
       </div>
       <div className="cost-total">
         <strong className="mono">

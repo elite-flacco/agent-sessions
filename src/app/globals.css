@@ -77,14 +77,16 @@
   --leading-normal: 1.5;
   --leading-relaxed: 1.65;
   --radius-pill: 9999px;
-  --tag-marker-size: 0.5rem;
-  --tag-marker-gap: 0.45rem;
+  --card-title-icon-gap: 0.5rem;
   --tag-icon-gap: 0.35rem;
   --status-dot-size: 0.38rem;
   --status-dot-gap: 0.35rem;
   --status-dot-offset: var(--tag-icon-gap);
   --sidebar-width: 12.5rem;
   --sidebar-nav-gap: 0.2rem;
+  --agent-comparison-min-width: 41.25rem;
+  --agent-comparison-capability-width: 13.75rem;
+  --agent-comparison-provider-width: 6.875rem;
 }
 
 @layer base {
@@ -854,6 +856,20 @@
     display: flex;
     align-items: flex-start;
   }
+  .recent-project-row {
+    grid-template-columns: var(--status-dot-size) minmax(0, 1fr) auto;
+    column-gap: var(--status-dot-gap);
+  }
+  .project-list-marker {
+    width: var(--status-dot-size);
+    height: var(--status-dot-size);
+    margin-top: var(--status-dot-offset);
+    border-radius: var(--radius-pill);
+    background: var(--muted-foreground);
+  }
+  .recent-project-row p {
+    line-height: var(--leading-normal);
+  }
   .session-line-row {
     grid-template-columns: var(--status-dot-size) minmax(0, 1fr) auto;
     gap: var(--status-dot-gap);
@@ -1232,6 +1248,14 @@
   .overview-card-head h3 {
     font-size: var(--text-sm);
   }
+  .overview-card-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--card-title-icon-gap);
+  }
+  .running-icon {
+    color: var(--success);
+  }
   .overview-card-head a,
   .overview-card-head span {
     color: var(--muted-foreground);
@@ -1458,7 +1482,7 @@
     margin-bottom: 0.6rem;
   }
   .cost-total strong {
-    font-size: var(--text-2xl);
+    font-size: var(--text-xl);
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -1652,27 +1676,24 @@
   .agent-kind-label {
     display: inline-flex;
     align-items: center;
-    gap: var(--tag-marker-gap);
+    gap: var(--tag-icon-gap);
     color: var(--foreground);
     white-space: nowrap;
   }
-  .agent-kind-label i {
-    width: var(--tag-marker-size);
-    height: var(--tag-marker-size);
+  .agent-kind-label svg {
     flex: 0 0 auto;
-    border-radius: var(--radius-pill);
   }
-  .agent-kind-plugin i {
-    background: var(--badge-3-foreground);
+  .agent-kind-plugin svg {
+    color: var(--badge-3-foreground);
   }
-  .agent-kind-skill i {
-    background: var(--badge-2-foreground);
+  .agent-kind-skill svg {
+    color: var(--badge-2-foreground);
   }
-  .agent-kind-mcp i {
-    background: var(--badge-4-foreground);
+  .agent-kind-mcp svg {
+    color: var(--badge-4-foreground);
   }
-  .agent-kind-instruction i {
-    background: var(--badge-5-foreground);
+  .agent-kind-instruction svg {
+    color: var(--badge-5-foreground);
   }
   .status-disabled,
   .status-unavailable {
@@ -1686,6 +1707,11 @@
     gap: 0.25rem;
     padding: 0.8rem 0.9rem;
     cursor: pointer;
+  }
+  .agent-instruction summary .agent-instruction-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: var(--leading-normal);
   }
   .agent-instruction summary span {
     color: var(--muted-foreground);
@@ -1747,13 +1773,20 @@
   }
   .agent-comparison-table {
     width: 100%;
-    min-width: 58rem;
+    min-width: var(--agent-comparison-min-width);
+    table-layout: fixed;
     border-collapse: collapse;
     text-align: left;
   }
+  .agent-comparison-capability-column {
+    width: var(--agent-comparison-capability-width);
+  }
+  .agent-comparison-provider-column {
+    width: var(--agent-comparison-provider-width);
+  }
   .agent-comparison-table th,
   .agent-comparison-table td {
-    min-width: 10rem;
+    min-width: 0;
     border-bottom: 1px solid var(--border);
     border-left: 1px solid var(--border);
     padding: 0.65rem 0.75rem;
@@ -1761,7 +1794,6 @@
   }
   .agent-comparison-table th:first-child,
   .agent-comparison-table td:first-child {
-    min-width: 13rem;
     border-left: 0;
   }
   .agent-comparison-table th:first-child {
@@ -1779,25 +1811,58 @@
   .agent-comparison-table tbody th {
     background: var(--card);
   }
+  .agent-comparison-table thead th:not(:first-child),
+  .agent-comparison-table tbody td {
+    text-align: center;
+  }
+  .agent-comparison-table tbody td > .agent-compare-detail {
+    width: fit-content;
+    margin-inline: auto;
+    text-align: left;
+  }
+  .agent-comparison-group-row th {
+    position: static;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .agent-comparison-group-row th > span:last-child {
+    float: right;
+  }
+  .agent-comparison-group-fix th {
+    color: var(--badge-5-foreground);
+  }
+  .agent-comparison-group-review th {
+    color: var(--badge-4-foreground);
+  }
   .agent-comparison-name {
     display: block;
     font-size: var(--text-sm);
     font-weight: 400;
+    overflow-wrap: anywhere;
+  }
+  .agent-comparison-metadata {
+    display: flex;
+    align-items: center;
+    gap: var(--tag-icon-gap);
+    margin-top: 0.2rem;
+    color: var(--muted-foreground);
   }
   .agent-comparison-kind {
-    margin-top: 0.2rem;
+    color: var(--muted-foreground);
   }
   .agent-comparison-origin {
-    display: flex;
-    margin-top: 0.35rem;
+    color: var(--muted-foreground);
   }
-  .agent-assessment {
-    display: grid;
-    justify-items: start;
-    gap: 0.3rem;
-    margin-top: 0.5rem;
+  .agent-comparison-separator {
+    color: var(--muted-foreground);
   }
   .agent-assessment-reason {
+    display: block;
+    margin-top: 0.3rem;
     color: var(--muted-foreground);
     line-height: var(--leading-normal);
   }

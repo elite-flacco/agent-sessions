@@ -3,8 +3,13 @@ import {
   Check,
   CircleSlash2,
   CircleX,
+  FileText,
   Minus,
+  Plug,
   Search,
+  WandSparkles,
+  Waypoints,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { AgentFilterForm } from "@/components/agent-filter-form";
@@ -59,18 +64,6 @@ const comparisonKindSortOrder: Record<ComparisonRow["kind"], number> = {
 
 const assessmentOrder = { fix: 0, review: 1, context: 2 } as const;
 
-const assessmentLabels = {
-  fix: "Fix",
-  review: "Review",
-  context: "Context",
-} as const;
-
-const assessmentBadges = {
-  fix: "badge-5",
-  review: "badge-4",
-  context: "badge-2",
-} as const;
-
 const capabilityKindLabels: Record<AgentSetupKind, string> = {
   plugin: "Plugin",
   skill: "Skill",
@@ -83,6 +76,13 @@ const kindMarkers: Record<AgentSetupKind, string> = {
   skill: "agent-kind-skill",
   mcp: "agent-kind-mcp",
   instruction: "agent-kind-instruction",
+};
+
+const kindIcons: Record<AgentSetupKind, LucideIcon> = {
+  plugin: Plug,
+  skill: WandSparkles,
+  mcp: Waypoints,
+  instruction: FileText,
 };
 
 const statusLabels: Record<CapabilityStatus, string> = {
@@ -515,7 +515,9 @@ function ProviderInventory({
       {instructionVisible && inventory.instructionFile ? (
         <details className="agent-instruction">
           <summary>
-            <strong>{inventory.instructionFile.filename}</strong>
+            <strong className="agent-instruction-title">
+              {inventory.instructionFile.filename}
+            </strong>
             <span>{inventory.instructionFile.sourcePath}</span>
           </summary>
           <pre>{inventory.instructionFile.content}</pre>
@@ -526,6 +528,7 @@ function ProviderInventory({
 }
 
 function CapabilityRow({ capability }: { capability: AgentCapability }) {
+  const KindIcon = kindIcons[capability.kind];
   const StatusIcon =
     capability.status === "disabled"
       ? CircleSlash2
@@ -544,7 +547,7 @@ function CapabilityRow({ capability }: { capability: AgentCapability }) {
         </span>
       </div>
       <span className={`agent-kind-label ${kindMarkers[capability.kind]}`}>
-        <i aria-hidden="true" />
+        <KindIcon aria-hidden="true" size={12} />
         {capabilityKindLabels[capability.kind]}
       </span>
       <span
@@ -605,6 +608,16 @@ function ComparisonView({
   } else if (filters.discrepanciesOnly) {
     rows = rows.filter((row) => row.isDiscrepancy);
   }
+
+  const comparisonGroups = filters.comparisonMode
+    ? (["fix", "review"] as const)
+        .map((level) => ({
+          key: level,
+          label: level === "fix" ? "Fixes" : "Reviews",
+          rows: rows.filter((row) => row.assessment.level === level),
+        }))
+        .filter((group) => group.rows.length > 0)
+    : [{ key: "all", label: undefined, rows }];
 
   return (
     <>
@@ -675,6 +688,15 @@ function ComparisonView({
       ) : (
         <div className="card agent-comparison-region" tabIndex={0}>
           <table className="agent-comparison-table">
+            <colgroup>
+              <col className="agent-comparison-capability-column" />
+              {agentProviders.map((provider) => (
+                <col
+                  className="agent-comparison-provider-column"
+                  key={provider}
+                />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th scope="col">Capability</th>
@@ -685,15 +707,27 @@ function ComparisonView({
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {rows.map((row) => (
-                <ComparisonTableRow
-                  key={row.key}
-                  row={row}
-                  showAssessment={filters.comparisonMode === "attention"}
-                />
-              ))}
-            </tbody>
+            {comparisonGroups.map((group) => (
+              <tbody key={group.key}>
+                {group.label ? (
+                  <tr
+                    className={`agent-comparison-group-row agent-comparison-group-${group.key}`}
+                  >
+                    <th scope="rowgroup" colSpan={agentProviders.length + 1}>
+                      <span>{group.label}</span>
+                      <span>{group.rows.length}</span>
+                    </th>
+                  </tr>
+                ) : null}
+                {group.rows.map((row) => (
+                  <ComparisonTableRow
+                    key={row.key}
+                    row={row}
+                    showAssessment={filters.comparisonMode === "attention"}
+                  />
+                ))}
+              </tbody>
+            ))}
           </table>
         </div>
       )}
@@ -708,6 +742,7 @@ function ComparisonTableRow({
   row: ComparisonRow;
   showAssessment: boolean;
 }) {
+  const KindIcon = kindIcons[row.kind];
   const origins = new Set(
     Object.values(row.cells).map((capability) => capability.origin),
   );
@@ -718,32 +753,37 @@ function ComparisonTableRow({
     <tr className={row.isDiscrepancy ? "agent-row-discrepancy" : undefined}>
       <th scope="row">
         <div className="agent-comparison-name">{row.name}</div>
-        <span
-          className={`agent-kind-label ${kindMarkers[row.kind]} agent-comparison-kind`}
-        >
-          <i aria-hidden="true" />
-          {capabilityKindLabels[row.kind]}
-        </span>
-        {sharedOrigin ? (
+        <div className="agent-comparison-metadata">
           <span
-            className={`badge ${originBadges[sharedOrigin]} agent-origin-tag agent-comparison-origin`}
+            className={`agent-kind-label ${kindMarkers[row.kind]} agent-comparison-kind`}
           >
-            {originLabels[sharedOrigin]}
+            <KindIcon aria-hidden="true" size={12} />
+            {capabilityKindLabels[row.kind]}
           </span>
-        ) : origins.size > 1 ? (
-          <span className="badge agent-origin-tag agent-origin-mixed agent-comparison-origin">
-            Mixed sources
+          {sharedOrigin ? (
+            <>
+              <span className="agent-comparison-separator" aria-hidden="true">
+                ·
+              </span>
+              <span className="agent-comparison-origin">
+                {originLabels[sharedOrigin]}
+              </span>
+            </>
+          ) : origins.size > 1 ? (
+            <>
+              <span className="agent-comparison-separator" aria-hidden="true">
+                ·
+              </span>
+              <span className="agent-comparison-origin agent-origin-mixed">
+                Mixed sources
+              </span>
+            </>
+          ) : null}
+        </div>
+        {showAssessment && row.assessment.level === "fix" ? (
+          <span className="agent-assessment-reason">
+            {row.assessment.message}
           </span>
-        ) : null}
-        {showAssessment ? (
-          <div className="agent-assessment">
-            <span className={`badge ${assessmentBadges[row.assessment.level]}`}>
-              {assessmentLabels[row.assessment.level]}
-            </span>
-            <span className="agent-assessment-reason">
-              {row.assessment.message}
-            </span>
-          </div>
         ) : null}
       </th>
       {row.isUniformAcrossProviders ? (
@@ -766,8 +806,8 @@ function ComparisonTableRow({
                     <span>
                       <Check size={13} /> {instruction.filename}
                     </span>
-                    <code>{instruction.sourcePath}</code>
                   </summary>
+                  <code>{instruction.sourcePath}</code>
                   <pre>{instruction.content}</pre>
                 </details>
               ) : capability ? (

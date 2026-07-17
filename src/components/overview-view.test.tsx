@@ -1,14 +1,17 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import type { SessionListItem } from "@/lib/queries";
+import type { ProjectSummary, SessionListItem } from "@/lib/queries";
 import { OverviewView } from "./overview-view";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-function renderOverview(running: SessionListItem[] = []): string {
+function renderOverview(
+  running: SessionListItem[] = [],
+  recentProjects: ProjectSummary[] = [],
+): string {
   return renderToStaticMarkup(
     <OverviewView
       overview={{
@@ -34,7 +37,7 @@ function renderOverview(running: SessionListItem[] = []): string {
       }}
       running={running}
       attention={[]}
-      recentProjects={[]}
+      recentProjects={recentProjects}
     />,
   );
 }
@@ -72,21 +75,64 @@ describe("OverviewView", () => {
     }`);
   });
 
-  test("top-aligns recent-project icons with a compact text gap", () => {
+  test("uses neutral bullets for recent projects", () => {
+    const html = renderOverview(
+      [],
+      [
+        {
+          key: "agent-sessions",
+          repository: "agent-sessions",
+          category: "project",
+          sessionCount: 3,
+          activeCount: 0,
+          providers: ["codex"],
+          branches: ["main"],
+          workdirs: ["/workspace/agent-sessions"],
+          totalRuntimeMs: 60_000,
+          lastActivityAt: "2026-07-16T12:00:00.000Z",
+        },
+      ],
+    );
     const styles = readFileSync(
       new URL("../app/globals.css", import.meta.url),
       "utf8",
     );
 
-    expect(styles).toContain(`.project-session-row {
-    display: grid;
-    grid-template-columns: 1.1rem minmax(0, 1fr) auto;
-    gap: var(--tag-icon-gap);
-    align-items: start;`);
-    expect(styles).toContain(`.project-session-row > span {
-    display: flex;
-    align-items: flex-start;
+    expect(html).toContain(
+      '<span class="project-list-marker" aria-hidden="true"></span>',
+    );
+    expect(html).not.toContain("lucide-layout-dashboard");
+    expect(styles).toContain(`.recent-project-row {
+    grid-template-columns: var(--status-dot-size) minmax(0, 1fr) auto;
+    column-gap: var(--status-dot-gap);
   }`);
+    expect(styles).toContain(`.project-list-marker {
+    width: var(--status-dot-size);
+    height: var(--status-dot-size);
+    margin-top: var(--status-dot-offset);
+    border-radius: var(--radius-pill);
+    background: var(--muted-foreground);
+  }`);
+    expect(styles).toContain(`.recent-project-row p {
+    line-height: var(--leading-normal);
+  }`);
+  });
+
+  test("uses the KPI font size for the weekly cost total", () => {
+    const styles = readFileSync(
+      new URL("../app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(styles).toContain(`.cost-total strong {
+    font-size: var(--text-xl);`);
+  });
+
+  test("describes the three-day needs-attention window", () => {
+    const html = renderOverview();
+
+    expect(html).toContain("Nothing needs attention in the past 3 days.");
+    expect(html).not.toContain("today or yesterday");
   });
 
   test("does not render a heatmap intensity legend", () => {
@@ -100,12 +146,25 @@ describe("OverviewView", () => {
   test("uses the warning color only for the needs-attention icon", () => {
     const html = renderOverview();
 
-    expect(html).toContain(
-      'class="lucide lucide-triangle-alert inline-icon warning-icon"',
-    );
+    expect(html).toContain('class="lucide lucide-triangle-alert warning-icon"');
     expect(html).not.toContain(
-      'class="lucide lucide-folder-kanban inline-icon warning-icon"',
+      'class="lucide lucide-folder-kanban warning-icon"',
     );
+  });
+
+  test("uses a live icon and a shared larger title gap on overview cards", () => {
+    const html = renderOverview();
+    const styles = readFileSync(
+      new URL("../app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(html.match(/class="overview-card-title"/g)).toHaveLength(3);
+    expect(html).toContain(
+      'class="lucide lucide-circle-dot running-icon" aria-hidden="true"',
+    );
+    expect(styles).toContain("--card-title-icon-gap: 0.5rem;");
+    expect(styles).toContain("gap: var(--card-title-icon-gap);");
   });
 
   test("uses compact, top-aligned status dots for running-session rows", () => {
@@ -138,6 +197,10 @@ describe("OverviewView", () => {
     expect(html).toContain('class="project-session-row session-line-row"');
     expect(html).toContain(
       'class="status-label status-running session-line-status"',
+    );
+    expect(html).toContain('class="lucide lucide-circle" aria-hidden="true"');
+    expect(html).not.toContain(
+      'class="status-label status-running session-line-status"><i>',
     );
   });
 });
