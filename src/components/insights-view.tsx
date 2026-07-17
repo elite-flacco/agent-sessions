@@ -164,9 +164,9 @@ function CostCard({ insights }: { insights: Insights }) {
 
       <div>
         <div className="insight-headline">
-          {cost.week.paretoSharePct === null
+          {cost.week.top5SharePct === null
             ? "—"
-            : `Top 5 = ${Math.round(cost.week.paretoSharePct)}%`}
+            : `Top 5 = ${Math.round(cost.week.top5SharePct)}%`}
         </div>
         <div className="insight-sub">
           {cost.week.totalUsd === null
@@ -185,7 +185,12 @@ function CostCard({ insights }: { insights: Insights }) {
               className="dist-row dist-row-wide"
               title={`${runtime(o.runtimeMs)} · $${o.usdPerMin.toFixed(2)}/min`}
             >
-              <span className="dist-label">{o.title}</span>
+              <span className="dist-label">
+                {o.title}
+                {o.model ? (
+                  <span className="insight-sub"> · {o.model}</span>
+                ) : null}
+              </span>
               <span className="meter" aria-hidden>
                 <i className={`meter-fill-${level(o.costUsd, maxOutlier)}`} />
               </span>

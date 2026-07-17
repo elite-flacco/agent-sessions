@@ -186,4 +186,14 @@ describe("getInsights — cost outliers", () => {
     expect(big!.costUsd).toBe(1.0);
     expect(big!.usdPerMin).toBeGreaterThanOrEqual(0);
   });
+
+  it("exposes distinct top-5 (headline) and top-3 (signal) share fields", () => {
+    const { cost } = queries.getInsights();
+    // Both are null here because the shared fixture's unpriced s4 forces the
+    // trust rule, but the fields must both exist as distinct values.
+    expect(cost.week).toHaveProperty("top5SharePct");
+    expect(cost.week).toHaveProperty("paretoSharePct");
+    expect(cost.week.top5SharePct).toBeNull();
+    expect(cost.week.paretoSharePct).toBeNull();
+  });
 });

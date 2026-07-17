@@ -1105,7 +1105,11 @@ export interface Insights {
     signal: InsightSignal | null;
   };
   cost: {
-    week: { totalUsd: number | null; paretoSharePct: number | null };
+    week: {
+      totalUsd: number | null;
+      top5SharePct: number | null;
+      paretoSharePct: number | null;
+    };
     outliers: {
       id: number;
       title: string;
@@ -1319,6 +1323,14 @@ export function getInsights(): Insights {
   if (weekTotalUsd !== null && weekTotalUsd > 0) {
     paretoSharePct = (top3Cost / weekTotalUsd) * 100;
   }
+  // Top-5 headline share: share of week cost held by the top 5 sessions (a
+  // distinct figure from the top-3 signal threshold above). Null under the
+  // same trust rule.
+  const top5Cost = outliers.slice(0, 5).reduce((sum, o) => sum + o.costUsd, 0);
+  const top5SharePct =
+    weekTotalUsd !== null && weekTotalUsd > 0
+      ? (top5Cost / weekTotalUsd) * 100
+      : null;
   const costSignal: InsightSignal | null =
     paretoSharePct !== null && paretoSharePct >= 50
       ? {
@@ -1329,6 +1341,8 @@ export function getInsights(): Insights {
 
   // Cost trend reuses the existing getUsageSummary daily series rather than
   // recomputing it (keeps a single source of truth for daily cost).
+  // Priced-only daily series (matches /usage); a partially-unpriced week still
+  // shows a populated trend alongside a null headline total.
   const costTrend = getUsageSummary().daily.map((d) => ({
     day: d.date,
     costUsd: d.costUsd,
@@ -1347,7 +1361,7 @@ export function getInsights(): Insights {
       signal: cacheSignal,
     },
     cost: {
-      week: { totalUsd: weekTotalUsd, paretoSharePct },
+      week: { totalUsd: weekTotalUsd, top5SharePct, paretoSharePct },
       outliers,
       trend: costTrend,
       signal: costSignal,
