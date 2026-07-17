@@ -23,11 +23,13 @@
 ### Task 1: Derive consensus assessments
 
 **Files:**
+
 - Modify: `src/lib/agent-inventory/types.ts`
 - Modify: `src/lib/agent-inventory/normalize.ts`
 - Test: `src/lib/agent-inventory/normalize.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AgentInventory[]`, `AgentCapability`, and `buildComparisonRows(inventories: AgentInventory[]): ComparisonRow[]`.
 - Produces: `ComparisonAssessment`, `ComparisonAssessmentReason`, `ComparisonRow.assessment`, and `ComparisonRow.isUniformAcrossProviders`.
 
@@ -151,11 +153,13 @@ git commit -m "feat(agents): derive comparison attention levels"
 ### Task 2: Add Needs attention and compact matrix presentation
 
 **Files:**
+
 - Modify: `src/components/agent-setup-view.tsx`
 - Modify: `src/app/globals.css`
 - Test: `src/components/agent-setup-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `ComparisonRow.assessment`, `ComparisonRow.isUniformAcrossProviders`, URL filters, and `setupHref`.
 - Produces: `AgentSetupFilters.comparisonMode`, mode links, assessment counts/reasons, actionable ordering, and compact unanimous rows.
 
@@ -238,12 +242,14 @@ git commit -m "feat(agents): add needs attention comparison"
 ### Task 3: Document, verify, and browser-review
 
 **Files:**
+
 - Modify: `README.md`
 - Review and modify if necessary: `AGENTS.md`
 - Review and modify if necessary: `CLAUDE.md`
 - Modify if non-conflicting: `docs/reviews/2026-07-15-ux-review.md`
 
 **Interfaces:**
+
 - Consumes: completed comparison behavior.
 - Produces: user-facing documentation, accurate architecture notes, review status, and verification evidence.
 

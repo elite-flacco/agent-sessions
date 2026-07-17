@@ -34,6 +34,16 @@ function inventory(
   };
 }
 
+function providerCapability(
+  provider: AgentInventory["provider"],
+  overrides: Partial<AgentCapability> = {},
+): AgentCapability {
+  return capability({
+    id: `${provider}:skill:frontend-rules`,
+    ...overrides,
+  });
+}
+
 describe("canonicalCapabilityName", () => {
   test("trims and case-folds names for cross-provider matching", () => {
     expect(canonicalCapabilityName("  Frontend-Rules ")).toBe("frontend-rules");
@@ -137,5 +147,159 @@ describe("buildComparisonRows", () => {
     expect(instruction?.instructionCells?.codex?.contentFingerprint).toBe(
       "same",
     );
+  });
+
+  test("classifies a capability missing from one provider as a fix", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", [providerCapability("zcode")]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "fix",
+      reason: "missing_from_one_provider",
+      message: "Present on 3 of 4 agents; missing from Pi.",
+    });
+    expect(rows[0]?.isUniformAcrossProviders).toBe(false);
+  });
+
+  test("gives unavailable capabilities precedence over presence consensus", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", { status: "unavailable" }),
+      ]),
+      inventory("claude", []),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "fix",
+      reason: "unavailable",
+      message: "Unavailable on Codex.",
+    });
+  });
+
+  test("classifies a two-provider presence split for review", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "split_presence",
+      message: "Present on 2 of 4 agents; review whether parity is intended.",
+    });
+  });
+
+  test("classifies four-provider configuration drift for review", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [
+        providerCapability("claude", { origin: "personal" }),
+      ]),
+      inventory("zcode", [providerCapability("zcode")]),
+      inventory("pi", [providerCapability("pi")]),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "configuration_drift",
+      message: "Installed across all agents with differing configuration.",
+    });
+    expect(rows[0]?.isUniformAcrossProviders).toBe(false);
+  });
+
+  test("classifies provider-specific capabilities as context", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", []),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "provider_specific",
+      message: "Only found on Codex.",
+    });
+    expect(rows[0]?.isDiscrepancy).toBe(true);
+  });
+
+  test("marks matching four-provider capabilities as uniform context", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", [providerCapability("zcode")]),
+      inventory("pi", [providerCapability("pi")]),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
+    });
+    expect(rows[0]?.isUniformAcrossProviders).toBe(true);
+  });
+
+  test("classifies missing global instructions as a fix", () => {
+    const instructionFile = {
+      filename: "AGENTS.md",
+      sourcePath: "/tmp/AGENTS.md",
+      content: "Shared",
+      contentFingerprint: "same",
+    };
+    const rows = buildComparisonRows([
+      inventory("codex", [], instructionFile),
+      inventory("claude", [], instructionFile),
+      inventory("zcode", [], instructionFile),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "fix",
+      reason: "missing_instruction",
+      message: "Global instructions missing from Pi.",
+    });
+  });
+
+  test("classifies differing global instructions for review", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [], {
+        filename: "AGENTS.md",
+        sourcePath: "/tmp/codex/AGENTS.md",
+        content: "Codex",
+        contentFingerprint: "codex",
+      }),
+      inventory("claude", [], {
+        filename: "CLAUDE.md",
+        sourcePath: "/tmp/claude/CLAUDE.md",
+        content: "Shared",
+        contentFingerprint: "shared",
+      }),
+      inventory("zcode", [], {
+        filename: "AGENTS.md",
+        sourcePath: "/tmp/zcode/AGENTS.md",
+        content: "Shared",
+        contentFingerprint: "shared",
+      }),
+      inventory("pi", [], {
+        filename: "AGENTS.md",
+        sourcePath: "/tmp/pi/AGENTS.md",
+        content: "Shared",
+        contentFingerprint: "shared",
+      }),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "instruction_drift",
+      message: "Global instruction contents differ across agents.",
+    });
   });
 });

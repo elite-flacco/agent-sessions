@@ -24,6 +24,7 @@ type AgentSetupKind = CapabilityKind | "instruction";
 
 export interface AgentSetupFilters {
   view: AgentSetupViewMode;
+  comparisonMode?: "attention";
   q?: string;
   provider?: AgentProvider;
   kind?: AgentSetupKind;
@@ -48,6 +49,27 @@ const kindSortOrder: Record<CapabilityKind, number> = {
   skill: 1,
   mcp: 2,
 };
+
+const comparisonKindSortOrder: Record<ComparisonRow["kind"], number> = {
+  plugin: 0,
+  skill: 1,
+  mcp: 2,
+  instruction: 3,
+};
+
+const assessmentOrder = { fix: 0, review: 1, context: 2 } as const;
+
+const assessmentLabels = {
+  fix: "Fix",
+  review: "Review",
+  context: "Context",
+} as const;
+
+const assessmentBadges = {
+  fix: "badge-5",
+  review: "badge-4",
+  context: "badge-2",
+} as const;
 
 const capabilityKindLabels: Record<AgentSetupKind, string> = {
   plugin: "Plugin",
@@ -93,8 +115,12 @@ const originBadges: Record<AgentCapability["origin"], string> = {
   unknown: "badge-5",
 };
 
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+function countLabel(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -109,6 +135,8 @@ export function parseAgentSetupFilters(
   const status = first(params.status);
   return {
     view: first(params.view) === "compare" ? "compare" : "inventory",
+    comparisonMode:
+      first(params.comparison) === "attention" ? "attention" : undefined,
     q: first(params.q)?.trim() || undefined,
     provider: agentProviders.includes(provider as AgentProvider)
       ? (provider as AgentProvider)
@@ -132,6 +160,9 @@ function setupHref(
   const next = { ...filters, ...changes };
   const params = new URLSearchParams();
   if (next.view === "compare") params.set("view", "compare");
+  if (next.comparisonMode === "attention") {
+    params.set("comparison", "attention");
+  }
   if (next.q) params.set("q", next.q);
   if (next.provider) params.set("provider", next.provider);
   if (next.kind) params.set("kind", next.kind);
@@ -202,6 +233,7 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
         <Link
           href={setupHref(filters, {
             view: "inventory",
+            comparisonMode: undefined,
             discrepanciesOnly: undefined,
           })}
           className={
@@ -214,7 +246,11 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
           Inventory
         </Link>
         <Link
-          href={setupHref(filters, { view: "compare" })}
+          href={setupHref(filters, {
+            view: "compare",
+            comparisonMode: "attention",
+            discrepanciesOnly: undefined,
+          })}
           className={
             filters.view === "compare"
               ? "workspace-tab tab-active"
@@ -294,6 +330,9 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
       {filters.view === "compare" ? (
         <input type="hidden" name="view" value="compare" />
       ) : null}
+      {filters.comparisonMode === "attention" ? (
+        <input type="hidden" name="comparison" value="attention" />
+      ) : null}
       <label className="search-control">
         <span className="sr-only">Search capabilities</span>
         <Search size={14} />
@@ -350,7 +389,7 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           ))}
         </select>
       </label>
-      {filters.view === "compare" ? (
+      {filters.view === "compare" && !filters.comparisonMode ? (
         <label className="agent-discrepancy-toggle">
           <input
             type="checkbox"
@@ -547,43 +586,128 @@ function ComparisonView({
       ),
     );
   }
-  if (filters.discrepanciesOnly) {
+  const fixCount = rows.filter((row) => row.assessment.level === "fix").length;
+  const reviewCount = rows.filter(
+    (row) => row.assessment.level === "review",
+  ).length;
+
+  if (filters.comparisonMode === "attention") {
+    rows = rows
+      .filter((row) => row.assessment.level !== "context")
+      .sort(
+        (left, right) =>
+          assessmentOrder[left.assessment.level] -
+            assessmentOrder[right.assessment.level] ||
+          comparisonKindSortOrder[left.kind] -
+            comparisonKindSortOrder[right.kind] ||
+          left.name.localeCompare(right.name),
+      );
+  } else if (filters.discrepanciesOnly) {
     rows = rows.filter((row) => row.isDiscrepancy);
   }
 
-  if (rows.length === 0) {
-    return (
-      <div className="card empty-state agent-empty-state">
-        <h3>No comparison rows match these filters.</h3>
-        <p>Adjust the filters or include matching configurations.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="card agent-comparison-region" tabIndex={0}>
-      <table className="agent-comparison-table">
-        <thead>
-          <tr>
-            <th scope="col">Capability</th>
-            {agentProviders.map((provider) => (
-              <th scope="col" key={provider}>
-                {providerLabels[provider]}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <ComparisonTableRow key={row.key} row={row} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="agent-comparison-toolbar">
+        <nav className="agent-comparison-switcher" aria-label="Comparison mode">
+          <Link
+            href={setupHref(filters, {
+              comparisonMode: "attention",
+              discrepanciesOnly: undefined,
+            })}
+            className={
+              filters.comparisonMode === "attention"
+                ? "agent-comparison-tab agent-comparison-tab-active"
+                : "agent-comparison-tab"
+            }
+            aria-current={
+              filters.comparisonMode === "attention" ? "page" : undefined
+            }
+          >
+            Needs attention
+          </Link>
+          <Link
+            href={setupHref(filters, {
+              comparisonMode: undefined,
+              discrepanciesOnly: undefined,
+            })}
+            className={
+              filters.comparisonMode
+                ? "agent-comparison-tab"
+                : "agent-comparison-tab agent-comparison-tab-active"
+            }
+            aria-current={filters.comparisonMode ? undefined : "page"}
+          >
+            Complete matrix
+          </Link>
+        </nav>
+        <div className="agent-attention-summary" aria-label="Attention summary">
+          <span className="badge badge-5">
+            {countLabel(fixCount, "fix", "fixes")}
+          </span>
+          <span className="badge badge-4">
+            {countLabel(reviewCount, "review")}
+          </span>
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="card empty-state agent-empty-state">
+          <h3>
+            {filters.comparisonMode === "attention"
+              ? "No consensus drift needs attention."
+              : "No comparison rows match these filters."}
+          </h3>
+          <p>
+            {filters.comparisonMode === "attention"
+              ? "The current setup has no Fix or Review items for these filters."
+              : "Adjust the filters or include matching configurations."}
+          </p>
+          {filters.comparisonMode === "attention" ? (
+            <Link
+              className="btn btn-outline"
+              href={setupHref(filters, { comparisonMode: undefined })}
+            >
+              Complete matrix
+            </Link>
+          ) : null}
+        </div>
+      ) : (
+        <div className="card agent-comparison-region" tabIndex={0}>
+          <table className="agent-comparison-table">
+            <thead>
+              <tr>
+                <th scope="col">Capability</th>
+                {agentProviders.map((provider) => (
+                  <th scope="col" key={provider}>
+                    {providerLabels[provider]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <ComparisonTableRow
+                  key={row.key}
+                  row={row}
+                  showAssessment={filters.comparisonMode === "attention"}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
-function ComparisonTableRow({ row }: { row: ComparisonRow }) {
+function ComparisonTableRow({
+  row,
+  showAssessment,
+}: {
+  row: ComparisonRow;
+  showAssessment: boolean;
+}) {
   const origins = new Set(
     Object.values(row.cells).map((capability) => capability.origin),
   );
@@ -611,52 +735,94 @@ function ComparisonTableRow({ row }: { row: ComparisonRow }) {
             Mixed sources
           </span>
         ) : null}
+        {showAssessment ? (
+          <div className="agent-assessment">
+            <span className={`badge ${assessmentBadges[row.assessment.level]}`}>
+              {assessmentLabels[row.assessment.level]}
+            </span>
+            <span className="agent-assessment-reason">
+              {row.assessment.message}
+            </span>
+          </div>
+        ) : null}
       </th>
-      {agentProviders.map((provider) => {
-        const instruction = row.instructionCells?.[provider];
-        const capability = row.cells[provider];
-        const StatusIcon =
-          capability?.status === "disabled"
-            ? CircleSlash2
-            : capability?.status === "unavailable"
-              ? CircleX
-              : Check;
-        return (
-          <td key={provider}>
-            {instruction ? (
-              <details className="agent-compare-detail">
-                <summary className="agent-instruction-summary">
-                  <span>
-                    <Check size={13} /> {instruction.filename}
-                  </span>
-                  <code>{instruction.sourcePath}</code>
-                </summary>
-                <pre>{instruction.content}</pre>
-              </details>
-            ) : capability ? (
-              <details className="agent-compare-detail">
-                <summary
-                  className={`agent-status-tag ${statusBadges[capability.status]}`}
-                >
-                  <StatusIcon size={13} /> {statusLabels[capability.status]}
-                </summary>
-                <span>{originLabels[capability.origin]}</span>
-                <span>{capability.packaging.replace("_", " ")}</span>
-                {capability.sourceRepository ? (
-                  <code>{capability.sourceRepository}</code>
-                ) : null}
-                {capability.sourcePath ? (
-                  <code>{capability.sourcePath}</code>
-                ) : null}
-              </details>
-            ) : (
-              <span className="agent-missing agent-status-tag agent-status-missing">
-                <Minus size={13} /> Missing
-              </span>
-            )}
-          </td>
-        );
-      })}
+      {row.isUniformAcrossProviders ? (
+        <UniformComparisonCell row={row} />
+      ) : (
+        agentProviders.map((provider) => {
+          const instruction = row.instructionCells?.[provider];
+          const capability = row.cells[provider];
+          const StatusIcon =
+            capability?.status === "disabled"
+              ? CircleSlash2
+              : capability?.status === "unavailable"
+                ? CircleX
+                : Check;
+          return (
+            <td key={provider}>
+              {instruction ? (
+                <details className="agent-compare-detail">
+                  <summary className="agent-instruction-summary">
+                    <span>
+                      <Check size={13} /> {instruction.filename}
+                    </span>
+                    <code>{instruction.sourcePath}</code>
+                  </summary>
+                  <pre>{instruction.content}</pre>
+                </details>
+              ) : capability ? (
+                <details className="agent-compare-detail">
+                  <summary
+                    className={`agent-status-tag ${statusBadges[capability.status]}`}
+                  >
+                    <StatusIcon size={13} /> {statusLabels[capability.status]}
+                  </summary>
+                  <span>{originLabels[capability.origin]}</span>
+                  <span>{capability.packaging.replace("_", " ")}</span>
+                  {capability.sourceRepository ? (
+                    <code>{capability.sourceRepository}</code>
+                  ) : null}
+                  {capability.sourcePath ? (
+                    <code>{capability.sourcePath}</code>
+                  ) : null}
+                </details>
+              ) : (
+                <span className="agent-missing agent-status-tag agent-status-missing">
+                  <Minus size={13} /> Missing
+                </span>
+              )}
+            </td>
+          );
+        })
+      )}
     </tr>
+  );
+}
+
+function UniformComparisonCell({ row }: { row: ComparisonRow }) {
+  const capability = row.cells[agentProviders[0]]!;
+  const StatusIcon =
+    capability.status === "disabled"
+      ? CircleSlash2
+      : capability.status === "unavailable"
+        ? CircleX
+        : Check;
+
+  return (
+    <td colSpan={agentProviders.length} className="agent-all-agents-cell">
+      <details className="agent-compare-detail agent-all-agents-detail">
+        <summary
+          className={`agent-status-tag ${statusBadges[capability.status]}`}
+        >
+          <StatusIcon size={13} /> All agents ·{" "}
+          {statusLabels[capability.status]}
+        </summary>
+        <span>{originLabels[capability.origin]}</span>
+        <span>{capability.packaging.replace("_", " ")}</span>
+        {capability.sourceRepository ? (
+          <code>{capability.sourceRepository}</code>
+        ) : null}
+      </details>
+    </td>
   );
 }
