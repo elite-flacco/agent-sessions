@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { sqlite } from "@/db/client";
-import { normalizeModel, usageCostUsd } from "./pricing";
+import { findPricing, normalizeModel, usageCostUsd } from "./pricing";
 import {
   UNKNOWN_PROJECT_KEY,
   TASKS_PROJECT_KEY,
@@ -1079,6 +1079,193 @@ export function getOverviewPatterns(): OverviewPatterns {
       costUsd: priced ? costUsd : null,
       tokens,
       topModels,
+    },
+  };
+}
+
+const INSIGHTS_TREND_DAYS = 30;
+// Hit-rate drop (percentage points) that fires a warning signal.
+const CACHE_DROP_THRESHOLD_PTS = 15;
+
+export type InsightSignal = {
+  tone: "warning" | "info";
+  text: string;
+};
+
+export interface Insights {
+  cache: {
+    week: {
+      hitRate: number | null;
+      hitRateDeltaPts: number | null;
+      savedUsd: number | null;
+      savedSharePct: number | null;
+      byModel: { model: string; hitRate: number; tokens: number }[];
+    };
+    trend: { day: string; hitRate: number | null }[];
+    signal: InsightSignal | null;
+  };
+  cost: {
+    week: { totalUsd: number | null; paretoSharePct: number | null };
+    outliers: {
+      id: number;
+      title: string;
+      model: string | null;
+      costUsd: number;
+      runtimeMs: number;
+      usdPerMin: number;
+    }[];
+    trend: { day: string; costUsd: number | null }[];
+    signal: InsightSignal | null;
+  };
+}
+
+// Aggregate cache hit-rate and $-saved over a window of usage rows.
+// hitRate = sum(cacheRead) / sum(cacheRead + input). savedUsd requires every
+// row priced: it is the gap between actual cost and the counterfactual where
+// cache_read_tokens are re-priced at the full input rate.
+function aggregateCache(rows: UsageJoinRow[]) {
+  let read = 0;
+  let input = 0;
+  let grossCost = 0; // actual cost (cache reads at cache-read rate)
+  let counterfactual = 0; // if cache reads were priced as full input
+  let priced = true;
+  const byModel = new Map<
+    string,
+    { read: number; input: number; tokens: number }
+  >();
+  for (const row of rows) {
+    read += row.cacheReadTokens;
+    input += row.inputTokens;
+    const cost = rowCost(row);
+    if (cost === undefined) {
+      priced = false;
+    } else {
+      const pricing = findPricing(row.model, row.startedAt);
+      // $ saved only meaningful when we can price both the actual read rate
+      // and the counterfactual input rate. rowCost being defined guarantees
+      // pricing exists; recompute the cache-read contribution explicitly.
+      if (pricing) {
+        grossCost += cost;
+        counterfactual +=
+          cost +
+          (row.cacheReadTokens *
+            (pricing.inputPerMTok - pricing.cacheReadPerMTok)) /
+            1_000_000;
+      } else if (row.reportedCostUsd !== null) {
+        // Reported cost with no pricing table entry: can't build a
+        // counterfactual, so treat as unpriced for $-saved purposes.
+        priced = false;
+      }
+    }
+    const key = normalizeModel(row.model);
+    const model = byModel.get(key) ?? { read: 0, input: 0, tokens: 0 };
+    model.read += row.cacheReadTokens;
+    model.input += row.inputTokens;
+    model.tokens +=
+      row.inputTokens +
+      row.outputTokens +
+      row.cacheReadTokens +
+      row.cacheWriteTokens;
+    byModel.set(key, model);
+  }
+  const hitRate = read + input > 0 ? read / (read + input) : null;
+  const savedUsd =
+    priced && counterfactual > grossCost ? counterfactual - grossCost : null;
+  const savedSharePct =
+    savedUsd !== null && counterfactual > 0
+      ? (savedUsd / counterfactual) * 100
+      : null;
+  const byModelOut = [...byModel.entries()]
+    .map(([model, m]) => ({
+      model,
+      hitRate: m.read + m.input > 0 ? m.read / (m.read + m.input) : 0,
+      tokens: m.tokens,
+    }))
+    .sort((a, b) => b.tokens - a.tokens);
+  return { hitRate, savedUsd, savedSharePct, byModel: byModelOut, read, input };
+}
+
+/**
+ * Two actionable efficiency cards derived from existing usage data.
+ * Cache hit rate is token-only and always available; $-saved and all cost
+ * figures follow the pricing-trust rule (null when any row is unpriced).
+ * Signals are curated and rule-based.
+ */
+export function getInsights(): Insights {
+  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const priorWeekStart = new Date(Date.now() - 14 * DAY_MS).toISOString();
+  const trendStart = new Date(
+    Date.now() - INSIGHTS_TREND_DAYS * DAY_MS,
+  ).toISOString();
+
+  const weekRows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
+    .all(weekStart) as UsageJoinRow[];
+  const priorRows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ? AND s.started_at < ?`)
+    .all(priorWeekStart, weekStart) as UsageJoinRow[];
+  const trendRows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
+    .all(trendStart) as UsageJoinRow[];
+
+  // --- cache effectiveness ---
+  const weekCache = aggregateCache(weekRows);
+  const priorCache = aggregateCache(priorRows);
+  const hitRateDeltaPts =
+    weekCache.hitRate !== null && priorCache.hitRate !== null
+      ? (weekCache.hitRate - priorCache.hitRate) * 100
+      : null;
+  const cacheSignal: InsightSignal | null =
+    hitRateDeltaPts !== null && hitRateDeltaPts <= -CACHE_DROP_THRESHOLD_PTS
+      ? {
+          tone: "warning",
+          text: `Cache hit rate dropped ${Math.round(Math.abs(hitRateDeltaPts))} points week-over-week — long sessions may be losing context.`,
+        }
+      : null;
+
+  // 30-day daily hit-rate trend, grouped by session start day.
+  const trendByDay = new Map<string, { read: number; input: number }>();
+  for (const row of trendRows) {
+    const day = row.startedAt.slice(0, 10);
+    const entry = trendByDay.get(day) ?? { read: 0, input: 0 };
+    entry.read += row.cacheReadTokens;
+    entry.input += row.inputTokens;
+    trendByDay.set(day, entry);
+  }
+  const cacheTrend = Array.from({ length: INSIGHTS_TREND_DAYS }, (_, index) => {
+    const date = new Date(
+      Date.now() - (INSIGHTS_TREND_DAYS - 1 - index) * DAY_MS,
+    )
+      .toISOString()
+      .slice(0, 10);
+    const entry = trendByDay.get(date);
+    return {
+      day: date,
+      hitRate:
+        entry && entry.read + entry.input > 0
+          ? entry.read / (entry.read + entry.input)
+          : null,
+    };
+  });
+
+  // Cost half is filled in by Task 3; stubbed to empty/safe values here.
+  return {
+    cache: {
+      week: {
+        hitRate: weekCache.hitRate,
+        hitRateDeltaPts,
+        savedUsd: weekCache.savedUsd,
+        savedSharePct: weekCache.savedSharePct,
+        byModel: weekCache.byModel,
+      },
+      trend: cacheTrend,
+      signal: cacheSignal,
+    },
+    cost: {
+      week: { totalUsd: null, paretoSharePct: null },
+      outliers: [],
+      trend: [],
+      signal: null,
     },
   };
 }
