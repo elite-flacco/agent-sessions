@@ -5,7 +5,6 @@ import {
   ChevronDown,
   CircleDot,
   Database,
-  ExternalLink,
   FolderKanban,
   LoaderCircle,
   RefreshCw,
@@ -178,7 +177,7 @@ export function Dashboard({
         />
       </div>
 
-      <div className="filter-row">
+      <div className="filter-row session-filter-row">
         <label className="search-control">
           <Search size={14} />
           <input
@@ -350,22 +349,14 @@ function SessionRow({
         <div className="session-primary">
           <div className="session-title-actions">
             <Link href={`/sessions/${session.id}`}>{session.title}</Link>
-            <Link
-              href={`/sessions/${session.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="session-open-link"
-              aria-label={`Open ${session.title} in a new tab`}
-              title="Open in new tab"
-            >
-              <ExternalLink size={13} />
-            </Link>
           </div>
           <span className="mono">
             {session.sessionKind === "subagent"
               ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
               : (session.repository ?? "Unknown workspace")}
-            {session.sessionKind !== "subagent" && session.branch
+            {session.sessionKind !== "subagent" &&
+            session.children.length > 0 &&
+            session.branch
               ? ` · ${session.branch}`
               : ""}
             {session.children.length > 0 && (

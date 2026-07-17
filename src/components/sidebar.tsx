@@ -6,8 +6,6 @@ import {
   CircleDot,
   Database,
   LayoutDashboard,
-  MoreHorizontal,
-  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -67,14 +65,12 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
             </span>
           </div>
         </div>
-        <UpcomingRow icon={<Settings size={15} />} label="Settings" />
         <div className="profile-row">
           <div className="avatar">SS</div>
           <div>
-            <strong>Shuang Song</strong>
+            <strong>Shuang</strong>
             <span>Personal workspace</span>
           </div>
-          <MoreHorizontal size={15} />
         </div>
       </div>
     </aside>
@@ -101,19 +97,5 @@ function NavLink({
       {icon}
       <span>{label}</span>
     </Link>
-  );
-}
-
-function UpcomingRow({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <button
-      className="nav-row nav-upcoming"
-      disabled
-      title={`${label} is coming soon`}
-    >
-      {icon}
-      <span>{label}</span>
-      <small>SOON</small>
-    </button>
   );
 }

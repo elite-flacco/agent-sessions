@@ -62,7 +62,15 @@ export function OverviewView({
         </div>
       </header>
 
-      <div className="summary-grid" aria-label="Daily and weekly summary">
+      <div
+        className="summary-grid overview-summary-grid"
+        aria-label="Daily and weekly summary"
+      >
+        <Link className="metric metric-link" href="/sessions">
+          <span className="eyebrow">Sessions this week</span>
+          <strong>{overview.week.sessions}</strong>
+          <span>{runtime(overview.week.runtimeMs)} total runtime</span>
+        </Link>
         <Link className="metric metric-link" href="/sessions?range=today">
           <span className="eyebrow">Sessions today</span>
           <strong>{overview.today.sessions}</strong>
@@ -75,16 +83,6 @@ export function OverviewView({
             {running.length > 0 && <CircleDot size={10} />}
             {running.length ? "Live from local files" : "Nothing in flight"}
           </span>
-        </Link>
-        <Link className="metric metric-link" href="/sessions">
-          <span className="eyebrow">Sessions this week</span>
-          <strong>{overview.week.sessions}</strong>
-          <span>{runtime(overview.week.runtimeMs)} total runtime</span>
-        </Link>
-        <Link className="metric metric-link" href="/sessions?status=attention">
-          <span className="eyebrow">Failures this week</span>
-          <strong>{overview.week.failures}</strong>
-          <span>Interrupted or needing attention</span>
         </Link>
       </div>
 
@@ -114,8 +112,8 @@ export function OverviewView({
           <section className="card overview-card" aria-label="Needs attention">
             <div className="overview-card-head">
               <h3>
-                <AlertTriangle size={14} className="inline-icon" /> Needs
-                attention
+                <AlertTriangle size={14} className="inline-icon warning-icon" />{" "}
+                Needs attention
               </h3>
               <Link href="/sessions?status=attention">View all</Link>
             </div>
@@ -125,7 +123,7 @@ export function OverviewView({
               ))
             ) : (
               <p className="overview-empty">
-                Nothing needs attention in the last day.
+                Nothing needs attention today or yesterday.
               </p>
             )}
           </section>
@@ -167,8 +165,13 @@ export function OverviewView({
 
 function SessionLine({ session }: { session: SessionListItem }) {
   return (
-    <Link className="project-session-row" href={`/sessions/${session.id}`}>
-      <span className={`status-label status-${session.status}`}>
+    <Link
+      className="project-session-row session-line-row"
+      href={`/sessions/${session.id}`}
+    >
+      <span
+        className={`status-label status-${session.status} session-line-status`}
+      >
         <i />
       </span>
       <div>
