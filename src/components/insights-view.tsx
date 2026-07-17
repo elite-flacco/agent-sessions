@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { formatCostUsd, formatTokens } from "@/lib/format";
+import { formatCostUsd, runtime } from "@/lib/format";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { Insights, InsightSignal } from "@/lib/queries";
 
@@ -78,10 +78,6 @@ function CacheCard({ insights }: { insights: Insights }) {
     deltaPts === null
       ? ""
       : `${deltaPts > 0 ? "▲" : "▼"} ${Math.abs(Math.round(deltaPts))} pts wk-over-wk`;
-  const maxModelTokens = Math.max(
-    ...cache.week.byModel.map((m) => m.tokens),
-    0,
-  );
   const maxTrend = Math.max(...cache.trend.map((d) => d.hitRate ?? 0), 0);
 
   return (
@@ -187,7 +183,7 @@ function CostCard({ insights }: { insights: Insights }) {
               key={o.id}
               href={`/sessions/${o.id}`}
               className="dist-row dist-row-wide"
-              title={`${formatTokens(0)} · $${o.usdPerMin.toFixed(2)}/min`}
+              title={`${runtime(o.runtimeMs)} · $${o.usdPerMin.toFixed(2)}/min`}
             >
               <span className="dist-label">{o.title}</span>
               <span className="meter" aria-hidden>
