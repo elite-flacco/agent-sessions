@@ -45,3 +45,6 @@ next-env.d.ts
 
 # visual companion (brainstorming)
 /.superpowers/
+
+# nested git worktrees for concurrent agents
+/.worktrees/
