@@ -6,6 +6,7 @@ import {
   CircleDot,
   Database,
   LayoutDashboard,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -45,6 +46,12 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           active={pathname === "/usage"}
           icon={<BarChart3 size={15} />}
           label="Usage & cost"
+        />
+        <NavLink
+          href="/insights"
+          active={pathname === "/insights"}
+          icon={<Sparkles size={15} />}
+          label="Insights"
         />
         <NavLink
           href="/agents"
