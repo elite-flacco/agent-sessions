@@ -58,6 +58,21 @@ export const codexAdapter: ProviderAdapter = {
             if (safeTitle(candidate, "")) return candidate;
           }
         }
+        // Subagent rollouts carry their task prompt as encrypted inter-agent
+        // payload, so the only readable name is the spawn's agent_path
+        // (e.g. "/root/task_1_bootstrap").
+        const meta = record(
+          rows.find((row) => row.type === "session_meta")?.payload,
+        );
+        const spawn = record(
+          record(record(meta?.source)?.subagent)?.thread_spawn,
+        );
+        const agentPath =
+          stringValue(meta?.agent_path) ?? stringValue(spawn?.agent_path);
+        const task = agentPath?.split("/").filter(Boolean).at(-1);
+        if (!task) return undefined;
+        const label = task.replace(/[_-]+/g, " ").trim();
+        return label.charAt(0).toUpperCase() + label.slice(1);
       },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {

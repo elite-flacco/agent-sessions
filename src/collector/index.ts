@@ -53,7 +53,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "8";
+const NORMALIZATION_VERSION = "9";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -240,7 +240,11 @@ function zcodeStoredStatus(
   for (const message of [...messages].reverse()) {
     const data = record(message.data);
     if (!data) continue;
-    if (data.error) return "needs_attention";
+    // An explicit cancel is an abort marker, not a failure.
+    if (data.error)
+      return /cancel/i.test(JSON.stringify(data.error))
+        ? "interrupted"
+        : "needs_attention";
     if (data.role === "assistant" && record(data.time)?.completed)
       return "completed";
     if (data.role === "user") break;
@@ -267,7 +271,7 @@ function reconcileCodexTitles(): void {
 function reconcileZcodeMetadata(): void {
   const sessions = sqlite
     .prepare(
-      "SELECT id, external_id externalId, title, cwd, status FROM sessions WHERE provider = 'zcode'",
+      "SELECT id, external_id externalId, title, cwd, status, updated_at updatedAt FROM sessions WHERE provider = 'zcode'",
     )
     .all() as Array<{
     id: number;
@@ -275,11 +279,12 @@ function reconcileZcodeMetadata(): void {
     title: string;
     cwd: string | null;
     status: string;
+    updatedAt: string;
   }>;
   const update = sqlite.prepare(
     `UPDATE sessions
      SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-         session_kind = ?, agent_depth = ?, status = ?, ended_at = ?
+         session_kind = ?, agent_depth = ?, status = ?, ended_at = ?, updated_at = ?
      WHERE id = ?`,
   );
   const write = sqlite.transaction(() => {
@@ -301,6 +306,13 @@ function reconcileZcodeMetadata(): void {
         (storedStatus === "running" || storedStatus === "incomplete")
           ? session.status
           : (storedStatus ?? session.status);
+      // The Zcode DB is often fresher than the rollout JSONL (event-only
+      // subagents, interactive turns). Advance updated_at so a genuinely
+      // active session does not read as stale at query time.
+      const freshestUpdatedAt =
+        updatedAt && updatedAt > session.updatedAt
+          ? updatedAt
+          : session.updatedAt;
       update.run(
         zcodeTitle(
           safeTitle(metadata.title, session.title),
@@ -317,6 +329,7 @@ function reconcileZcodeMetadata(): void {
         status === "completed" || status === "needs_attention"
           ? (updatedAt ?? null)
           : null,
+        freshestUpdatedAt,
         session.id,
       );
     }

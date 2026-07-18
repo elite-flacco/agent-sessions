@@ -337,6 +337,175 @@ describe("collector sync", () => {
     }
   });
 
+  it("keeps an active Zcode session running by advancing updated_at from the Zcode DB", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-running.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const startedAt = Date.now() - 60 * 60_000;
+    const dbUpdatedAt = Date.now() - 60_000; // fresh activity, only in the DB
+    zcodeDb
+      .prepare(
+        `INSERT INTO session
+         (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-running",
+        "/work/zcode-project",
+        "Long build in flight",
+        null,
+        "interactive",
+        "generated",
+        startedAt,
+        dbUpdatedAt,
+      );
+    const insertMessage = zcodeDb.prepare(
+      "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+    );
+    insertMessage.run(
+      "user-1",
+      "zcode-running",
+      startedAt,
+      JSON.stringify({ role: "user", time: { created: startedAt } }),
+    );
+    // In-flight assistant turn: created but not completed, no error.
+    insertMessage.run(
+      "assistant-1",
+      "zcode-running",
+      dbUpdatedAt,
+      JSON.stringify({ role: "assistant", time: { created: dbUpdatedAt } }),
+    );
+    zcodeDb.close();
+    // Relay last synced the rollout JSONL 30 minutes ago, past the stale window.
+    const staleRelayUpdatedAt = new Date(
+      Date.now() - 30 * 60_000,
+    ).toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'zcode', 'Long build in flight', 'running', ?, ?)`,
+      )
+      .run(
+        "zcode-running",
+        new Date(startedAt).toISOString(),
+        staleRelayUpdatedAt,
+      );
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      const row = sqlite
+        .prepare(
+          "SELECT status, updated_at updatedAt FROM sessions WHERE external_id = 'zcode-running'",
+        )
+        .get() as { status: string; updatedAt: string };
+      expect(row.status).toBe("running");
+      expect(row.updatedAt).toBe(new Date(dbUpdatedAt).toISOString());
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
+
+  it("reconciles an explicitly cancelled Zcode request as interrupted", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-cancelled.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const startedAt = Date.now() - 60 * 60_000;
+    const updatedAt = Date.now() - 30 * 60_000;
+    zcodeDb
+      .prepare(
+        `INSERT INTO session
+         (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-cancelled",
+        "/work/zcode-project",
+        "Cancelled mid-request",
+        null,
+        "interactive",
+        "generated",
+        startedAt,
+        updatedAt,
+      );
+    zcodeDb
+      .prepare(
+        "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        "assistant-1",
+        "zcode-cancelled",
+        updatedAt,
+        JSON.stringify({
+          role: "assistant",
+          time: { created: updatedAt, completed: updatedAt },
+          error: {
+            name: "AiSdkModelAdapterError",
+            data: { message: "Model request was cancelled." },
+          },
+        }),
+      );
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'zcode', 'Cancelled mid-request', 'running', ?, ?)`,
+      )
+      .run(
+        "zcode-cancelled",
+        new Date(startedAt).toISOString(),
+        new Date(updatedAt).toISOString(),
+      );
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT status FROM sessions WHERE external_id = 'zcode-cancelled'",
+          )
+          .get(),
+      ).toEqual({ status: "interrupted" });
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
+
   it("refreshes Codex titles when the app database changes without a JSONL change", async () => {
     const codexDbPath = path.join(directory, "codex-state.db");
     const Database = (await import("better-sqlite3")).default;

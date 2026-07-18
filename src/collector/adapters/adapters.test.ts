@@ -268,6 +268,51 @@ describe("provider adapters", () => {
     });
   });
 
+  it("titles a Codex subagent from its agent path when no readable prompt exists", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-18T18:12:17Z",
+        payload: {
+          id: "codex-task-child",
+          cwd: "/work/relay",
+          parent_thread_id: "codex-parent",
+          agent_nickname: "Parfit",
+          agent_path: "/root/task_1_bootstrap",
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "codex-parent",
+                depth: 1,
+                agent_path: "/root/task_1_bootstrap",
+                agent_nickname: "Parfit",
+              },
+            },
+          },
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-18T18:12:18Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "<recommended_plugins>\nHere is a list of plugins.\n</recommended_plugins>",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "codex-task-child",
+      sessionKind: "subagent",
+      title: "Task 1 bootstrap",
+    });
+  });
+
   it("normalizes Claude Code and tolerates a partially written final line", async () => {
     const result = await parse(
       claudeAdapter,
