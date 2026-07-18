@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect } from "react";
+import { useEffect } from "react";
 import {
   absoluteTime,
   elapsed,
@@ -199,47 +199,59 @@ function SessionLine({ session }: { session: SessionListItem }) {
   );
 }
 
+// Formats a YYYY-MM-DD cell key as e.g. "Jul 13". The key is already a local
+// calendar date, so it is parsed and formatted in UTC to avoid re-shifting.
+function heatDayLabel(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
   const maxCount = Math.max(1, ...cells.map((cell) => cell.count));
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  // cells[] is in day-major order (dayOfWeek*24 + hour) from the query.
-  const hourLabel = (hour: number) =>
-    hour % 3 === 0
-      ? hour === 0
-        ? "12a"
-        : hour < 12
-          ? `${hour}a`
-          : hour === 12
-            ? "12p"
-            : `${hour - 12}p`
-      : "";
+  // cells[] is one entry per actual calendar day, oldest first. Lay them out
+  // calendar-style: one column per week, one row per weekday (Mon = top).
+  const weekday = (day: string) =>
+    (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const leading = cells.length ? weekday(cells[0].day) : 0;
+  const first = cells[0]?.day;
+  const last = cells.at(-1)?.day;
   return (
     <section className="card overview-card" aria-label="Activity heatmap">
       <div className="overview-card-head">
         <h3>When you&apos;re active</h3>
-        <span>last 30 days</span>
+        <span>
+          {first && last
+            ? `${heatDayLabel(first)} – ${heatDayLabel(last)}`
+            : ""}
+        </span>
       </div>
-      <div className="heatmap" role="img" aria-label="Sessions by day and hour">
-        <span aria-hidden />
-        {Array.from({ length: 24 }, (_, hour) => (
-          <span key={`h${hour}`} className="heat-hour-label">
-            {hourLabel(hour)}
+      <div
+        className="heatmap-cal"
+        role="img"
+        aria-label="Sessions per day over the last 30 days"
+      >
+        {days.map((day) => (
+          <span key={day} className="heat-day-label">
+            {day}
           </span>
         ))}
-        {days.map((day, dayIndex) => (
-          <Fragment key={day}>
-            <span className="heat-day-label">{day}</span>
-            {Array.from({ length: 24 }, (_, hour) => {
-              const cell = cells[dayIndex * 24 + hour];
-              return (
-                <span
-                  key={`${dayIndex}-${hour}`}
-                  className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
-                  title={`${day} ${hour}:00 — ${cell.count} sessions`}
-                />
-              );
-            })}
-          </Fragment>
+        {Array.from({ length: leading }, (_, index) => (
+          <span
+            key={`lead-${index}`}
+            className="heat-cell heat-cell-empty"
+            aria-hidden
+          />
+        ))}
+        {cells.map((cell) => (
+          <span
+            key={cell.day}
+            className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
+            title={`${heatDayLabel(cell.day)} — ${cell.count} session${cell.count === 1 ? "" : "s"}`}
+          />
         ))}
       </div>
     </section>

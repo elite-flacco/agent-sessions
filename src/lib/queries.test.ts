@@ -400,15 +400,20 @@ describe("usage and cost queries", () => {
 });
 
 describe("overview patterns", () => {
-  it("builds a 7x24 heatmap with counts from recent sessions", () => {
+  it("builds a daily heatmap covering the actual last 30 days", () => {
     const patterns = queries.getOverviewPatterns();
-    expect(patterns.heatmap).toHaveLength(7 * 24);
-    // Each cell carries its grid coordinates.
-    expect(patterns.heatmap[0]).toMatchObject({ dayOfWeek: 0, hour: 0 });
-    expect(patterns.heatmap.at(-1)).toMatchObject({ dayOfWeek: 6, hour: 23 });
-    // Three sessions started within the 30-day window; their cells are > 0.
+    expect(patterns.heatmap).toHaveLength(30);
+    // Cells are consecutive calendar days (oldest first), each a real date.
+    for (const cell of patterns.heatmap)
+      expect(cell.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const days = patterns.heatmap.map((cell) => cell.day);
+    expect([...days].sort()).toEqual(days);
+    expect(new Set(days).size).toBe(30);
+    // Three sessions started within the 30-day window: one today, two on
+    // the same day two days ago.
     const total = patterns.heatmap.reduce((sum, cell) => sum + cell.count, 0);
     expect(total).toBe(3);
+    expect(patterns.heatmap.filter((cell) => cell.count > 0)).toHaveLength(2);
   });
 
   it("buckets session length and summarizes the long tail", () => {
@@ -445,25 +450,26 @@ describe("overview patterns", () => {
   });
 
   it("buckets heatmap sessions in America/New_York time", () => {
-    // This instant is Tuesday 00:30 UTC but Monday 20:30 EDT. Assert the
-    // Eastern-time cell changes even when the UTC date belongs to another day.
-    const tuesdayUtcMondayEastern = "2026-07-14T00:30:00.000Z";
+    // Two hours from now, UTC may already be tomorrow while Eastern time is
+    // still today. Whatever instant we pick inside the window, the session
+    // must land on its Eastern-time calendar day.
+    const instant = "2026-07-14T00:30:00.000Z"; // Monday 20:30 EDT
+    const easternDay = "2026-07-13";
     const before = queries.getOverviewPatterns();
-    const beforeEasternCount =
-      before.heatmap.find((cell) => cell.dayOfWeek === 0 && cell.hour === 20)
-        ?.count ?? 0;
+    const beforeCount =
+      before.heatmap.find((cell) => cell.day === easternDay)?.count ?? 0;
     sqlite
       .prepare(
         `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
          VALUES ('heat-eastern', 'codex', 'Heatmap placement check', 'completed', ?, ?)`,
       )
-      .run(tuesdayUtcMondayEastern, tuesdayUtcMondayEastern);
+      .run(instant, instant);
     try {
       const patterns = queries.getOverviewPatterns();
       const easternCell = patterns.heatmap.find(
-        (cell) => cell.dayOfWeek === 0 && cell.hour === 20,
+        (cell) => cell.day === easternDay,
       );
-      expect(easternCell?.count).toBe(beforeEasternCount + 1);
+      expect(easternCell?.count).toBe(beforeCount + 1);
     } finally {
       sqlite
         .prepare("DELETE FROM sessions WHERE external_id = 'heat-eastern'")

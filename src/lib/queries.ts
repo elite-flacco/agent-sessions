@@ -459,7 +459,7 @@ export function getProjectSessions(key: string): SessionListItem[] {
 }
 
 export interface OverviewPatterns {
-  heatmap: { dayOfWeek: number; hour: number; count: number }[];
+  heatmap: { day: string; count: number }[];
   length: {
     buckets: { label: string; count: number }[];
     medianMs: number | null;
@@ -941,30 +941,16 @@ export function getSyncState(): {
 
 const PATTERNS_HEATMAP_DAYS = 30;
 const PATTERNS_HEATMAP_TIME_ZONE = "America/New_York";
-const PATTERNS_HEATMAP_WEEKDAYS = [
-  "Mon",
-  "Tue",
-  "Wed",
-  "Thu",
-  "Fri",
-  "Sat",
-  "Sun",
-] as const;
-const patternsHeatmapFormatter = new Intl.DateTimeFormat("en-US", {
+// en-CA renders dates as YYYY-MM-DD, which doubles as a stable sort key.
+const patternsHeatmapFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: PATTERNS_HEATMAP_TIME_ZONE,
-  weekday: "short",
-  hour: "numeric",
-  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
 });
 
-function patternsHeatmapCell(startedAt: string): number {
-  const parts = patternsHeatmapFormatter.formatToParts(new Date(startedAt));
-  const weekday = parts.find((part) => part.type === "weekday")?.value;
-  const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const dayOfWeek = PATTERNS_HEATMAP_WEEKDAYS.indexOf(
-    weekday as (typeof PATTERNS_HEATMAP_WEEKDAYS)[number],
-  );
-  return dayOfWeek * 24 + hour;
+function patternsHeatmapDay(startedAt: string): string {
+  return patternsHeatmapFormatter.format(new Date(startedAt));
 }
 
 const LENGTH_BUCKETS = [
@@ -978,15 +964,17 @@ const LENGTH_BUCKETS = [
 
 /**
  * Derives the three overview "pattern" views from existing session and
- * usage tables. The heatmap aggregates started_at over the trailing 30 days
- * into a 7 (Mon=0) x 24 (hour) grid in America/New_York time; the length
+ * usage tables. The heatmap counts session starts per calendar day over the
+ * actual trailing 30 days in America/New_York time; the length
  * histogram buckets the runtime expression over the trailing 7 days; the week
  * cost reuses the pricing-trust rule (null when any usage row is unpriced).
  */
 export function getOverviewPatterns(): OverviewPatterns {
-  // --- heatmap: 7x24 grid of session-start counts over 30 days ---
+  // --- heatmap: session-start counts per calendar day over the last 30 days ---
+  // Fetch one extra day so timezone offsets never clip the oldest cell, then
+  // keep only starts that fall on one of the 30 tracked local dates.
   const heatStart = new Date(
-    Date.now() - PATTERNS_HEATMAP_DAYS * DAY_MS,
+    Date.now() - (PATTERNS_HEATMAP_DAYS + 1) * DAY_MS,
   ).toISOString();
   const heatRows = sqlite
     .prepare(
@@ -994,15 +982,22 @@ export function getOverviewPatterns(): OverviewPatterns {
        FROM sessions WHERE started_at >= ?`,
     )
     .all(heatStart) as { startedAt: string }[];
-  const heatMap = new Map<number, number>();
+  const heatDays = Array.from({ length: PATTERNS_HEATMAP_DAYS }, (_, index) =>
+    patternsHeatmapDay(
+      new Date(
+        Date.now() - (PATTERNS_HEATMAP_DAYS - 1 - index) * DAY_MS,
+      ).toISOString(),
+    ),
+  );
+  const heatMap = new Map<string, number>(heatDays.map((day) => [day, 0]));
   for (const row of heatRows) {
-    const cell = patternsHeatmapCell(row.startedAt);
-    heatMap.set(cell, (heatMap.get(cell) ?? 0) + 1);
+    const day = patternsHeatmapDay(row.startedAt);
+    const count = heatMap.get(day);
+    if (count !== undefined) heatMap.set(day, count + 1);
   }
-  const heatmap = Array.from({ length: 7 * 24 }, (_, index) => ({
-    dayOfWeek: Math.floor(index / 24),
-    hour: index % 24,
-    count: heatMap.get(index) ?? 0,
+  const heatmap = heatDays.map((day) => ({
+    day,
+    count: heatMap.get(day) ?? 0,
   }));
 
   // --- length histogram: bucket runtime over 7 days ---

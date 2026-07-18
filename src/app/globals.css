@@ -1456,15 +1456,17 @@
   .spark-fill-10 {
     height: 100%;
   }
-  .heatmap {
+  .heatmap-cal {
     display: grid;
-    grid-template-columns: 1.6rem repeat(24, minmax(0, 1fr));
-    gap: 0.15rem;
+    grid-template-rows: repeat(7, 1.1rem);
+    grid-template-columns: 2.2rem;
+    grid-auto-flow: column;
+    grid-auto-columns: 1.1rem;
+    gap: 0.2rem;
+    justify-content: start;
   }
-  .heat-hour-label {
-    color: var(--muted-foreground);
-    font-size: 0.55rem;
-    text-align: center;
+  .heat-cell-empty {
+    background: transparent;
   }
   .heat-day-label {
     display: flex;
@@ -2029,10 +2031,17 @@
     }
     .primary-nav {
       min-width: 0;
-      flex: 1;
       margin: 0 0 0 auto;
       grid-auto-flow: column;
+      grid-auto-columns: max-content;
+      gap: 0.3rem;
       overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .nav-row {
+      min-height: 0;
+      padding: 0.5rem 0.65rem;
+      white-space: nowrap;
     }
     .nav-active {
       width: auto;

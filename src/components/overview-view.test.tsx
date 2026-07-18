@@ -21,10 +21,11 @@ function renderOverview(
         daily: [],
       }}
       patterns={{
-        heatmap: Array.from({ length: 7 * 24 }, (_, index) => ({
-          dayOfWeek: Math.floor(index / 24),
-          hour: index % 24,
-          count: 0,
+        heatmap: Array.from({ length: 30 }, (_, index) => ({
+          day: new Date(Date.UTC(2026, 5, 19 + index))
+            .toISOString()
+            .slice(0, 10),
+          count: index % 5,
         })),
         length: {
           buckets: [],
@@ -133,6 +134,17 @@ describe("OverviewView", () => {
 
     expect(html).toContain("Nothing needs attention in the past 3 days.");
     expect(html).not.toContain("today or yesterday");
+  });
+
+  test("renders the heatmap as actual calendar days, not aggregates", () => {
+    const html = renderOverview();
+
+    expect(html).toContain('class="heatmap-cal"');
+    expect(html).not.toContain("heat-hour-label");
+    // Range label and per-day tooltips use real dates from the series.
+    expect(html).toContain("Jun 19 – Jul 18");
+    expect(html).toContain('title="Jun 20 — 1 session"');
+    expect(html).toContain('title="Jun 22 — 3 sessions"');
   });
 
   test("does not render a heatmap intensity legend", () => {
