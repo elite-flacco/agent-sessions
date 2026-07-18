@@ -22,34 +22,36 @@
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `src/lib/agent-inventory/types.ts` (modify) | Add `ScheduledTask`, `ScheduledTaskStatus`, `ScheduledTaskInstructionFormat`; extend `AgentInventory` with `scheduledTasks: ScheduledTask[]` |
-| `src/lib/agent-inventory/schedule.ts` (create) | `humanizeSchedule(raw)` — hand-rolled rrule → human string; returns `undefined` when unsupported |
-| `src/lib/agent-inventory/schedule.test.ts` (create) | rrule parser unit tests |
-| `src/lib/agent-inventory/codex.ts` (modify) | Add `discoverCodexScheduledTasks(homeDir)`; called from `discoverCodex` |
-| `src/lib/agent-inventory/claude.ts` (modify) | Add `discoverClaudeScheduledTasks(homeDir)`; called from `discoverClaude` |
-| `src/lib/agent-inventory/zcode.ts` (modify) | Add `discoverZcodeScheduledTasks()` reading `workflow_definition` via a new `src/lib/zcode-db.ts` helper |
-| `src/lib/zcode-db.ts` (modify) | Add `listZcodeWorkflowDefinitions()` + `__resetZcodeDbCache` already exists |
-| `src/lib/agent-inventory/pi.ts` (modify) | Add `discoverPiScheduledTasks()` returning `[]` |
-| `src/lib/agent-inventory/shared.ts` (modify) | Add `readDirectoryEntries` + `parseFrontmatter` helpers used by Codex/Claude readers |
-| `src/lib/agent-inventory/index.ts` (modify) | Ensure each discoverer wires its tasks into the returned `AgentInventory` (the wiring lives in each reader, index just merges) |
-| `src/lib/agent-inventory/discovery.test.ts` (modify) | Add scheduled-task discovery assertions to existing tests + new tests |
-| `src/components/agent-setup-view.tsx` (modify) | Add `"tasks"` to `AgentSetupViewMode`; add third tab; add `ScheduledTasksView` + `ScheduledTaskRow` |
-| `src/components/agent-setup-view.test.tsx` (modify) | Extend fixtures with `scheduledTasks: []`; add `view=tasks` tests |
-| `AGENTS.md` (modify) | Document the allowlist exception + new tab |
-| `README.md` (modify) | Mention the Scheduled tasks tab in the `/agents` row |
+| File                                                 | Responsibility                                                                                                                               |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/agent-inventory/types.ts` (modify)          | Add `ScheduledTask`, `ScheduledTaskStatus`, `ScheduledTaskInstructionFormat`; extend `AgentInventory` with `scheduledTasks: ScheduledTask[]` |
+| `src/lib/agent-inventory/schedule.ts` (create)       | `humanizeSchedule(raw)` — hand-rolled rrule → human string; returns `undefined` when unsupported                                             |
+| `src/lib/agent-inventory/schedule.test.ts` (create)  | rrule parser unit tests                                                                                                                      |
+| `src/lib/agent-inventory/codex.ts` (modify)          | Add `discoverCodexScheduledTasks(homeDir)`; called from `discoverCodex`                                                                      |
+| `src/lib/agent-inventory/claude.ts` (modify)         | Add `discoverClaudeScheduledTasks(homeDir)`; called from `discoverClaude`                                                                    |
+| `src/lib/agent-inventory/zcode.ts` (modify)          | Add `discoverZcodeScheduledTasks()` reading `workflow_definition` via a new `src/lib/zcode-db.ts` helper                                     |
+| `src/lib/zcode-db.ts` (modify)                       | Add `listZcodeWorkflowDefinitions()` + `__resetZcodeDbCache` already exists                                                                  |
+| `src/lib/agent-inventory/pi.ts` (modify)             | Add `discoverPiScheduledTasks()` returning `[]`                                                                                              |
+| `src/lib/agent-inventory/shared.ts` (modify)         | Add `readDirectoryEntries` + `parseFrontmatter` helpers used by Codex/Claude readers                                                         |
+| `src/lib/agent-inventory/index.ts` (modify)          | Ensure each discoverer wires its tasks into the returned `AgentInventory` (the wiring lives in each reader, index just merges)               |
+| `src/lib/agent-inventory/discovery.test.ts` (modify) | Add scheduled-task discovery assertions to existing tests + new tests                                                                        |
+| `src/components/agent-setup-view.tsx` (modify)       | Add `"tasks"` to `AgentSetupViewMode`; add third tab; add `ScheduledTasksView` + `ScheduledTaskRow`                                          |
+| `src/components/agent-setup-view.test.tsx` (modify)  | Extend fixtures with `scheduledTasks: []`; add `view=tasks` tests                                                                            |
+| `AGENTS.md` (modify)                                 | Document the allowlist exception + new tab                                                                                                   |
+| `README.md` (modify)                                 | Mention the Scheduled tasks tab in the `/agents` row                                                                                         |
 
 ---
 
 ## Task 1: Branch + extend types
 
 **Files:**
+
 - Create branch `zcode/feat/scheduled-tasks-tab` off current `zcode/feat/insights-page`
 - Modify: `src/lib/agent-inventory/types.ts`
 - Modify (fixups): every file that constructs an `AgentInventory` literal — `src/lib/agent-inventory/index.ts` (the empty-shell fallback), `src/components/agent-setup-view.test.tsx` (4 fixture literals), `src/lib/agent-inventory/discovery.test.ts` (none directly — it calls `getAgentInventories`, so it's fine)
 
 **Interfaces:**
+
 - Produces: `ScheduledTask`, `ScheduledTaskStatus`, `ScheduledTaskInstructionFormat` types; `AgentInventory.scheduledTasks: ScheduledTask[]` (required field)
 
 - [ ] **Step 1: Create the feature branch**
@@ -68,9 +70,7 @@ Add after the `AgentCapability` interface (before `InstructionFile`):
 export type ScheduledTaskStatus = "active" | "paused" | "disabled" | "unknown";
 
 export type ScheduledTaskInstructionFormat =
-  | "toml_prompt"
-  | "skill_md"
-  | "script";
+  "toml_prompt" | "skill_md" | "script";
 
 export interface ScheduledTask {
   id: string;
@@ -162,10 +162,12 @@ git commit -m "🔧 chore(agents): add ScheduledTask type and required scheduled
 ## Task 2: Schedule humanizer (rrule → human)
 
 **Files:**
+
 - Create: `src/lib/agent-inventory/schedule.ts`
 - Create: `src/lib/agent-inventory/schedule.test.ts`
 
 **Interfaces:**
+
 - Produces: `humanizeSchedule(raw: string): string | undefined`
 
 - [ ] **Step 1: Write the failing test**
@@ -185,7 +187,9 @@ describe("humanizeSchedule", () => {
 
   test("weekly multiple days", () => {
     expect(
-      humanizeSchedule("FREQ=WEEKLY;BYDAY=MO;BYDAY=WE;BYDAY=FR;BYHOUR=9;BYMINUTE=30"),
+      humanizeSchedule(
+        "FREQ=WEEKLY;BYDAY=MO;BYDAY=WE;BYDAY=FR;BYHOUR=9;BYMINUTE=30",
+      ),
     ).toBe("Mondays, Wednesdays, Fridays at 09:30");
   });
 
@@ -296,10 +300,7 @@ export function humanizeSchedule(raw: string): string | undefined {
   }
 
   if (freq === "MONTHLY") {
-    const monthDay = Number.parseInt(
-      pairs.get("BYMONTHDAY")?.[0] ?? "",
-      10,
-    );
+    const monthDay = Number.parseInt(pairs.get("BYMONTHDAY")?.[0] ?? "", 10);
     if (Number.isNaN(monthDay)) return undefined;
     return `Monthly on day ${monthDay} at ${time}`;
   }
@@ -330,9 +331,11 @@ git commit -m "✨ feat(agents): add rrule schedule humanizer"
 ## Task 3: Shared helpers (frontmatter + directory entries)
 
 **Files:**
+
 - Modify: `src/lib/agent-inventory/shared.ts`
 
 **Interfaces:**
+
 - Produces: `readDirectoryEntries(dir: string): Promise<string[]>` (returns absolute child paths, empty on missing dir, never throws); `parseFrontmatter(content: string): { data: Record<string, string>; body: string }` (splits YAML frontmatter from body, returns `{ data: {}, body: content }` when no frontmatter)
 
 - [ ] **Step 1: Write the failing test**
@@ -360,16 +363,13 @@ describe("readDirectoryEntries", () => {
     await mkdir(join(dir, "a"));
     await mkdir(join(dir, "b"));
     const entries = await readDirectoryEntries(dir);
-    expect(entries.sort()).toEqual([
-      join(dir, "a"),
-      join(dir, "b"),
-    ]);
+    expect(entries.sort()).toEqual([join(dir, "a"), join(dir, "b")]);
   });
 
   test("returns empty array for missing directory", async () => {
-    expect(await readDirectoryEntries(join(tmpdir(), "does-not-exist"))).toEqual(
-      [],
-    );
+    expect(
+      await readDirectoryEntries(join(tmpdir(), "does-not-exist")),
+    ).toEqual([]);
   });
 });
 
@@ -392,9 +392,7 @@ describe("parseFrontmatter", () => {
   });
 
   test("handles values wrapped in quotes", () => {
-    const result = parseFrontmatter(
-      '---\nname: "quoted name"\n---\nbody',
-    );
+    const result = parseFrontmatter('---\nname: "quoted name"\n---\nbody');
     expect(result.data.name).toBe("quoted name");
   });
 });
@@ -461,10 +459,12 @@ git commit -m "✨ feat(agents): add readDirectoryEntries and parseFrontmatter h
 ## Task 4: Codex scheduled-task reader
 
 **Files:**
+
 - Modify: `src/lib/agent-inventory/codex.ts`
 - Modify: `src/lib/agent-inventory/discovery.test.ts` (add assertions)
 
 **Interfaces:**
+
 - Consumes: `readDirectoryEntries`, `readTextSource`, `parseFrontmatter` from `./shared`; `humanizeSchedule` from `./schedule`; `ScheduledTask` from `./types`
 - Produces: `discoverCodexScheduledTasks(homeDir: string): Promise<ScheduledTask[]>` — called inside `discoverCodex` and merged into the returned inventory's `scheduledTasks`
 
@@ -697,10 +697,12 @@ git commit -m "✨ feat(agents): read Codex automations as scheduled tasks"
 ## Task 5: Claude scheduled-task reader
 
 **Files:**
+
 - Modify: `src/lib/agent-inventory/claude.ts`
 - Modify: `src/lib/agent-inventory/discovery.test.ts`
 
 **Interfaces:**
+
 - Consumes: `readDirectoryEntries`, `readTextSource`, `parseFrontmatter` from `./shared`; `ScheduledTask` from `./types`
 - Produces: `discoverClaudeScheduledTasks(homeDir: string): Promise<ScheduledTask[]>`
 
@@ -771,11 +773,7 @@ import {
   safeAbsolutePath,
   type SkillLock,
 } from "./shared";
-import type {
-  AgentCapability,
-  AgentInventory,
-  ScheduledTask,
-} from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 ```
 
 Add the reader function (before `discoverClaude`):
@@ -852,11 +850,13 @@ git commit -m "✨ feat(agents): read Claude scheduled-tasks dirs as scheduled t
 ## Task 6: Zcode scheduled-task reader (via `workflow_definition`)
 
 **Files:**
+
 - Modify: `src/lib/zcode-db.ts` (add `listZcodeWorkflowDefinitions`)
 - Modify: `src/lib/agent-inventory/zcode.ts`
 - Modify: `src/lib/agent-inventory/discovery.test.ts`
 
 **Interfaces:**
+
 - Consumes: `listZcodeWorkflowDefinitions()` from `@/lib/zcode-db`; `readTextSource` from `./shared`; `ScheduledTask` from `./types`; existing `ZCODE_DB_PATH` env seam and `__resetZcodeDbCache()`
 - Produces: `discoverZcodeScheduledTasks(): Promise<ScheduledTask[]>` (reads `~/.zcode/cli/db/db.sqlite` via the seam)
 
@@ -954,8 +954,7 @@ export interface ZcodeWorkflowDefinition {
 }
 
 export function listZcodeWorkflowDefinitions():
-  | ZcodeWorkflowDefinition[]
-  | undefined {
+  ZcodeWorkflowDefinition[] | undefined {
   const db = zcodeDb();
   if (!db) return undefined;
   try {
@@ -977,10 +976,8 @@ export function listZcodeWorkflowDefinitions():
       scriptHash: stringValue(row.scriptHash) ?? "",
       metaJson: stringValue(row.metaJson) ?? "{}",
       scope: stringValue(row.scope) ?? "user",
-      timeCreated:
-        typeof row.timeCreated === "number" ? row.timeCreated : 0,
-      timeUpdated:
-        typeof row.timeUpdated === "number" ? row.timeUpdated : 0,
+      timeCreated: typeof row.timeCreated === "number" ? row.timeCreated : 0,
+      timeUpdated: typeof row.timeUpdated === "number" ? row.timeUpdated : 0,
     }));
   } catch {
     return undefined;
@@ -995,11 +992,7 @@ Add imports at the top of `src/lib/agent-inventory/zcode.ts`:
 ```ts
 import { listZcodeWorkflowDefinitions } from "@/lib/zcode-db";
 import { readTextSource } from "./shared";
-import type {
-  AgentCapability,
-  AgentInventory,
-  ScheduledTask,
-} from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 ```
 
 Add the reader (before `discoverZcode`):
@@ -1030,15 +1023,16 @@ export async function discoverZcodeScheduledTasks(): Promise<ScheduledTask[]> {
       sourcePath: def.scriptPath ?? "",
       createdAt: def.timeCreated,
       updatedAt: def.timeUpdated,
-      warnings: body === undefined && def.scriptPath
-        ? [
-            {
-              sourcePath: def.scriptPath,
-              code: "unreadable" as const,
-              message: "Could not read workflow script.",
-            },
-          ]
-        : [],
+      warnings:
+        body === undefined && def.scriptPath
+          ? [
+              {
+                sourcePath: def.scriptPath,
+                code: "unreadable" as const,
+                message: "Could not read workflow script.",
+              },
+            ]
+          : [],
     });
   }
   return tasks;
@@ -1082,9 +1076,11 @@ git commit -m "✨ feat(agents): read Zcode workflow_definition rows as schedule
 ## Task 7: Pi reader (returns `[]`) + final wiring check
 
 **Files:**
+
 - Modify: `src/lib/agent-inventory/pi.ts`
 
 **Interfaces:**
+
 - Produces: `discoverPiScheduledTasks(): Promise<ScheduledTask[]>` always `[]`
 
 - [ ] **Step 1: Implement the no-op reader in `pi.ts`**
@@ -1092,11 +1088,7 @@ git commit -m "✨ feat(agents): read Zcode workflow_definition rows as schedule
 Add imports and function to `src/lib/agent-inventory/pi.ts`:
 
 ```ts
-import type {
-  AgentCapability,
-  AgentInventory,
-  ScheduledTask,
-} from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 ```
 
 (The existing import line `import type { AgentCapability, AgentInventory } from "./types";` should be extended to include `ScheduledTask`.)
@@ -1150,10 +1142,12 @@ git commit -m "✨ feat(agents): wire Pi scheduled-tasks reader (no-op, returns 
 ## Task 8: `ScheduledTasksView` UI + third tab
 
 **Files:**
+
 - Modify: `src/components/agent-setup-view.tsx`
 - Modify: `src/components/agent-setup-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `ScheduledTask` from `@/lib/agent-inventory`; `agentProviders`, `providerLabels`, `providerBadges` (existing); CSS classes `card`, `agent-provider-section`, `agent-provider-heading`, `agent-capability-list`, `agent-capability-row`, `agent-status-tag`, `badge-N`, `empty-state`, `notice`, `relay-content`
 - Produces: third tab "Scheduled tasks" in `AgentSetupView`; new components `ScheduledTasksView`, `ProviderScheduledTasks`, `ScheduledTaskRow`
 
@@ -1162,11 +1156,13 @@ git commit -m "✨ feat(agents): wire Pi scheduled-tasks reader (no-op, returns 
 In `src/components/agent-setup-view.tsx`:
 
 Change `AgentSetupViewMode` (line 27):
+
 ```ts
 export type AgentSetupViewMode = "inventory" | "compare" | "tasks";
 ```
 
 In `parseAgentSetupFilters` (line 137), change the `view` line:
+
 ```ts
 view:
   first(params.view) === "compare"
@@ -1177,6 +1173,7 @@ view:
 ```
 
 In `setupHref` (around line 162), update the view serialization so `tasks` round-trips:
+
 ```ts
 if (next.view === "compare") params.set("view", "compare");
 else if (next.view === "tasks") params.set("view", "tasks");
@@ -1194,9 +1191,7 @@ In the `workspace-switcher` `<nav>` (around line 232), add a third `<Link>` afte
     discrepanciesOnly: undefined,
   })}
   className={
-    filters.view === "tasks"
-      ? "workspace-tab tab-active"
-      : "workspace-tab"
+    filters.view === "tasks" ? "workspace-tab tab-active" : "workspace-tab"
   }
   aria-current={filters.view === "tasks" ? "page" : undefined}
 >
@@ -1209,13 +1204,15 @@ In the `workspace-switcher` `<nav>` (around line 232), add a third `<Link>` afte
 Replace the view-fork block (around line 267):
 
 ```tsx
-{filters.view === "compare" ? (
-  <ComparisonView inventories={inventories} filters={filters} />
-) : filters.view === "tasks" ? (
-  <ScheduledTasksView inventories={inventories} />
-) : (
-  <InventoryView inventories={inventories} filters={filters} />
-)}
+{
+  filters.view === "compare" ? (
+    <ComparisonView inventories={inventories} filters={filters} />
+  ) : filters.view === "tasks" ? (
+    <ScheduledTasksView inventories={inventories} />
+  ) : (
+    <InventoryView inventories={inventories} filters={filters} />
+  );
+}
 ```
 
 - [ ] **Step 4: Add `ScheduledTasksView` + child components**
@@ -1258,7 +1255,11 @@ const scheduledSourceLabels: Record<AgentProvider, string> = {
   pi: "Pi does not expose scheduled tasks",
 };
 
-function ScheduledTasksView({ inventories }: { inventories: AgentInventory[] }) {
+function ScheduledTasksView({
+  inventories,
+}: {
+  inventories: AgentInventory[];
+}) {
   const total = inventories.reduce(
     (sum, inventory) => sum + inventory.scheduledTasks.length,
     0,
@@ -1271,7 +1272,10 @@ function ScheduledTasksView({ inventories }: { inventories: AgentInventory[] }) 
           : `${total} scheduled ${total === 1 ? "task" : "tasks"} across agents.`}
       </p>
       {inventories.map((inventory) => (
-        <ProviderScheduledTasks key={inventory.provider} inventory={inventory} />
+        <ProviderScheduledTasks
+          key={inventory.provider}
+          inventory={inventory}
+        />
       ))}
     </div>
   );
@@ -1431,6 +1435,7 @@ git commit -m "✨ feat(agents): add Scheduled tasks tab to /agents"
 ## Task 9: Final verification + docs update
 
 **Files:**
+
 - Modify: `AGENTS.md` (the "Global agent setup inventory" paragraph — allowlist exception + new tab)
 - Modify: `README.md` (the `/agents` table row)
 
@@ -1478,6 +1483,7 @@ git commit -m "📝 docs(agents): document Scheduled tasks tab and allowlist exc
 ## Self-Review (completed during plan authoring)
 
 **1. Spec coverage:**
+
 - §2 Goal (third tab) → Task 8
 - §3 Non-goals (no persistence/CRUD) → respected throughout, no DB writes
 - §4 D1 (provider-native) → Tasks 4–7
@@ -1497,6 +1503,7 @@ git commit -m "📝 docs(agents): document Scheduled tasks tab and allowlist exc
 **2. Placeholder scan:** no TBDs/TODOs/“add appropriate …” in steps. Every code step has complete code.
 
 **3. Type consistency:**
+
 - `ScheduledTask` fields used in Task 8 (`scheduleHuman`, `scheduleRaw`, `scheduleMissing`, `instructionBody`, `instructionFormat`, `sourcePath`, `model`, `targetProject`, `status`) all match Task 1's type definition.
 - `discoverCodexScheduledTasks(homeDir)`, `discoverClaudeScheduledTasks(homeDir)`, `discoverZcodeScheduledTasks()`, `discoverPiScheduledTasks()` signatures consistent across Tasks 4–7.
 - `humanizeSchedule(raw: string): string | undefined` consistent between Task 2 definition and Task 4 use.

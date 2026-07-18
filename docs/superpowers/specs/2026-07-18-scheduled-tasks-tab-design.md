@@ -28,14 +28,14 @@ Add a third URL-backed tab — **"Scheduled tasks"** — to `/agents`, parallel 
 
 ## 4. Decisions (locked during brainstorming)
 
-| # | Decision | Rationale |
-|---|---|---|
-| D1 | **Source of truth:** provider-native schedule files/dbs, discovered per-provider | Faithful to existing `/agents` live-read architecture; surfaces what the provider itself honors |
-| D2 | **Surface as:** third URL-backed tab "Scheduled tasks", parallel to Inventory/Compare | Mirrors the established tab pattern; smallest faithful extension |
-| D3 | **Schedule display:** humanized when parseable, native string fallback, "Not specified" when absent | Balances readability across the very different field shapes |
-| D4 | **Empty provider:** empty card with informational note (consistent with Inventory) | Shows we looked; doesn't hide that Pi/Zcode-on-this-machine have none |
-| D5 | **Instruction body:** surface verbatim in a collapsible detail panel; **update `AGENTS.md:18` to carve out scheduled-task prompts as an explicit exception** to the allowlist rule. Zcode `script_path` contents treated identically | User chose verbatim over redaction; we record the rule change explicitly so the contract stays honest |
-| D6 | **Zcode script:** read `script_path` file contents and surface verbatim (same treatment as Codex prompt) | User confirmed symmetric treatment |
+| #   | Decision                                                                                                                                                                                                                             | Rationale                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| D1  | **Source of truth:** provider-native schedule files/dbs, discovered per-provider                                                                                                                                                     | Faithful to existing `/agents` live-read architecture; surfaces what the provider itself honors       |
+| D2  | **Surface as:** third URL-backed tab "Scheduled tasks", parallel to Inventory/Compare                                                                                                                                                | Mirrors the established tab pattern; smallest faithful extension                                      |
+| D3  | **Schedule display:** humanized when parseable, native string fallback, "Not specified" when absent                                                                                                                                  | Balances readability across the very different field shapes                                           |
+| D4  | **Empty provider:** empty card with informational note (consistent with Inventory)                                                                                                                                                   | Shows we looked; doesn't hide that Pi/Zcode-on-this-machine have none                                 |
+| D5  | **Instruction body:** surface verbatim in a collapsible detail panel; **update `AGENTS.md:18` to carve out scheduled-task prompts as an explicit exception** to the allowlist rule. Zcode `script_path` contents treated identically | User chose verbatim over redaction; we record the rule change explicitly so the contract stays honest |
+| D6  | **Zcode script:** read `script_path` file contents and surface verbatim (same treatment as Codex prompt)                                                                                                                             | User confirmed symmetric treatment                                                                    |
 
 > ⚠️ **D5 carries a security tradeoff the user accepted.** Verbatim prompt bodies can contain pasted tokens, emails, internal URLs, or `KEY=value` secrets. Surfacing them on a web dashboard means a secret pasted into a Codex prompt will render in `/agents`. Mitigations are intentionally **out of scope** for this spec per the user's explicit choice; the only safeguard is updating `AGENTS.md:18` to document the exception so future maintainers understand the boundary moved.
 
@@ -64,24 +64,24 @@ A new parallel array on `AgentInventory`, **not** a new `CapabilityKind`. Capabi
 
 ```ts
 export interface ScheduledTask {
-  id: string;                          // provider-scoped stable id (Codex automation id, Claude dir name, Zcode workflow id)
-  name: string;                        // human label (Codex `name`, Claude frontmatter `name`, Zcode `name`)
-  description?: string;                // Claude frontmatter `description`, Codex `prompt` first line, Zcode meta_json summary — when present
-  provider: AgentProvider;             // "codex" | "claude" | "zcode" | "pi"
-  scheduleRaw?: string;                // native field verbatim (Codex rrule, Zcode meta_json schedule)
-  scheduleHuman?: string;              // humanized when parseable, else undefined
-  scheduleMissing: boolean;            // true when provider doesn't store a schedule in-file (Claude, or any future case)
-  status: ScheduledTaskStatus;         // "active" | "paused" | "disabled" | "unknown"
-  model?: string;                      // Codex `model`, when present
-  targetProject?: string;              // Codex `target.project_id`, when present (id only — safe-ish metadata)
-  workingDirectories?: string[];       // Codex `cwds`, Zcode meta cwd, when present
-  instructionBody?: string;            // Codex `prompt`, Zcode script file contents, Claude SKILL.md body — verbatim, per D5/D6
-  instructionFormat: "markdown" | "toml_prompt" | "skill_md" | "script";  // how to render instructionBody
-  sourcePath: string;                  // safe path to the source (existing allowlist category)
-  createdAt?: number;                  // epoch ms when provider recorded it
-  updatedAt?: number;                  // epoch ms when provider last updated it
-  lastRunAt?: number;                  // epoch ms of last execution, when provider records it
-  warnings: InventoryWarning[];        // per-task parse warnings (malformed toml, missing file, etc.)
+  id: string; // provider-scoped stable id (Codex automation id, Claude dir name, Zcode workflow id)
+  name: string; // human label (Codex `name`, Claude frontmatter `name`, Zcode `name`)
+  description?: string; // Claude frontmatter `description`, Codex `prompt` first line, Zcode meta_json summary — when present
+  provider: AgentProvider; // "codex" | "claude" | "zcode" | "pi"
+  scheduleRaw?: string; // native field verbatim (Codex rrule, Zcode meta_json schedule)
+  scheduleHuman?: string; // humanized when parseable, else undefined
+  scheduleMissing: boolean; // true when provider doesn't store a schedule in-file (Claude, or any future case)
+  status: ScheduledTaskStatus; // "active" | "paused" | "disabled" | "unknown"
+  model?: string; // Codex `model`, when present
+  targetProject?: string; // Codex `target.project_id`, when present (id only — safe-ish metadata)
+  workingDirectories?: string[]; // Codex `cwds`, Zcode meta cwd, when present
+  instructionBody?: string; // Codex `prompt`, Zcode script file contents, Claude SKILL.md body — verbatim, per D5/D6
+  instructionFormat: "markdown" | "toml_prompt" | "skill_md" | "script"; // how to render instructionBody
+  sourcePath: string; // safe path to the source (existing allowlist category)
+  createdAt?: number; // epoch ms when provider recorded it
+  updatedAt?: number; // epoch ms when provider last updated it
+  lastRunAt?: number; // epoch ms of last execution, when provider records it
+  warnings: InventoryWarning[]; // per-task parse warnings (malformed toml, missing file, etc.)
 }
 
 export type ScheduledTaskStatus = "active" | "paused" | "disabled" | "unknown";
@@ -91,7 +91,7 @@ export interface AgentInventory {
   provider: AgentProvider;
   scope: "global";
   capabilities: AgentCapability[];
-  scheduledTasks: ScheduledTask[];      // NEW — always defined, may be []
+  scheduledTasks: ScheduledTask[]; // NEW — always defined, may be []
   instructionFile?: InstructionFile;
   warnings: InventoryWarning[];
 }
@@ -102,6 +102,7 @@ export interface AgentInventory {
 Each reader returns `ScheduledTask[]`. Empty array when the provider has nothing or its storage doesn't exist. Never throws — parse failures become `InventoryWarning`s on the inventory (existing pattern) and skipped tasks.
 
 #### Codex — `discoverCodexScheduledTasks()`
+
 - Reads `~/.codex/automations/*/automation.toml` (one TOML file per task).
 - Reuses the existing small TOML table parser already in `codex.ts` if it can handle key/values and arrays; if not, extend it minimally. **Do not** add a TOML dependency — the file format is simple and codex.ts already parses `config.toml` by hand.
 - Fields mapped:
@@ -121,6 +122,7 @@ Each reader returns `ScheduledTask[]`. Empty array when the provider has nothing
   - `lastRunAt` ← not in automation.toml; **do not** query `agent_jobs`/`agent_job_items` (those are batch jobs, not scheduled automations — confirmed during discovery: `agent_jobs` is empty on this machine while `automations/` has 6 entries)
 
 #### Claude — `discoverClaudeScheduledTasks()`
+
 - Reads `~/.claude/scheduled-tasks/*/` — one directory per task. Each contains a `SKILL.md` with YAML frontmatter (`name`, `description`).
 - Fields mapped:
   - `id` ← directory name
@@ -136,6 +138,7 @@ Each reader returns `ScheduledTask[]`. Empty array when the provider has nothing
 - Also scans `~/.claude/tasks/` for one-shot (non-recurring) tasks and **excludes** them — only `scheduled-tasks/` counts. (Discovered during exploration: `tasks/` holds session-scoped UUID dirs, not scheduled jobs.)
 
 #### Zcode — `discoverZcodeScheduledTasks()`
+
 - Reads `workflow_definition` table from `~/.zcode/cli/db/db.sqlite` (read-only, same pattern as `src/lib/zcode-db.ts`).
 - Fields mapped:
   - `id` ← `id`
@@ -151,6 +154,7 @@ Each reader returns `ScheduledTask[]`. Empty array when the provider has nothing
 - Test seam `ZCODE_DB_PATH` is **already** established for the inventory reader to reuse — no new env var.
 
 #### Pi — `discoverPiScheduledTasks()`
+
 - Returns `[]` unconditionally. Pi has no scheduled-task concept today (confirmed during discovery: `~/.pi/agent/` has only settings/sessions/skills/bin).
 - The empty card renders with the note "Pi does not expose scheduled tasks."
 
@@ -186,12 +190,14 @@ Time zone handling: schedules are wall-clock in the user's local tz (Codex `BYHO
 New component, lives in `agent-setup-view.tsx` next to `InventoryView`/`ComparisonView` (or a sibling file if that file is getting large — decision during implementation).
 
 Layout:
+
 - Page-level summary line: total tasks across all providers, plus per-provider count chips.
 - One card per provider in `agentProviders` order (Codex, Claude, Zcode, Pi) — always four cards, even when empty.
 - Each card header: provider label, task count, source-path hint (e.g. "Read from `~/.codex/automations/`").
 - Each card body: list of `ScheduledTaskRow`s, or the empty-state note.
 
 `ScheduledTaskRow` shows:
+
 - **Name** (bold) + status badge (`active` / `paused` / `disabled` / `unknown`)
 - **Schedule**: `scheduleHuman` when present, else `scheduleRaw` when present, else "Not specified" with an info tooltip (Claude case)
 - **Model** (when present) — small monospace chip
@@ -200,6 +206,7 @@ Layout:
 - **Detail disclosure** (`<details>`) labeled "Instructions": renders `instructionBody` according to `instructionFormat`. Reuses the existing markdown rendering path if one exists for instruction files; otherwise a `<pre>` with wrapping. Per D5 this is verbatim — **no redaction**.
 
 Empty-state note copy (per provider):
+
 - Codex: "No automations configured in `~/.codex/automations/`."
 - Claude: "No scheduled tasks in `~/.claude/scheduled-tasks/`."
 - Zcode: "No workflow definitions in `~/.zcode/cli/db/db.sqlite`."
@@ -257,21 +264,21 @@ All tests use the established seams: `CODEX_STATE_DB_PATH` is not needed (we rea
 
 ## 11. Files touched (summary)
 
-| File | Change |
-|---|---|
-| `src/lib/agent-inventory/types.ts` | +`ScheduledTask`, +`ScheduledTaskStatus`, +`AgentInventory.scheduledTasks` |
-| `src/lib/agent-inventory/shared.ts` | helpers as needed (TOML parse reuse, frontmatter parse) |
-| `src/lib/agent-inventory/codex.ts` | +`discoverCodexScheduledTasks()` |
-| `src/lib/agent-inventory/claude.ts` | +`discoverClaudeScheduledTasks()` |
-| `src/lib/agent-inventory/zcode.ts` | +`discoverZcodeScheduledTasks()` |
-| `src/lib/agent-inventory/pi.ts` | +`discoverPiScheduledTasks()` → `[]` |
-| `src/lib/agent-inventory/index.ts` | wire new discoverers into the `Promise.all` |
-| `src/lib/agent-inventory/schedule.ts` | NEW — `humanizeSchedule()` + rrule parser |
-| `src/components/agent-setup-view.tsx` | +third tab, +`ScheduledTasksView` + `ScheduledTaskRow` |
-| `src/lib/agent-inventory/scheduled-tasks.test.ts` (or extend `discovery.test.ts`) | NEW — per-provider reader tests |
-| `src/lib/agent-inventory/schedule.test.ts` | NEW — rrule parser tests |
-| `src/components/agent-setup-view.test.tsx` | extend for `view=tasks` |
-| `AGENTS.md` | update line 18 (allowlist exception for scheduled-task prompts) + `/agents` description |
-| `README.md` | update `/agents` description to mention the Scheduled tasks tab |
+| File                                                                              | Change                                                                                  |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/lib/agent-inventory/types.ts`                                                | +`ScheduledTask`, +`ScheduledTaskStatus`, +`AgentInventory.scheduledTasks`              |
+| `src/lib/agent-inventory/shared.ts`                                               | helpers as needed (TOML parse reuse, frontmatter parse)                                 |
+| `src/lib/agent-inventory/codex.ts`                                                | +`discoverCodexScheduledTasks()`                                                        |
+| `src/lib/agent-inventory/claude.ts`                                               | +`discoverClaudeScheduledTasks()`                                                       |
+| `src/lib/agent-inventory/zcode.ts`                                                | +`discoverZcodeScheduledTasks()`                                                        |
+| `src/lib/agent-inventory/pi.ts`                                                   | +`discoverPiScheduledTasks()` → `[]`                                                    |
+| `src/lib/agent-inventory/index.ts`                                                | wire new discoverers into the `Promise.all`                                             |
+| `src/lib/agent-inventory/schedule.ts`                                             | NEW — `humanizeSchedule()` + rrule parser                                               |
+| `src/components/agent-setup-view.tsx`                                             | +third tab, +`ScheduledTasksView` + `ScheduledTaskRow`                                  |
+| `src/lib/agent-inventory/scheduled-tasks.test.ts` (or extend `discovery.test.ts`) | NEW — per-provider reader tests                                                         |
+| `src/lib/agent-inventory/schedule.test.ts`                                        | NEW — rrule parser tests                                                                |
+| `src/components/agent-setup-view.test.tsx`                                        | extend for `view=tasks`                                                                 |
+| `AGENTS.md`                                                                       | update line 18 (allowlist exception for scheduled-task prompts) + `/agents` description |
+| `README.md`                                                                       | update `/agents` description to mention the Scheduled tasks tab                         |
 
 No changes to: `src/db/`, `drizzle/`, `src/lib/queries.ts`, `src/lib/pricing.ts`, `src/components/sidebar.tsx`, any collector/adapter code.
