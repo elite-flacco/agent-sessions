@@ -350,15 +350,17 @@ function SessionRow({
           <div className="session-title-actions">
             <Link href={`/sessions/${session.id}`}>{session.title}</Link>
           </div>
-          <span className="mono">
-            {session.sessionKind === "subagent"
-              ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
-              : (session.repository ?? "Unknown workspace")}
-            {session.sessionKind !== "subagent" &&
-            session.children.length > 0 &&
-            session.branch
-              ? ` · ${session.branch}`
-              : ""}
+          <span className="mono session-meta">
+            <span className="session-meta-text">
+              {session.sessionKind === "subagent"
+                ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
+                : (session.repository ?? "Unknown workspace")}
+              {session.sessionKind !== "subagent" &&
+              session.children.length > 0 &&
+              session.branch
+                ? ` · ${session.branch}`
+                : ""}
+            </span>
             {session.children.length > 0 && (
               <button
                 className="subagent-toggle"
