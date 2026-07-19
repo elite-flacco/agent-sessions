@@ -400,17 +400,24 @@ describe("usage and cost queries", () => {
 });
 
 describe("overview patterns", () => {
-  it("builds a daily heatmap covering the actual last 30 days", () => {
+  it("builds a day-by-time heatmap covering the actual last 30 days", () => {
     const patterns = queries.getOverviewPatterns();
-    expect(patterns.heatmap).toHaveLength(30);
-    // Cells are consecutive calendar days (oldest first), each a real date.
-    for (const cell of patterns.heatmap)
+    // One cell per 3-hour band per actual calendar day, day-major.
+    expect(patterns.heatmap).toHaveLength(30 * 8);
+    for (const cell of patterns.heatmap) {
       expect(cell.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    const days = patterns.heatmap.map((cell) => cell.day);
+      expect(cell.band).toBeGreaterThanOrEqual(0);
+      expect(cell.band).toBeLessThan(8);
+    }
+    const days = [...new Set(patterns.heatmap.map((cell) => cell.day))];
     expect([...days].sort()).toEqual(days);
-    expect(new Set(days).size).toBe(30);
-    // Three sessions started within the 30-day window: one today, two on
-    // the same day two days ago.
+    expect(days).toHaveLength(30);
+    // Each day's 8 bands are consecutive and in order.
+    expect(patterns.heatmap.slice(0, 8).map((cell) => cell.band)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7,
+    ]);
+    // Three sessions started within the 30-day window: one today, two at
+    // the same instant two days ago (same day, same band).
     const total = patterns.heatmap.reduce((sum, cell) => sum + cell.count, 0);
     expect(total).toBe(3);
     expect(patterns.heatmap.filter((cell) => cell.count > 0)).toHaveLength(2);
@@ -455,9 +462,12 @@ describe("overview patterns", () => {
     // must land on its Eastern-time calendar day.
     const instant = "2026-07-14T00:30:00.000Z"; // Monday 20:30 EDT
     const easternDay = "2026-07-13";
+    const easternBand = 6; // 20:30 falls in the 6–9 PM band
     const before = queries.getOverviewPatterns();
     const beforeCount =
-      before.heatmap.find((cell) => cell.day === easternDay)?.count ?? 0;
+      before.heatmap.find(
+        (cell) => cell.day === easternDay && cell.band === easternBand,
+      )?.count ?? 0;
     sqlite
       .prepare(
         `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
@@ -467,7 +477,7 @@ describe("overview patterns", () => {
     try {
       const patterns = queries.getOverviewPatterns();
       const easternCell = patterns.heatmap.find(
-        (cell) => cell.day === easternDay,
+        (cell) => cell.day === easternDay && cell.band === easternBand,
       );
       expect(easternCell?.count).toBe(beforeCount + 1);
     } finally {

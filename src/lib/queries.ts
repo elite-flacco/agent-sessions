@@ -459,7 +459,7 @@ export function getProjectSessions(key: string): SessionListItem[] {
 }
 
 export interface OverviewPatterns {
-  heatmap: { day: string; count: number }[];
+  heatmap: { day: string; band: number; count: number }[];
   length: {
     buckets: { label: string; count: number }[];
     medianMs: number | null;
@@ -940,6 +940,8 @@ export function getSyncState(): {
 }
 
 const PATTERNS_HEATMAP_DAYS = 30;
+// 3-hour time-of-day bands per day (8 rows: 12a, 3a, … 9p).
+const PATTERNS_HEATMAP_BANDS = 8;
 const PATTERNS_HEATMAP_TIME_ZONE = "America/New_York";
 // en-CA renders dates as YYYY-MM-DD, which doubles as a stable sort key.
 const patternsHeatmapFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -947,10 +949,25 @@ const patternsHeatmapFormatter = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
 });
 
+function patternsHeatmapCell(startedAt: string): {
+  day: string;
+  band: number;
+} {
+  const parts = patternsHeatmapFormatter.formatToParts(new Date(startedAt));
+  const part = (type: string) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return {
+    day: `${part("year")}-${part("month")}-${part("day")}`,
+    band: Math.floor(Number(part("hour")) / 3),
+  };
+}
+
 function patternsHeatmapDay(startedAt: string): string {
-  return patternsHeatmapFormatter.format(new Date(startedAt));
+  return patternsHeatmapCell(startedAt).day;
 }
 
 const LENGTH_BUCKETS = [
@@ -964,13 +981,14 @@ const LENGTH_BUCKETS = [
 
 /**
  * Derives the three overview "pattern" views from existing session and
- * usage tables. The heatmap counts session starts per calendar day over the
- * actual trailing 30 days in America/New_York time; the length
+ * usage tables. The heatmap counts session starts per 3-hour time-of-day
+ * band per calendar day over the actual trailing 30 days in America/New_York
+ * time; the length
  * histogram buckets the runtime expression over the trailing 7 days; the week
  * cost reuses the pricing-trust rule (null when any usage row is unpriced).
  */
 export function getOverviewPatterns(): OverviewPatterns {
-  // --- heatmap: session-start counts per calendar day over the last 30 days ---
+  // --- heatmap: session starts per day x 3-hour band over the last 30 days ---
   // Fetch one extra day so timezone offsets never clip the oldest cell, then
   // keep only starts that fall on one of the 30 tracked local dates.
   const heatStart = new Date(
@@ -989,16 +1007,21 @@ export function getOverviewPatterns(): OverviewPatterns {
       ).toISOString(),
     ),
   );
-  const heatMap = new Map<string, number>(heatDays.map((day) => [day, 0]));
+  const trackedDays = new Set(heatDays);
+  const heatMap = new Map<string, number>();
   for (const row of heatRows) {
-    const day = patternsHeatmapDay(row.startedAt);
-    const count = heatMap.get(day);
-    if (count !== undefined) heatMap.set(day, count + 1);
+    const cell = patternsHeatmapCell(row.startedAt);
+    if (!trackedDays.has(cell.day)) continue;
+    const key = `${cell.day}:${cell.band}`;
+    heatMap.set(key, (heatMap.get(key) ?? 0) + 1);
   }
-  const heatmap = heatDays.map((day) => ({
-    day,
-    count: heatMap.get(day) ?? 0,
-  }));
+  const heatmap = heatDays.flatMap((day) =>
+    Array.from({ length: PATTERNS_HEATMAP_BANDS }, (_, band) => ({
+      day,
+      band,
+      count: heatMap.get(`${day}:${band}`) ?? 0,
+    })),
+  );
 
   // --- length histogram: bucket runtime over 7 days ---
   const lengthStart = new Date(Date.now() - 7 * DAY_MS).toISOString();

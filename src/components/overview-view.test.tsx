@@ -21,11 +21,12 @@ function renderOverview(
         daily: [],
       }}
       patterns={{
-        heatmap: Array.from({ length: 30 }, (_, index) => ({
-          day: new Date(Date.UTC(2026, 5, 19 + index))
+        heatmap: Array.from({ length: 30 * 8 }, (_, index) => ({
+          day: new Date(Date.UTC(2026, 5, 19 + Math.floor(index / 8)))
             .toISOString()
             .slice(0, 10),
-          count: index % 5,
+          band: index % 8,
+          count: index % 4,
         })),
         length: {
           buckets: [],
@@ -136,15 +137,18 @@ describe("OverviewView", () => {
     expect(html).not.toContain("today or yesterday");
   });
 
-  test("renders the heatmap as actual calendar days, not aggregates", () => {
+  test("renders the heatmap as actual dates by time of day", () => {
     const html = renderOverview();
 
     expect(html).toContain('class="heatmap-cal"');
-    expect(html).not.toContain("heat-hour-label");
-    // Range label and per-day tooltips use real dates from the series.
+    // Range label and per-cell tooltips use real dates plus a 3-hour band.
     expect(html).toContain("Jun 19 – Jul 18");
-    expect(html).toContain('title="Jun 20 — 1 session"');
-    expect(html).toContain('title="Jun 22 — 3 sessions"');
+    expect(html).toContain('title="Jun 19 · 3–6 AM — 1 session"');
+    expect(html).toContain('title="Jun 19 · 6–9 AM — 2 sessions"');
+    // Sparse date labels along the x-axis, band labels down the y-axis.
+    expect(html).toContain('class="heat-date-label"');
+    expect(html).toContain(">12a<");
+    expect(html).toContain(">9p<");
   });
 
   test("does not render a heatmap intensity legend", () => {

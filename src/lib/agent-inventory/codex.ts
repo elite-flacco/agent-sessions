@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { readdir } from "node:fs/promises";
 import { dedupeCapabilities } from "./normalize";
 import {
   capability,
@@ -49,6 +50,42 @@ function sourcePath(body: string): string | undefined {
   return safeAbsolutePath(source);
 }
 
+/**
+ * Codex `config.toml` plugin tables rarely carry a `source` path. The installed
+ * plugin files live under `~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`.
+ * We resolve the lexicographically-highest version directory so re-installs that
+ * leave stale hashes behind still surface the active copy.
+ */
+async function resolveCachedPluginRoot(
+  homeDir: string,
+  pluginId: string,
+): Promise<string | undefined> {
+  const atIndex = pluginId.lastIndexOf("@");
+  if (atIndex <= 0 || atIndex === pluginId.length - 1) return undefined;
+  const plugin = pluginId.slice(0, atIndex);
+  const marketplace = pluginId.slice(atIndex + 1);
+  const cacheRoot = join(
+    homeDir,
+    ".codex",
+    "plugins",
+    "cache",
+    marketplace,
+    plugin,
+  );
+  let entries;
+  try {
+    entries = await readdir(cacheRoot, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  const versions = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  if (versions.length === 0) return undefined;
+  return join(cacheRoot, versions[versions.length - 1]!);
+}
+
 export async function discoverCodex({
   homeDir,
   personalSkillRoots,
@@ -71,10 +108,13 @@ export async function discoverCodex({
       if (table.name.startsWith("plugins.")) {
         const name = tableKey(table.name, "plugins.");
         if (!name) continue;
-        const path = sourcePath(table.body);
+        const explicitPath = sourcePath(table.body);
+        const path =
+          explicitPath ?? (await resolveCachedPluginRoot(homeDir, name));
+        const pluginStatus = enabled(table.body) ? "enabled" : "disabled";
         capabilities.push(
           capability("codex", "plugin", name, {
-            status: enabled(table.body) ? "enabled" : "disabled",
+            status: pluginStatus,
             packaging: "plugin",
             origin: "marketplace",
             sourcePath: path,
@@ -86,7 +126,7 @@ export async function discoverCodex({
               "codex",
               path,
               name,
-              enabled(table.body) ? "enabled" : "disabled",
+              pluginStatus,
               warnings,
             )),
           );

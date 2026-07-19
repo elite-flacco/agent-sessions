@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import {
   absoluteTime,
   elapsed,
@@ -209,16 +209,29 @@ function heatDayLabel(day: string): string {
   });
 }
 
+// 3-hour time-of-day rows; index matches the query's `band` (0 = midnight).
+const HEAT_BAND_LABELS = ["12a", "3a", "6a", "9a", "12p", "3p", "6p", "9p"];
+const HEAT_BAND_RANGES = [
+  "12–3 AM",
+  "3–6 AM",
+  "6–9 AM",
+  "9 AM–12 PM",
+  "12–3 PM",
+  "3–6 PM",
+  "6–9 PM",
+  "9 PM–12 AM",
+];
+
 function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
   const maxCount = Math.max(1, ...cells.map((cell) => cell.count));
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  // cells[] is one entry per actual calendar day, oldest first. Lay them out
-  // calendar-style: one column per week, one row per weekday (Mon = top).
-  const weekday = (day: string) =>
-    (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
-  const leading = cells.length ? weekday(cells[0].day) : 0;
-  const first = cells[0]?.day;
-  const last = cells.at(-1)?.day;
+  const bands = HEAT_BAND_LABELS.length;
+  // cells[] is day-major (all bands of the oldest day first). Lay it out with
+  // one column per actual day and one row per time-of-day band.
+  const days = cells
+    .filter((_, index) => index % bands === 0)
+    .map((cell) => cell.day);
+  const first = days[0];
+  const last = days.at(-1);
   return (
     <section className="card overview-card" aria-label="Activity heatmap">
       <div className="overview-card-head">
@@ -232,26 +245,28 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
       <div
         className="heatmap-cal"
         role="img"
-        aria-label="Sessions per day over the last 30 days"
+        aria-label="Sessions by day and time of day over the last 30 days"
       >
-        {days.map((day) => (
-          <span key={day} className="heat-day-label">
-            {day}
+        {HEAT_BAND_LABELS.map((label, band) => (
+          <Fragment key={label}>
+            <span className="heat-band-label">{label}</span>
+            {days.map((day, dayIndex) => {
+              const cell = cells[dayIndex * bands + band];
+              return (
+                <span
+                  key={`${day}-${band}`}
+                  className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
+                  title={`${heatDayLabel(day)} · ${HEAT_BAND_RANGES[band]} — ${cell.count} session${cell.count === 1 ? "" : "s"}`}
+                />
+              );
+            })}
+          </Fragment>
+        ))}
+        <span aria-hidden />
+        {days.map((day, dayIndex) => (
+          <span key={`label-${day}`} className="heat-date-label">
+            {dayIndex % 5 === 0 ? heatDayLabel(day) : ""}
           </span>
-        ))}
-        {Array.from({ length: leading }, (_, index) => (
-          <span
-            key={`lead-${index}`}
-            className="heat-cell heat-cell-empty"
-            aria-hidden
-          />
-        ))}
-        {cells.map((cell) => (
-          <span
-            key={cell.day}
-            className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
-            title={`${heatDayLabel(cell.day)} — ${cell.count} session${cell.count === 1 ? "" : "s"}`}
-          />
         ))}
       </div>
     </section>

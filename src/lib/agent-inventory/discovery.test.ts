@@ -97,6 +97,61 @@ API_KEY = "secret-value"
     expect(serialized).not.toContain("secret-value");
   });
 
+  test("resolves Codex plugin skills and MCPs from the cache when source is absent", async () => {
+    const home = await createHome();
+    const pluginRoot = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-curated",
+      "superpowers",
+      "d6169bef",
+    );
+    await skill(pluginRoot, "skills/brainstorming", "brainstorming");
+    await fixture(
+      pluginRoot,
+      ".mcp.json",
+      JSON.stringify({ superpowersMcp: { command: "unused" } }),
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."superpowers@openai-curated"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "superpowers@openai-curated",
+          kind: "plugin",
+          status: "enabled",
+          sourcePath: pluginRoot,
+        }),
+        expect.objectContaining({
+          name: "brainstorming",
+          kind: "skill",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@openai-curated",
+        }),
+        expect.objectContaining({
+          name: "superpowersMcp",
+          kind: "mcp",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@openai-curated",
+        }),
+      ]),
+    );
+  });
+
   test("distinguishes skills.sh, personal, plugin, and broken global skills", async () => {
     const home = await createHome();
     const sharedSkill = await skill(
@@ -224,6 +279,7 @@ API_KEY = "secret-value"
       ".zcode/cli/config.json",
       JSON.stringify({
         plugins: { enabledPlugins: { "github@market": true } },
+        mcp: { servers: { langsmith: { command: "unused" } } },
       }),
     );
     await fixture(
@@ -271,6 +327,11 @@ API_KEY = "secret-value"
       expect.arrayContaining([
         expect.objectContaining({ name: "github@market", status: "enabled" }),
         expect.objectContaining({ name: "zcode-tool", packaging: "plugin" }),
+        expect.objectContaining({
+          name: "langsmith",
+          kind: "mcp",
+          status: "enabled",
+        }),
       ]),
     );
     expect(JSON.stringify(result)).not.toContain("do-not-return");
