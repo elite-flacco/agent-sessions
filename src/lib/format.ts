@@ -60,3 +60,28 @@ export function runtime(value: number): string {
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
+
+/**
+ * Shorten an absolute path for compact display by replacing the user's home
+ * directory with `~` and trimming intermediate cache-version segments of the
+ * form `~/.<provider>/plugins/cache/<marketplace>/<plugin>/<version>/...`
+ * down to `~/.<provider>/plugins/cache/<marketplace>/<plugin>/...`. Used to
+ * surface distinguishing install paths for duplicate skills in the inventory
+ * view; falls back to the input (with home substitution) when the path
+ * doesn't match the plugin-cache shape.
+ */
+export function shortenHomePath(input: string): string {
+  const home = process.env.HOME ?? "";
+  let value = input;
+  if (home && (value === home || value.startsWith(`${home}/`))) {
+    value = `~${value.slice(home.length)}`;
+  }
+  // Collapse plugin-cache version dirs:
+  // ~/.<provider>/plugins/cache/<marketplace>/<plugin>/<hex-or-semver>/
+  // -> ~/.<provider>/plugins/cache/<marketplace>/<plugin>/
+  value = value.replace(
+    /^(~\/\.[^/]+\/plugins\/cache\/[^/]+\/[^/]+)\/[^/]+\/skills\//,
+    "$1/skills/",
+  );
+  return value;
+}

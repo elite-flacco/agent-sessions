@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { dedupeCapabilities } from "./normalize";
 import {
   capability,
+  discoverCachePlugins,
   discoverPluginMcps,
   discoverSkillRoots,
   objectValue,
@@ -42,13 +43,28 @@ export async function discoverZcode({
     personalSkillRoots,
   };
 
+  for (const [name, server] of Object.entries(
+    objectValue(objectValue(config?.mcp)?.servers) ?? {},
+  )) {
+    if (!objectValue(server)) continue;
+    capabilities.push(
+      capability("zcode", "mcp", name, {
+        status: "enabled",
+        origin: "personal",
+      }),
+    );
+  }
+
+  const knownIds = new Set<string>();
   for (const rawPlugin of installed) {
     const plugin = objectValue(rawPlugin);
     if (!plugin || typeof plugin.id !== "string") continue;
+    knownIds.add(plugin.id);
     const path = safeAbsolutePath(plugin.installPath);
+    const pluginStatus = enabled[plugin.id] === true ? "enabled" : "disabled";
     capabilities.push(
       capability("zcode", "plugin", plugin.id, {
-        status: enabled[plugin.id] === true ? "enabled" : "disabled",
+        status: pluginStatus,
         packaging: "plugin",
         origin: "marketplace",
         sourceRepository:
@@ -64,7 +80,7 @@ export async function discoverZcode({
           "zcode",
           path,
           plugin.id,
-          enabled[plugin.id] === true ? "enabled" : "disabled",
+          pluginStatus,
           warnings,
         )),
       );
@@ -78,10 +94,25 @@ export async function discoverZcode({
             typeof plugin.marketplace === "string"
               ? plugin.marketplace
               : undefined,
+          status: pluginStatus,
         })),
       );
     }
   }
+
+  // The Zcode UI surfaces cache-only marketplace plugins that have not been
+  // recorded in installed_plugins.json; walk the cache directory to keep parity.
+  capabilities.push(
+    ...(await discoverCachePlugins(
+      "zcode",
+      join(homeDir, ".zcode", "cli", "plugins", "cache"),
+      knownIds,
+      enabled,
+      warnings,
+      skillContext,
+    )),
+  );
+
   capabilities.push(
     ...(await discoverSkillRoots(
       [join(homeDir, ".zcode", "skills")],

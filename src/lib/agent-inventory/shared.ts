@@ -14,6 +14,7 @@ import { canonicalCapabilityName, dedupeCapabilities } from "./normalize";
 import type {
   AgentCapability,
   CapabilityOrigin,
+  CapabilityStatus,
   InstructionFile,
   InventoryWarning,
 } from "./types";
@@ -34,6 +35,12 @@ export interface SkillDiscoveryContext {
   sourceRepository?: string;
   skillLock?: SkillLock;
   personalSkillRoots?: string[];
+  /**
+   * Status inherited from the parent plugin. When a plugin is disabled, its
+   * skills are still on disk but inactive — they surface as "disabled" to match
+   * the MCP behavior. Defaults to "installed" for standalone/personal skills.
+   */
+  status?: CapabilityStatus;
 }
 
 function warning(
@@ -170,7 +177,7 @@ async function capabilityFromSkillPath(
       id: `${context.provider}:skill:${canonicalCapabilityName(fallback)}:${sourcePath}`,
       name: fallback,
       kind: "skill",
-      status: "unavailable",
+      status: context.status ?? "unavailable",
       packaging: context.packaging ?? "standalone",
       origin: context.origin ?? "unknown",
       sourcePlugin: context.sourcePlugin,
@@ -195,7 +202,7 @@ async function capabilityFromSkillPath(
     id: `${context.provider}:skill:${canonicalCapabilityName(name)}:${canonicalSourcePath}`,
     name,
     kind: "skill",
-    status: "installed",
+    status: context.status ?? "installed",
     packaging:
       provenance.origin === "built_in"
         ? "built_in"
@@ -290,12 +297,13 @@ export async function discoverPluginMcps(
   provider: AgentProvider,
   pluginRoot: string,
   pluginName: string,
-  status: "enabled" | "disabled",
+  status: AgentCapability["status"],
   warnings: InventoryWarning[],
 ): Promise<AgentCapability[]> {
   const manifestPaths = [
     join(pluginRoot, ".mcp.json"),
     join(pluginRoot, ".claude-plugin", "plugin.json"),
+    join(pluginRoot, ".codex-plugin", "plugin.json"),
     join(pluginRoot, "plugin.json"),
   ];
   const names = new Set<string>();
@@ -316,6 +324,98 @@ export async function discoverPluginMcps(
       sourcePath: pluginRoot,
     }),
   );
+}
+
+/**
+ * Enumerates plugins that exist in the cache directory but are not in the
+ * installed-plugins registry. The cache layout is
+ * `<cacheRoot>/<marketplace>/<plugin>/<version>/`, mirroring Codex's
+ * `resolveCachedPluginRoot` approach: we pick the lexicographically-highest
+ * version directory so re-installs that leave stale versions behind still
+ * surface the active copy. Used by Zcode to keep dashboard parity with the
+ * Zcode UI, which surfaces cache-only marketplace plugins.
+ */
+export async function discoverCachePlugins(
+  provider: AgentProvider,
+  cacheRoot: string,
+  knownIds: Set<string>,
+  enabled: Record<string, unknown>,
+  warnings: InventoryWarning[],
+  skillContext: SkillDiscoveryContext,
+): Promise<AgentCapability[]> {
+  let marketplaces;
+  try {
+    marketplaces = await readdir(cacheRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const capabilities: AgentCapability[] = [];
+  for (const marketplaceEntry of marketplaces) {
+    if (!marketplaceEntry.isDirectory()) continue;
+    const marketplace = marketplaceEntry.name;
+    const marketplaceRoot = join(cacheRoot, marketplace);
+    let plugins;
+    try {
+      plugins = await readdir(marketplaceRoot, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const pluginEntry of plugins) {
+      if (!pluginEntry.isDirectory()) continue;
+      const pluginName = pluginEntry.name;
+      const id = `${pluginName}@${marketplace}`;
+      if (knownIds.has(id)) continue;
+      const versionRoot = join(marketplaceRoot, pluginName);
+      let versions;
+      try {
+        versions = await readdir(versionRoot, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const versionDirs = versions
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+      if (versionDirs.length === 0) continue;
+      const path = join(versionRoot, versionDirs[versionDirs.length - 1]!);
+      // Cache-only plugins are physically present in the marketplace cache
+      // but not recorded in installed_plugins.json. Their enabled state comes
+      // from enabledPlugins: an explicit `true` is "enabled", an explicit
+      // `false` is "disabled" (the user turned it off in the UI), and absence
+      // means the state is genuinely unknown — surface those as "installed" so
+      // the dashboard matches the Zcode UI, which lists cached marketplace
+      // plugins regardless of enable state.
+      const status: AgentCapability["status"] =
+        enabled[id] === true
+          ? "enabled"
+          : enabled[id] === false
+            ? "disabled"
+            : "installed";
+      capabilities.push(
+        capability(provider, "plugin", id, {
+          status,
+          packaging: "plugin",
+          origin: "marketplace",
+          sourceRepository: marketplace,
+          sourcePath: path,
+        }),
+      );
+      capabilities.push(
+        ...(await discoverPluginMcps(provider, path, id, status, warnings)),
+      );
+      capabilities.push(
+        ...(await discoverSkillRoots([join(path, "skills")], {
+          ...skillContext,
+          packaging: "plugin",
+          origin: "marketplace",
+          sourcePlugin: id,
+          sourceRepository: marketplace,
+          status,
+        })),
+      );
+    }
+  }
+  return dedupeCapabilities(capabilities);
 }
 
 export function objectValue(

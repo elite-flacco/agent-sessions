@@ -70,3 +70,19 @@ export interface ComparisonRow {
   assessment: ComparisonAssessment;
   isUniformAcrossProviders: boolean;
 }
+
+/**
+ * A same-name capability installed more than once in a single provider's
+ * inventory via different physical paths (e.g. skills.sh cloned ai-sdk into
+ * ~/.agents/skills/ai-sdk and the Codex plugin cache independently pulled a
+ * copy via the openai-curated marketplace). Surfaced in the Compare view's
+ * Needs Attention mode under a "Duplicates" section so the user can spot
+ * and clean up redundant installs that the path-based dedupe cannot collapse
+ * (the copies are genuinely different files on disk).
+ */
+export interface ComparisonDuplicate {
+  provider: AgentProvider;
+  name: string;
+  kind: CapabilityKind;
+  copies: AgentCapability[];
+}

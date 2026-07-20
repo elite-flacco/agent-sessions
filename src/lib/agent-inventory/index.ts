@@ -56,13 +56,20 @@ export async function getAgentInventories(
     for (const inventory of inventories)
       inventory.warnings.push(...lockWarnings);
   }
-  return agentProviders.map(
-    (provider) =>
-      inventories.find((inventory) => inventory.provider === provider) ?? {
-        provider,
-        scope: "global",
-        capabilities: [],
-        warnings: [],
-      },
-  );
+  // Disabled plugins (and their skills/MCPs) are excluded from the inventory so
+  // the dashboard surfaces only active capabilities. A disabled plugin's skills
+  // are marked "disabled" by the discovery modules; filtering on status keeps
+  // the rule in one place for every consumer.
+  return agentProviders.map((provider) => {
+    const inventory = inventories.find((item) => item.provider === provider);
+    if (!inventory) {
+      return { provider, scope: "global", capabilities: [], warnings: [] };
+    }
+    return {
+      ...inventory,
+      capabilities: inventory.capabilities.filter(
+        (capability) => capability.status !== "disabled",
+      ),
+    };
+  });
 }

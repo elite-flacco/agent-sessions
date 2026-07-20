@@ -57,11 +57,22 @@ export async function discoverClaude({
   };
 
   for (const plugin of installedPlugins(registry?.plugins)) {
+    const pluginStatus = enabled[plugin.id] === true ? "enabled" : "disabled";
+    // Split `plugin.id` ("<plugin>@<marketplace>") so the marketplace can be
+    // surfaced as sourceRepository, matching how Zcode publishes plugin
+    // capabilities. Skills contributed by this plugin inherit the same
+    // sourceRepository via the discovery context.
+    const atIndex = plugin.id.lastIndexOf("@");
+    const marketplace =
+      atIndex > 0 && atIndex < plugin.id.length - 1
+        ? plugin.id.slice(atIndex + 1)
+        : undefined;
     capabilities.push(
       capability("claude", "plugin", plugin.id, {
-        status: enabled[plugin.id] === true ? "enabled" : "disabled",
+        status: pluginStatus,
         packaging: "plugin",
         origin: "marketplace",
+        sourceRepository: marketplace,
         sourcePath: plugin.installPath,
       }),
     );
@@ -71,7 +82,7 @@ export async function discoverClaude({
           "claude",
           plugin.installPath,
           plugin.id,
-          enabled[plugin.id] === true ? "enabled" : "disabled",
+          pluginStatus,
           warnings,
         )),
       );
@@ -81,6 +92,8 @@ export async function discoverClaude({
           packaging: "plugin",
           origin: "marketplace",
           sourcePlugin: plugin.id,
+          sourceRepository: marketplace,
+          status: pluginStatus,
         })),
       );
     }
@@ -91,7 +104,12 @@ export async function discoverClaude({
     warnings,
   );
   for (const name of Object.keys(objectValue(globalConfig?.mcpServers) ?? {})) {
-    capabilities.push(capability("claude", "mcp", name, { status: "enabled" }));
+    capabilities.push(
+      capability("claude", "mcp", name, {
+        status: "enabled",
+        origin: "personal",
+      }),
+    );
   }
   capabilities.push(
     ...(await discoverSkillRoots(

@@ -245,8 +245,13 @@ function zcodeStoredStatus(
       return /cancel/i.test(JSON.stringify(data.error))
         ? "interrupted"
         : "needs_attention";
-    if (data.role === "assistant" && record(data.time)?.completed)
+    if (data.role === "assistant") {
+      // An assistant message with no `time.completed` and no error is a turn
+      // still in flight. Stop here so staleStatus can derive running/incomplete
+      // from updated_at — never skip past it to an older completed turn.
+      if (!record(data.time)?.completed) break;
       return "completed";
+    }
     if (data.role === "user") break;
   }
   return staleStatus(updatedAt);

@@ -1736,6 +1736,17 @@
   .agent-packaging {
     color: var(--muted-foreground);
   }
+  .agent-capability-path-hint {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    opacity: 0.85;
+  }
   .agent-origin-tag {
     width: fit-content;
     justify-self: start;
@@ -1764,6 +1775,85 @@
   }
   .agent-kind-instruction svg {
     color: var(--badge-5-foreground);
+  }
+  .agent-capability-group {
+    border-top: 1px solid var(--border);
+  }
+  .agent-capability-row + .agent-capability-group,
+  .agent-capability-group + .agent-capability-row,
+  .agent-capability-group + .agent-capability-group {
+    border-top: 1px solid var(--border);
+  }
+  .agent-capability-group > summary {
+    list-style: none;
+    display: grid;
+    grid-template-columns:
+      minmax(12rem, 1.8fr) minmax(4.5rem, 0.55fr) minmax(7rem, 0.75fr)
+      minmax(6rem, 0.65fr) minmax(6rem, 0.65fr);
+    align-items: center;
+    gap: 0.7rem;
+    min-height: 3.8rem;
+    padding: 0.65rem 0.9rem;
+    cursor: pointer;
+  }
+  .agent-capability-group > summary::-webkit-details-marker {
+    display: none;
+  }
+  .agent-capability-group > summary:hover {
+    background: var(--card-hover);
+  }
+  .agent-capability-group-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+  .agent-capability-group-primary::before {
+    content: "›";
+    display: inline-block;
+    width: 1rem;
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    font-size: var(--text-lg);
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: transform 0.15s ease-in-out;
+  }
+  .agent-capability-group[open]
+    > summary
+    .agent-capability-group-primary::before {
+    transform: rotate(90deg);
+  }
+  .agent-capability-group-primary svg {
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+  }
+  .agent-capability-group-primary strong {
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-capability-group
+    > summary
+    > span:not(.agent-origin-tag):not(.agent-status-tag) {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+  .agent-capability-group > summary > .agent-origin-tag,
+  .agent-capability-group > summary > .agent-status-tag {
+    font-size: var(--text-xs);
+  }
+  .agent-capability-group-members {
+    border-inline-start: 0.125rem solid var(--border);
+    margin-inline-start: 0.9rem;
+  }
+  .agent-capability-group-members > .agent-capability-row {
+    border-top: 1px solid var(--border);
+  }
+  .agent-capability-group-members > .agent-capability-row:first-child {
+    border-top: none;
   }
   .status-disabled,
   .status-unavailable {
@@ -1987,6 +2077,14 @@
     font-size: var(--text-xs);
     overflow-wrap: anywhere;
   }
+  .agent-compare-source {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    overflow-wrap: anywhere;
+  }
   .agent-compare-detail pre {
     width: 24rem;
     max-height: 18rem;
@@ -2085,6 +2183,13 @@
     }
     .agent-capability-row > :nth-child(4),
     .agent-capability-row > :nth-child(5) {
+      display: none;
+    }
+    .agent-capability-group > summary {
+      grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(6rem, 0.7fr));
+    }
+    .agent-capability-group > summary > :nth-child(4),
+    .agent-capability-group > summary > :nth-child(5) {
       display: none;
     }
     .inspector {
@@ -2211,6 +2316,12 @@
       grid-template-columns: minmax(0, 1fr) auto;
     }
     .agent-capability-row > :nth-child(n + 3) {
+      display: none;
+    }
+    .agent-capability-group > summary {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .agent-capability-group > summary > :nth-child(n + 3) {
       display: none;
     }
     .agent-provider-heading {

@@ -69,6 +69,12 @@ const inventories: AgentInventory[] = [
     provider: "zcode",
     scope: "global",
     capabilities: [skill("zcode", "frontend-rules")],
+    instructionFile: {
+      filename: "AGENTS.md",
+      sourcePath: "/safe/.zcode/AGENTS.md",
+      content: "# Zcode instructions\n",
+      contentFingerprint: "zcode-fingerprint",
+    },
     warnings: [
       {
         sourcePath: "/safe/.zcode/config.json",
@@ -148,8 +154,8 @@ describe("AgentSetupView", () => {
     expect(html).not.toContain(">langsmith<");
     expect(html).toContain("1 fix");
     expect(html).toContain("1 review");
-    expect(html.indexOf("Global instructions")).toBeLessThan(
-      html.indexOf("agent-browser"),
+    expect(html.indexOf("agent-browser")).toBeLessThan(
+      html.indexOf("Global instructions"),
     );
     expect(html).toContain(
       '<tr class="agent-comparison-group-row agent-comparison-group-fix"><th scope="rowgroup" colSpan="5"><span>Fixes</span><span>1</span></th></tr>',
@@ -297,6 +303,115 @@ describe("AgentSetupView", () => {
     );
     expect(html).toContain("MCP</span>");
     expect(html).toContain('<div class="agent-comparison-metadata">');
+  });
+
+  test("comparison detail cells show the contributing plugin for plugin-packaged capabilities", () => {
+    const pluginSkill = (
+      provider: AgentInventory["provider"],
+    ): AgentCapability =>
+      skill(provider, "brainstorming", {
+        packaging: "plugin",
+        sourcePlugin: "superpowers@claude-plugins-official",
+      });
+    const pluginInventories: AgentInventory[] = [
+      "codex",
+      "claude",
+      "zcode",
+      "pi",
+    ].map((provider) => ({
+      provider: provider as AgentInventory["provider"],
+      scope: "global" as const,
+      capabilities: [pluginSkill(provider as AgentInventory["provider"])],
+      warnings: [],
+    }));
+
+    const completeHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={pluginInventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    // Uniform row collapses into one all-agents cell; the plugin name renders
+    // as an always-visible .agent-compare-source sibling of the <details>, so
+    // it is visible without expanding the summary.
+    const uniformDetailStart = completeHtml.indexOf(
+      'class="agent-compare-detail agent-all-agents-detail"',
+    );
+    const uniformDetailEnd = completeHtml.indexOf(
+      "</details>",
+      uniformDetailStart,
+    );
+    // Inside the collapsed <details> body, the plugin name must NOT appear...
+    expect(
+      completeHtml.slice(uniformDetailStart, uniformDetailEnd),
+    ).not.toContain("superpowers@claude-plugins-official");
+    // ...it renders as a visible sibling instead.
+    expect(completeHtml).toContain(
+      '<span class="agent-compare-source">superpowers@claude-plugins-official</span>',
+    );
+
+    // A split presence row renders three per-provider detail cells; each cell
+    // surfaces the plugin name as a visible .agent-compare-source sibling.
+    const splitInventories = pluginInventories.map((inventory, index) =>
+      index === 3 ? { ...inventory, capabilities: [] } : inventory,
+    );
+    const splitHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={splitInventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+    const detailCount = (splitHtml.match(/class="agent-compare-detail"/g) ?? [])
+      .length;
+    expect(detailCount).toBe(3);
+    expect(splitHtml).toContain(
+      '<span class="agent-compare-source">superpowers@claude-plugins-official</span>',
+    );
+  });
+
+  test("comparison detail cells show the skills.sh repository for skills.sh-installed standalone skills", () => {
+    const skillsShSkill = (
+      provider: AgentInventory["provider"],
+    ): AgentCapability =>
+      skill(provider, "agent-browser", {
+        origin: "skills_sh",
+        sourceRepository: "vercel-labs/agent-browser",
+      });
+    const skillsShInventories: AgentInventory[] = [
+      "codex",
+      "claude",
+      "zcode",
+      "pi",
+    ].map((provider) => ({
+      provider: provider as AgentInventory["provider"],
+      scope: "global" as const,
+      capabilities: [skillsShSkill(provider as AgentInventory["provider"])],
+      warnings: [],
+    }));
+
+    const completeHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={skillsShInventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    // The skills.sh repository renders as the visible source line; the body
+    // does not duplicate it.
+    const uniformDetailStart = completeHtml.indexOf(
+      'class="agent-compare-detail agent-all-agents-detail"',
+    );
+    const uniformDetailEnd = completeHtml.indexOf(
+      "</details>",
+      uniformDetailStart,
+    );
+    expect(
+      completeHtml.slice(uniformDetailStart, uniformDetailEnd),
+    ).not.toContain("vercel-labs/agent-browser");
+    expect(completeHtml).toContain(
+      '<span class="agent-compare-source">vercel-labs/agent-browser</span>',
+    );
   });
 
   test("comparison rows show a shared capability source", () => {
@@ -641,5 +756,465 @@ describe("AgentSetupView", () => {
     );
 
     expect(html).toContain("No capabilities match these filters.");
+  });
+
+  test("inventory groups multi-skill plugins into a collapsed <details>", () => {
+    const groupedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "alpha", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          sourceRepository: "claude-plugins-official",
+          status: "enabled",
+        }),
+        skill("codex", "beta", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          sourceRepository: "claude-plugins-official",
+          status: "enabled",
+        }),
+        skill("codex", "gamma", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          sourceRepository: "claude-plugins-official",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[groupedInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    // Summary contains the plugin name, member count, origin, and status.
+    expect(html).toContain(
+      "<strong>superpowers@claude-plugins-official</strong>",
+    );
+    expect(html).toContain("3 skills");
+    expect(html).toContain(
+      '<span class="badge badge-3 agent-origin-tag">Marketplace</span>',
+    );
+    expect(html).toContain(
+      '<span class="agent-status-tag badge-1">Enabled</span>',
+    );
+    expect(html).toContain('<details class="agent-capability-group">');
+
+    // Member rows are nested inside the group body container.
+    const groupStart = html.indexOf('class="agent-capability-group"');
+    const membersStart = html.indexOf(
+      'class="agent-capability-group-members"',
+      groupStart,
+    );
+    expect(membersStart).toBeGreaterThan(groupStart);
+    expect(
+      html.indexOf("<strong>alpha</strong>", membersStart),
+    ).toBeGreaterThan(membersStart);
+    expect(html.indexOf("<strong>beta</strong>", membersStart)).toBeGreaterThan(
+      membersStart,
+    );
+    expect(
+      html.indexOf("<strong>gamma</strong>", membersStart),
+    ).toBeGreaterThan(membersStart);
+  });
+
+  test("inventory collapses interleaved plugins into separate groups", () => {
+    // Names are assigned so alphabetical sort interleaves the two plugins:
+    // vercel owns apple + cherry, openai-developers owns banana + date.
+    // Alphabetical order is apple(v), banana(o), cherry(v), date(o). Without
+    // the group-preserving sort, buildInventoryItems would see V.O.V.O and
+    // emit four flat rows instead of two groups.
+    const interleavedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "apple", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "vercel@openai-curated",
+          sourceRepository: "openai-curated",
+          status: "enabled",
+        }),
+        skill("codex", "banana", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "openai-developers@openai-curated",
+          sourceRepository: "openai-curated",
+          status: "enabled",
+        }),
+        skill("codex", "cherry", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "vercel@openai-curated",
+          sourceRepository: "openai-curated",
+          status: "enabled",
+        }),
+        skill("codex", "date", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "openai-developers@openai-curated",
+          sourceRepository: "openai-curated",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[interleavedInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    // Two separate collapsed <details> groups, one per plugin.
+    const groupCount = (
+      html.match(/<details class="agent-capability-group">/g) ?? []
+    ).length;
+    expect(groupCount).toBe(2);
+
+    // Both plugin headers render, each with its own "2 skills" count.
+    expect(html).toContain("<strong>vercel@openai-curated</strong>");
+    expect(html).toContain("<strong>openai-developers@openai-curated</strong>");
+    const twoSkillsMatches = html.match(/2 skills/g) ?? [];
+    expect(twoSkillsMatches).toHaveLength(2);
+
+    // Member rows are nested under the right group: the vercel group's body
+    // contains apple and cherry; the openai-developers group's body contains
+    // banana and date.
+    const vercelGroupStart = html.indexOf("vercel@openai-curated");
+    const vercelMembersStart = html.indexOf(
+      'class="agent-capability-group-members"',
+      vercelGroupStart,
+    );
+    const vercelMembersEnd = html.indexOf("</details>", vercelMembersStart);
+    const vercelBody = html.slice(vercelMembersStart, vercelMembersEnd);
+    expect(vercelBody).toContain("<strong>apple</strong>");
+    expect(vercelBody).toContain("<strong>cherry</strong>");
+    expect(vercelBody).not.toContain("<strong>banana</strong>");
+    expect(vercelBody).not.toContain("<strong>date</strong>");
+
+    const openaiGroupStart = html.indexOf("openai-developers@openai-curated");
+    const openaiMembersStart = html.indexOf(
+      'class="agent-capability-group-members"',
+      openaiGroupStart,
+    );
+    const openaiMembersEnd = html.indexOf("</details>", openaiMembersStart);
+    const openaiBody = html.slice(openaiMembersStart, openaiMembersEnd);
+    expect(openaiBody).toContain("<strong>banana</strong>");
+    expect(openaiBody).toContain("<strong>date</strong>");
+    expect(openaiBody).not.toContain("<strong>apple</strong>");
+    expect(openaiBody).not.toContain("<strong>cherry</strong>");
+  });
+
+  test("inventory keeps single-skill plugins as flat rows", () => {
+    const flatInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "only-one", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "skill-creator@zcode-plugins-official",
+          sourceRepository: "zcode-plugins-official",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[flatInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).not.toContain("agent-capability-group");
+    expect(html).toContain("<strong>only-one</strong>");
+  });
+
+  test("inventory groups skills.sh skills by repository", () => {
+    const groupedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "html-to-email", {
+          origin: "skills_sh",
+          sourceRepository: "vercel-labs/skills",
+          status: "enabled",
+        }),
+        skill("codex", "html-to-email-pro", {
+          origin: "skills_sh",
+          sourceRepository: "vercel-labs/skills",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[groupedInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).toContain("<strong>vercel-labs/skills</strong>");
+    expect(html).toContain("2 skills");
+    expect(html).toContain(
+      '<span class="badge badge-2 agent-origin-tag">skills.sh</span>',
+    );
+  });
+
+  test("inventory summary aggregates mixed member statuses", () => {
+    const groupedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "alpha", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "enabled",
+        }),
+        skill("codex", "beta", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "enabled",
+        }),
+        skill("codex", "gamma", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "disabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[groupedInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).toContain("Mixed · 1 not enabled");
+  });
+
+  test("inventory keeps personal/built_in/unknown skills flat even when several share an origin", () => {
+    const flatInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "personal-1", { origin: "personal" }),
+        skill("codex", "personal-2", { origin: "personal" }),
+        skill("codex", "unknown-1", { origin: "unknown" }),
+        skill("codex", "unknown-2", { origin: "unknown" }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[flatInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).not.toContain("agent-capability-group");
+    expect(html).toContain("<strong>personal-1</strong>");
+    expect(html).toContain("<strong>unknown-2</strong>");
+  });
+
+  test("inventory collapses a group below threshold when a search filter narrows it", () => {
+    const groupedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "alpha-skill", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "enabled",
+        }),
+        skill("codex", "beta-skill", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[groupedInventory]}
+        filters={{ view: "inventory", q: "beta" }}
+      />,
+    );
+
+    // Only the matching member survives the filter; with one survivor it
+    // renders flat rather than as a one-row group.
+    expect(html).not.toContain("agent-capability-group");
+    expect(html).toContain("<strong>beta-skill</strong>");
+    expect(html).not.toContain("<strong>alpha-skill</strong>");
+  });
+
+  test("inventory never groups plugins or MCPs", () => {
+    const inventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "plugin-1", {
+          kind: "plugin",
+          status: "enabled",
+          origin: "marketplace",
+          sourcePlugin: "shared-marketplace@mp",
+          sourceRepository: "shared-marketplace",
+        }),
+        skill("codex", "plugin-2", {
+          kind: "plugin",
+          status: "enabled",
+          origin: "marketplace",
+          sourcePlugin: "shared-marketplace@mp",
+          sourceRepository: "shared-marketplace",
+        }),
+        skill("codex", "mcp-1", {
+          kind: "mcp",
+          status: "enabled",
+          origin: "marketplace",
+          sourcePlugin: "shared-marketplace@mp",
+          sourceRepository: "shared-marketplace",
+        }),
+        skill("codex", "mcp-2", {
+          kind: "mcp",
+          status: "enabled",
+          origin: "marketplace",
+          sourcePlugin: "shared-marketplace@mp",
+          sourceRepository: "shared-marketplace",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[inventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).not.toContain("agent-capability-group");
+    expect(html).toContain("<strong>plugin-1</strong>");
+    expect(html).toContain("<strong>mcp-2</strong>");
+  });
+
+  test("inventory renders collapsed groups before flat rows", () => {
+    // The flat single-skill plugin "alpha-singleton" sorts ahead of the
+    // grouped "zeta-bundle" plugin by group key, so without the grouped-first
+    // item sort the flat row would render first. The item sort lifts the
+    // collapsed group above flat singletons within the same origin bucket.
+    const inventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "alpha-only", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "alpha-singleton@mp",
+          sourceRepository: "mp",
+          status: "enabled",
+        }),
+        skill("codex", "zeta-one", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "zeta-bundle@mp",
+          sourceRepository: "mp",
+          status: "enabled",
+        }),
+        skill("codex", "zeta-two", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "zeta-bundle@mp",
+          sourceRepository: "mp",
+          status: "enabled",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[inventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    // The zeta-bundle group should render before the alpha-singleton flat row.
+    const zetaGroupPosition = html.indexOf("zeta-bundle@mp");
+    const alphaFlatPosition = html.indexOf("<strong>alpha-only</strong>");
+    expect(zetaGroupPosition).toBeGreaterThanOrEqual(0);
+    expect(alphaFlatPosition).toBeGreaterThanOrEqual(0);
+    expect(zetaGroupPosition).toBeLessThan(alphaFlatPosition);
+  });
+
+  test("inventory surfaces a shortened sourcePath only for duplicate-name skills", () => {
+    // Two same-name skills from different install paths. Both get the path
+    // hint so the user can tell them apart; a third singleton skill with a
+    // unique name does not get a hint even though it has a sourcePath. HOME
+    // is stubbed so the home-substitution is deterministic regardless of the
+    // machine running the test.
+    vi.stubEnv("HOME", "/Users/example");
+    try {
+      const inventory: AgentInventory = {
+        provider: "codex",
+        scope: "global",
+        capabilities: [
+          skill("codex", "ai-sdk", {
+            origin: "skills_sh",
+            sourceRepository: "vercel/ai",
+            sourcePath: "/Users/example/.agents/skills/ai-sdk",
+            status: "enabled",
+          }),
+          skill("codex", "ai-sdk", {
+            id: "codex:skill:ai-sdk-dupe",
+            origin: "skills_sh",
+            sourceRepository: "vercel/ai",
+            sourcePath:
+              "/Users/example/.codex/plugins/cache/openai-curated/vercel/d6169bef/skills/ai-sdk",
+            status: "enabled",
+          }),
+          skill("codex", "unique-skill", {
+            origin: "skills_sh",
+            sourceRepository: "other/repo",
+            sourcePath: "/Users/example/.agents/skills/unique-skill",
+            status: "enabled",
+          }),
+        ],
+        warnings: [],
+      };
+      const html = renderToStaticMarkup(
+        <AgentSetupView
+          inventories={[inventory]}
+          filters={{ view: "inventory" }}
+        />,
+      );
+
+      // Both ai-sdk rows show a path hint; the singleton does not.
+      expect(html).toContain(
+        '<code class="agent-capability-path-hint">~/.agents/skills/ai-sdk</code>',
+      );
+      expect(html).toContain(
+        '<code class="agent-capability-path-hint">~/.codex/plugins/cache/openai-curated/vercel/skills/ai-sdk</code>',
+      );
+      expect(html).not.toContain(
+        '<code class="agent-capability-path-hint">~/.agents/skills/unique-skill</code>',
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

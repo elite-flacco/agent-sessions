@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { absoluteTime, relativeTime, runtime } from "./format";
+import { absoluteTime, relativeTime, runtime, shortenHomePath } from "./format";
 
 describe("relativeTime", () => {
   // Mid-afternoon local time so same-day/yesterday boundaries are stable.
@@ -60,5 +60,43 @@ describe("runtime", () => {
 
   it("keeps hours and minutes", () => {
     expect(runtime(95 * 60_000)).toBe("1h 35m");
+  });
+});
+
+describe("shortenHomePath", () => {
+  const realHome = process.env.HOME;
+
+  beforeEach(() => {
+    process.env.HOME = "/Users/example";
+  });
+
+  afterEach(() => {
+    process.env.HOME = realHome;
+  });
+
+  it("replaces the home directory with ~", () => {
+    expect(shortenHomePath("/Users/example/.codex/skills/ai-sdk")).toBe(
+      "~/.codex/skills/ai-sdk",
+    );
+  });
+
+  it("leaves non-home paths unchanged", () => {
+    expect(shortenHomePath("/opt/agent/skills/ai-sdk")).toBe(
+      "/opt/agent/skills/ai-sdk",
+    );
+  });
+
+  it("collapses plugin-cache version directories", () => {
+    expect(
+      shortenHomePath(
+        "/Users/example/.codex/plugins/cache/openai-curated/vercel/d6169bef/skills/ai-sdk",
+      ),
+    ).toBe("~/.codex/plugins/cache/openai-curated/vercel/skills/ai-sdk");
+  });
+
+  it("leaves the skills.sh install location readable", () => {
+    expect(shortenHomePath("/Users/example/.agents/skills/ai-sdk")).toBe(
+      "~/.agents/skills/ai-sdk",
+    );
   });
 });

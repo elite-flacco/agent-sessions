@@ -112,11 +112,21 @@ export async function discoverCodex({
         const path =
           explicitPath ?? (await resolveCachedPluginRoot(homeDir, name));
         const pluginStatus = enabled(table.body) ? "enabled" : "disabled";
+        // Split `name` ("<plugin>@<marketplace>") so the marketplace can be
+        // surfaced as sourceRepository, matching how Claude/Zcode publish
+        // plugin capabilities. Skills contributed by this plugin inherit the
+        // same sourceRepository via the discovery context.
+        const atIndex = name.lastIndexOf("@");
+        const marketplace =
+          atIndex > 0 && atIndex < name.length - 1
+            ? name.slice(atIndex + 1)
+            : undefined;
         capabilities.push(
           capability("codex", "plugin", name, {
             status: pluginStatus,
             packaging: "plugin",
             origin: "marketplace",
+            sourceRepository: marketplace,
             sourcePath: path,
           }),
         );
@@ -136,6 +146,8 @@ export async function discoverCodex({
               packaging: "plugin",
               origin: "marketplace",
               sourcePlugin: name,
+              sourceRepository: marketplace,
+              status: pluginStatus,
             })),
           );
         }
@@ -147,6 +159,7 @@ export async function discoverCodex({
         capabilities.push(
           capability("codex", "mcp", name, {
             status: enabled(table.body) ? "enabled" : "disabled",
+            origin: "personal",
           }),
         );
       }

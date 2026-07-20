@@ -423,6 +423,107 @@ describe("collector sync", () => {
     }
   });
 
+  it("keeps a Zcode session running when the latest assistant turn is in flight", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-inflight.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const startedAt = Date.now() - 60 * 60_000;
+    const priorTurnCompletedAt = Date.now() - 5 * 60_000;
+    const inflightStartedAt = Date.now() - 30_000; // within the stale window
+    zcodeDb
+      .prepare(
+        `INSERT INTO session
+         (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-inflight",
+        "/work/zcode-project",
+        "Still typing",
+        null,
+        "interactive",
+        "generated",
+        startedAt,
+        inflightStartedAt,
+      );
+    const insertMessage = zcodeDb.prepare(
+      "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+    );
+    insertMessage.run(
+      "user-1",
+      "zcode-inflight",
+      startedAt,
+      JSON.stringify({ role: "user", time: { created: startedAt } }),
+    );
+    // A previously completed assistant turn — this used to satisfy the
+    // "role === 'assistant' && time.completed" check while walking backward
+    // past the in-flight turn below.
+    insertMessage.run(
+      "assistant-1",
+      "zcode-inflight",
+      priorTurnCompletedAt,
+      JSON.stringify({
+        role: "assistant",
+        time: {
+          created: priorTurnCompletedAt,
+          completed: priorTurnCompletedAt,
+        },
+      }),
+    );
+    // The newest assistant message is still in flight: created but not completed.
+    insertMessage.run(
+      "assistant-2",
+      "zcode-inflight",
+      inflightStartedAt,
+      JSON.stringify({
+        role: "assistant",
+        time: { created: inflightStartedAt },
+      }),
+    );
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'zcode', 'Still typing', 'running', ?, ?)`,
+      )
+      .run(
+        "zcode-inflight",
+        new Date(startedAt).toISOString(),
+        new Date(inflightStartedAt).toISOString(),
+      );
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT status FROM sessions WHERE external_id = 'zcode-inflight'",
+          )
+          .get(),
+      ).toEqual({ status: "running" });
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
+
   it("reconciles an explicitly cancelled Zcode request as interrupted", async () => {
     const zcodeDbPath = path.join(directory, "zcode-cancelled.db");
     const Database = (await import("better-sqlite3")).default;

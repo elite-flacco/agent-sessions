@@ -1,4 +1,4 @@
-import { agentProviders } from "@/lib/types";
+import { agentProviders, type AgentProvider } from "@/lib/types";
 import { providerLabels } from "@/lib/labels";
 import type {
   AgentCapability,
@@ -7,6 +7,13 @@ import type {
   ComparisonAssessment,
   ComparisonRow,
 } from "./types";
+
+/**
+ * Assessment (fix/review) is driven by the three primary coding agents. Pi is a
+ * secondary agent whose presence, absence, or configuration differences must not
+ * surface as fixes or reviews — it still renders in the matrix for visibility.
+ */
+const primaryProviders: readonly AgentProvider[] = ["codex", "claude", "zcode"];
 
 const provenancePriority: Record<CapabilityOrigin, number> = {
   unknown: 0,
@@ -56,13 +63,15 @@ export function dedupeCapabilities(
   return [...bySource.values()].sort(compareCapabilities);
 }
 
+// Dimensions compared across providers to decide whether an everywhere-present
+// capability has meaningful configuration drift. `sourceRepository` is
+// deliberately excluded: it reflects how each provider discovered/packaged the
+// capability (e.g. Codex/Claude leave it empty for installed plugins, Zcode
+// fills it from the marketplace cache), not anything the user controls. The
+// remaining three — status, packaging, origin — are the dimensions worth
+// flagging for review.
 function comparisonSignature(capability: AgentCapability): string {
-  return [
-    capability.status,
-    capability.packaging,
-    capability.origin,
-    capability.sourceRepository ?? "",
-  ].join(":");
+  return [capability.status, capability.packaging, capability.origin].join(":");
 }
 
 function formatProviderList(
@@ -75,7 +84,7 @@ function formatProviderList(
 }
 
 function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
-  const present = agentProviders.filter((provider) => row.cells[provider]);
+  const present = primaryProviders.filter((provider) => row.cells[provider]);
   const unavailable = present.filter(
     (provider) => row.cells[provider]?.status === "unavailable",
   );
@@ -88,29 +97,27 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
     };
   }
 
-  if (present.length === 3) {
-    const missing = agentProviders.filter((provider) => !row.cells[provider]);
+  if (present.length === 2) {
+    const missing = primaryProviders.filter((provider) => !row.cells[provider]);
     return {
       level: "fix",
       reason: "missing_from_one_provider",
-      message: `Present on 3 of 4 agents; missing from ${formatProviderList(missing)}.`,
+      message: `Present on 2 of 3 agents; missing from ${formatProviderList(missing)}.`,
     };
   }
 
-  if (present.length === 2) {
-    return {
-      level: "review",
-      reason: "split_presence",
-      message: "Present on 2 of 4 agents; review whether parity is intended.",
-    };
-  }
-
-  if (present.length === 1) {
-    return {
-      level: "context",
-      reason: "provider_specific",
-      message: `Only found on ${formatProviderList(present)}.`,
-    };
+  if (present.length <= 1) {
+    return present.length === 1
+      ? {
+          level: "context",
+          reason: "provider_specific",
+          message: `Only found on ${formatProviderList(present)}.`,
+        }
+      : {
+          level: "context",
+          reason: "provider_specific",
+          message: "Not found on any primary agent.",
+        };
   }
 
   const signatures = new Set(
@@ -130,7 +137,7 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
 }
 
 function assessInstructionRow(row: ComparisonRow): ComparisonAssessment {
-  const missing = agentProviders.filter(
+  const missing = primaryProviders.filter(
     (provider) => !row.instructionCells?.[provider],
   );
   if (missing.length > 0) {
@@ -142,7 +149,7 @@ function assessInstructionRow(row: ComparisonRow): ComparisonAssessment {
   }
 
   const fingerprints = new Set(
-    agentProviders.map(
+    primaryProviders.map(
       (provider) => row.instructionCells![provider]!.contentFingerprint,
     ),
   );

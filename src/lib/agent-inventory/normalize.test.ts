@@ -149,7 +149,7 @@ describe("buildComparisonRows", () => {
     );
   });
 
-  test("classifies a capability missing from one provider as a fix", () => {
+  test("treats a capability missing only from Pi as consistent context", () => {
     const rows = buildComparisonRows([
       inventory("codex", [providerCapability("codex")]),
       inventory("claude", [providerCapability("claude")]),
@@ -158,9 +158,25 @@ describe("buildComparisonRows", () => {
     ]);
 
     expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
+    });
+    expect(rows[0]?.isUniformAcrossProviders).toBe(false);
+  });
+
+  test("classifies a capability missing from one primary provider as a fix", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
       level: "fix",
       reason: "missing_from_one_provider",
-      message: "Present on 3 of 4 agents; missing from Pi.",
+      message: "Present on 2 of 3 agents; missing from Zcode.",
     });
     expect(rows[0]?.isUniformAcrossProviders).toBe(false);
   });
@@ -182,18 +198,18 @@ describe("buildComparisonRows", () => {
     });
   });
 
-  test("classifies a two-provider presence split for review", () => {
+  test("does not let Pi presence inflate a single-primary capability to a review", () => {
     const rows = buildComparisonRows([
       inventory("codex", [providerCapability("codex")]),
-      inventory("claude", [providerCapability("claude")]),
+      inventory("claude", []),
       inventory("zcode", []),
-      inventory("pi", []),
+      inventory("pi", [providerCapability("pi")]),
     ]);
 
     expect(rows[0]?.assessment).toEqual({
-      level: "review",
-      reason: "split_presence",
-      message: "Present on 2 of 4 agents; review whether parity is intended.",
+      level: "context",
+      reason: "provider_specific",
+      message: "Only found on Codex.",
     });
   });
 
@@ -247,7 +263,28 @@ describe("buildComparisonRows", () => {
     expect(rows[0]?.isUniformAcrossProviders).toBe(true);
   });
 
-  test("classifies missing global instructions as a fix", () => {
+  test("classifies global instructions missing from a primary provider as a fix", () => {
+    const instructionFile = {
+      filename: "AGENTS.md",
+      sourcePath: "/tmp/AGENTS.md",
+      content: "Shared",
+      contentFingerprint: "same",
+    };
+    const rows = buildComparisonRows([
+      inventory("codex", [], instructionFile),
+      inventory("claude", [], instructionFile),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "fix",
+      reason: "missing_instruction",
+      message: "Global instructions missing from Zcode.",
+    });
+  });
+
+  test("treats global instructions missing only from Pi as context", () => {
     const instructionFile = {
       filename: "AGENTS.md",
       sourcePath: "/tmp/AGENTS.md",
@@ -262,9 +299,9 @@ describe("buildComparisonRows", () => {
     ]);
 
     expect(rows[0]?.assessment).toEqual({
-      level: "fix",
-      reason: "missing_instruction",
-      message: "Global instructions missing from Pi.",
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
     });
   });
 

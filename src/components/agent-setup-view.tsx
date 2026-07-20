@@ -22,6 +22,7 @@ import {
   type ComparisonRow,
 } from "@/lib/agent-inventory";
 import { providerBadges, providerLabels } from "@/lib/labels";
+import { shortenHomePath } from "@/lib/format";
 import { agentProviders, type AgentProvider } from "@/lib/types";
 
 export type AgentSetupViewMode = "inventory" | "compare";
@@ -144,9 +145,7 @@ export function parseAgentSetupFilters(
     kind: ["plugin", "skill", "mcp", "instruction"].includes(kind ?? "")
       ? (kind as AgentSetupKind)
       : undefined,
-    status: ["enabled", "disabled", "installed", "unavailable"].includes(
-      status ?? "",
-    )
+    status: ["enabled", "installed", "unavailable"].includes(status ?? "")
       ? (status as CapabilityStatus)
       : undefined,
     discrepanciesOnly: first(params.discrepancies) === "1" || undefined,
@@ -188,16 +187,182 @@ function matchesCapability(
   ].some((value) => value?.toLocaleLowerCase().includes(query));
 }
 
+/**
+ * The always-visible "source" line for a comparison cell: the contributing
+ * plugin name for plugin-packaged capabilities, otherwise the skills.sh
+ * repository for skills.sh-installed standalone skills. Personal, built_in, and
+ * unknown-origin capabilities have no useful source identifier and render no
+ * line; their origin is still shown inside the expanded details body.
+ */
+function capabilitySourceLabel(
+  capability: AgentCapability,
+): string | undefined {
+  if (capability.sourcePlugin) return capability.sourcePlugin;
+  if (capability.origin === "skills_sh" && capability.sourceRepository) {
+    return capability.sourceRepository;
+  }
+  return undefined;
+}
+
 function compareInventoryCapabilities(
   left: AgentCapability,
   right: AgentCapability,
 ): number {
+  // Skills that share a group key (same plugin or same skills.sh repo) must
+  // land in a contiguous run so buildInventoryItems can collapse them.
+  // Inserting the group key between origin and name keeps the existing
+  // kind/origin/name ordering for everything else; non-groupable
+  // capabilities return undefined and fall through to the name phase.
+  const leftGroup = skillGroupKey(left) ?? "";
+  const rightGroup = skillGroupKey(right) ?? "";
   return (
     kindSortOrder[left.kind] - kindSortOrder[right.kind] ||
     originLabels[left.origin].localeCompare(originLabels[right.origin]) ||
+    leftGroup.localeCompare(rightGroup) ||
     left.name.localeCompare(right.name) ||
     left.id.localeCompare(right.id)
   );
+}
+
+/**
+ * Comparator for render items: collapsed groups sort before flat rows within
+ * the same kind/origin bucket (derived from the group's first member or the
+ * flat row's capability), then by name. This puts the collapsed <details>
+ * summaries at the top of each provider section and pushes flat singletons
+ * (personal/built_in/unknown skills, lone skills.sh installs, single-skill
+ * plugins) below them, while keeping relative order stable within each tier.
+ */
+function compareInventoryItems(
+  left: InventoryItem,
+  right: InventoryItem,
+): number {
+  const leftCapability =
+    left.kind === "group" ? left.members[0]! : left.capability;
+  const rightCapability =
+    right.kind === "group" ? right.members[0]! : right.capability;
+  const leftRank = left.kind === "group" ? 0 : 1;
+  const rightRank = right.kind === "group" ? 0 : 1;
+  return (
+    kindSortOrder[leftCapability.kind] - kindSortOrder[rightCapability.kind] ||
+    originLabels[leftCapability.origin].localeCompare(
+      originLabels[rightCapability.origin],
+    ) ||
+    leftRank - rightRank ||
+    leftCapability.name.localeCompare(rightCapability.name) ||
+    leftCapability.id.localeCompare(rightCapability.id)
+  );
+}
+
+/**
+ * The optional group key for a capability in the inventory view. Skills
+ * cluster under their contributing plugin (marketplace + sourcePlugin) or
+ * skills.sh repository (skills_sh + sourceRepository); everything else —
+ * plugins, MCPs, and personal/built_in/unknown-origin skills — returns
+ * undefined and renders flat.
+ */
+function skillGroupKey(capability: AgentCapability): string | undefined {
+  if (capability.kind !== "skill") return undefined;
+  if (capability.origin === "marketplace" && capability.sourcePlugin) {
+    return `plugin:${capability.sourcePlugin}`;
+  }
+  if (capability.origin === "skills_sh" && capability.sourceRepository) {
+    return `skillssh:${capability.sourceRepository}`;
+  }
+  return undefined;
+}
+
+interface SkillGroupSummary {
+  key: string;
+  kind: "plugin" | "skills_sh";
+  name: string;
+  memberCount: number;
+  origin: "marketplace" | "skills_sh";
+  statusAggregate:
+    | { kind: "uniform"; status: CapabilityStatus }
+    | { kind: "mixed"; notEnabledCount: number };
+}
+
+/**
+ * Build the summary that `CapabilityGroup` renders in its <summary>. Members
+ * must share a group key (caller's responsibility). Name, origin, and kind
+ * are derived from the first member; status is aggregated across all
+ * members so the summary stays informative when the group is collapsed.
+ */
+function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
+  const first = members[0]!;
+  const key = skillGroupKey(first)!;
+  const statuses = new Set(members.map((member) => member.status));
+  const statusAggregate: SkillGroupSummary["statusAggregate"] =
+    statuses.size === 1
+      ? { kind: "uniform", status: first.status }
+      : {
+          kind: "mixed",
+          notEnabledCount: members.filter(
+            (member) => member.status !== "enabled",
+          ).length,
+        };
+  if (first.origin === "marketplace" && first.sourcePlugin) {
+    return {
+      key,
+      kind: "plugin",
+      name: first.sourcePlugin,
+      memberCount: members.length,
+      origin: "marketplace",
+      statusAggregate,
+    };
+  }
+  return {
+    key,
+    kind: "skills_sh",
+    name: first.sourceRepository!,
+    memberCount: members.length,
+    origin: "skills_sh",
+    statusAggregate,
+  };
+}
+
+type InventoryItem =
+  | { kind: "row"; capability: AgentCapability }
+  | { kind: "group"; summary: SkillGroupSummary; members: AgentCapability[] };
+
+/**
+ * Walk the sorted capability list and emit render items, collapsing runs of
+ * two or more consecutive same-key skills into a single group item. Runs of
+ * fewer than two (including all non-skill capabilities) emit one row item
+ * each so single-skill plugins and personal/built_in/unknown skills render
+ * flat.
+ */
+function buildInventoryItems(capabilities: AgentCapability[]): InventoryItem[] {
+  const items: InventoryItem[] = [];
+  let currentKey: string | undefined;
+  let pending: AgentCapability[] = [];
+  const flush = () => {
+    if (pending.length === 0) return;
+    if (currentKey === undefined || pending.length < 2) {
+      for (const capability of pending) {
+        items.push({ kind: "row", capability });
+      }
+    } else {
+      items.push({
+        kind: "group",
+        summary: summarizeSkillGroup(pending),
+        members: pending,
+      });
+    }
+    pending = [];
+  };
+  for (const capability of capabilities) {
+    const key = skillGroupKey(capability);
+    if (key === currentKey) {
+      pending.push(capability);
+    } else {
+      flush();
+      pending = [capability];
+      currentKey = key;
+    }
+  }
+  flush();
+  return items;
 }
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
@@ -382,11 +547,13 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           defaultValue={filters.status ?? ""}
         >
           <option value="">All statuses</option>
-          {Object.entries(statusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
+          {Object.entries(statusLabels)
+            .filter(([value]) => value !== "disabled")
+            .map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
         </select>
       </label>
       {filters.view === "compare" && !filters.comparisonMode ? (
@@ -471,6 +638,18 @@ function ProviderInventory({
   const capabilities = inventory.capabilities
     .filter((capability) => matchesCapability(capability, filters))
     .sort(compareInventoryCapabilities);
+  const items = buildInventoryItems(capabilities).sort(compareInventoryItems);
+  // Names that appear on more than one visible capability (across groups and
+  // flat rows alike). For those rows we surface a shortened sourcePath so the
+  // user can tell duplicate installs apart and clean them up.
+  const duplicateNames = new Set<string>();
+  const nameCounts = new Map<string, number>();
+  for (const capability of capabilities) {
+    nameCounts.set(capability.name, (nameCounts.get(capability.name) ?? 0) + 1);
+  }
+  for (const [name, count] of nameCounts) {
+    if (count > 1) duplicateNames.add(name);
+  }
   const instructionVisible = showsInstruction(inventory, filters);
   if (
     capabilities.length === 0 &&
@@ -505,11 +684,24 @@ function ProviderInventory({
           ))}
         </div>
       ) : null}
-      {capabilities.length > 0 ? (
+      {items.length > 0 ? (
         <div className="agent-capability-list">
-          {capabilities.map((capability) => (
-            <CapabilityRow key={capability.id} capability={capability} />
-          ))}
+          {items.map((item) =>
+            item.kind === "row" ? (
+              <CapabilityRow
+                key={`row:${item.capability.id}`}
+                capability={item.capability}
+                duplicateNames={duplicateNames}
+              />
+            ) : (
+              <CapabilityGroup
+                key={`group:${item.summary.key}`}
+                summary={item.summary}
+                members={item.members}
+                duplicateNames={duplicateNames}
+              />
+            ),
+          )}
         </div>
       ) : null}
       {instructionVisible && inventory.instructionFile ? (
@@ -527,7 +719,13 @@ function ProviderInventory({
   );
 }
 
-function CapabilityRow({ capability }: { capability: AgentCapability }) {
+function CapabilityRow({
+  capability,
+  duplicateNames,
+}: {
+  capability: AgentCapability;
+  duplicateNames?: Set<string>;
+}) {
   const KindIcon = kindIcons[capability.kind];
   const StatusIcon =
     capability.status === "disabled"
@@ -535,16 +733,27 @@ function CapabilityRow({ capability }: { capability: AgentCapability }) {
       : capability.status === "unavailable"
         ? CircleX
         : Check;
+  // When the same capability name appears more than once in the visible
+  // inventory, the source line alone can't tell the rows apart (e.g. two
+  // ai-sdk installs both reclassified to skills.sh/vercel/ai). Surface the
+  // shortened install path so the user can identify and clean up duplicates.
+  const showPathHint =
+    duplicateNames?.has(capability.name) && !!capability.sourcePath;
+  const sourceLine =
+    capability.sourceRepository ??
+    capability.sourcePlugin ??
+    capability.sourcePath;
 
   return (
     <div className="agent-capability-row">
       <div className="agent-capability-primary">
         <strong>{capability.name}</strong>
-        <span>
-          {capability.sourceRepository ??
-            capability.sourcePlugin ??
-            capability.sourcePath}
-        </span>
+        <span>{sourceLine}</span>
+        {showPathHint ? (
+          <code className="agent-capability-path-hint">
+            {shortenHomePath(capability.sourcePath!)}
+          </code>
+        ) : null}
       </div>
       <span className={`agent-kind-label ${kindMarkers[capability.kind]}`}>
         <KindIcon aria-hidden="true" size={12} />
@@ -559,6 +768,53 @@ function CapabilityRow({ capability }: { capability: AgentCapability }) {
         <StatusIcon size={13} /> {statusLabels[capability.status]}
       </span>
     </div>
+  );
+}
+
+function CapabilityGroup({
+  summary,
+  members,
+  duplicateNames,
+}: {
+  summary: SkillGroupSummary;
+  members: AgentCapability[];
+  duplicateNames?: Set<string>;
+}) {
+  const GroupIcon = summary.kind === "plugin" ? Plug : WandSparkles;
+  const statusText =
+    summary.statusAggregate.kind === "uniform"
+      ? statusLabels[summary.statusAggregate.status]
+      : `Mixed · ${summary.statusAggregate.notEnabledCount} not enabled`;
+  const statusClass =
+    summary.statusAggregate.kind === "uniform"
+      ? statusBadges[summary.statusAggregate.status]
+      : "badge-4";
+
+  return (
+    <details className="agent-capability-group">
+      <summary>
+        <span className="agent-capability-group-primary">
+          <GroupIcon aria-hidden="true" size={14} />
+          <strong>{summary.name}</strong>
+        </span>
+        <span>{countLabel(summary.memberCount, "skill")}</span>
+        <span
+          className={`badge ${originBadges[summary.origin]} agent-origin-tag`}
+        >
+          {originLabels[summary.origin]}
+        </span>
+        <span className={`agent-status-tag ${statusClass}`}>{statusText}</span>
+      </summary>
+      <div className="agent-capability-group-members">
+        {members.map((capability) => (
+          <CapabilityRow
+            key={capability.id}
+            capability={capability}
+            duplicateNames={duplicateNames}
+          />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -792,6 +1048,9 @@ function ComparisonTableRow({
         agentProviders.map((provider) => {
           const instruction = row.instructionCells?.[provider];
           const capability = row.cells[provider];
+          const visibleSource = capability
+            ? capabilitySourceLabel(capability)
+            : undefined;
           const StatusIcon =
             capability?.status === "disabled"
               ? CircleSlash2
@@ -811,21 +1070,29 @@ function ComparisonTableRow({
                   <pre>{instruction.content}</pre>
                 </details>
               ) : capability ? (
-                <details className="agent-compare-detail">
-                  <summary
-                    className={`agent-status-tag ${statusBadges[capability.status]}`}
-                  >
-                    <StatusIcon size={13} /> {statusLabels[capability.status]}
-                  </summary>
-                  <span>{originLabels[capability.origin]}</span>
-                  <span>{capability.packaging.replace("_", " ")}</span>
-                  {capability.sourceRepository ? (
-                    <code>{capability.sourceRepository}</code>
+                <>
+                  <details className="agent-compare-detail">
+                    <summary
+                      className={`agent-status-tag ${statusBadges[capability.status]}`}
+                    >
+                      <StatusIcon size={13} /> {statusLabels[capability.status]}
+                    </summary>
+                    <span>{originLabels[capability.origin]}</span>
+                    <span>{capability.packaging.replace("_", " ")}</span>
+                    {capability.sourceRepository &&
+                    capability.sourceRepository !== visibleSource ? (
+                      <code>{capability.sourceRepository}</code>
+                    ) : null}
+                    {capability.sourcePath ? (
+                      <code>{capability.sourcePath}</code>
+                    ) : null}
+                  </details>
+                  {visibleSource ? (
+                    <span className="agent-compare-source">
+                      {visibleSource}
+                    </span>
                   ) : null}
-                  {capability.sourcePath ? (
-                    <code>{capability.sourcePath}</code>
-                  ) : null}
-                </details>
+                </>
               ) : (
                 <span className="agent-missing agent-status-tag agent-status-missing">
                   <Minus size={13} /> Missing
@@ -841,6 +1108,7 @@ function ComparisonTableRow({
 
 function UniformComparisonCell({ row }: { row: ComparisonRow }) {
   const capability = row.cells[agentProviders[0]]!;
+  const visibleSource = capabilitySourceLabel(capability);
   const StatusIcon =
     capability.status === "disabled"
       ? CircleSlash2
@@ -859,10 +1127,14 @@ function UniformComparisonCell({ row }: { row: ComparisonRow }) {
         </summary>
         <span>{originLabels[capability.origin]}</span>
         <span>{capability.packaging.replace("_", " ")}</span>
-        {capability.sourceRepository ? (
+        {capability.sourceRepository &&
+        capability.sourceRepository !== visibleSource ? (
           <code>{capability.sourceRepository}</code>
         ) : null}
       </details>
+      {visibleSource ? (
+        <span className="agent-compare-source">{visibleSource}</span>
+      ) : null}
     </td>
   );
 }
