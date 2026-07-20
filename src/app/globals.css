@@ -1699,14 +1699,71 @@
     color: var(--muted-foreground);
     font-size: var(--text-xs);
   }
+  /* Duplicates are tabular — provider, capability, verdict, paths. A table
+     reads them at a glance without wrapping each in its own amber notice box;
+     the only color left is a Shadowed badge on rows that actually risk a
+     conflict (identical copies read as plain muted "Redundant" text). */
+  .agent-duplicate-region {
+    padding: 0 0.9rem 0.9rem;
+    overflow-x: auto;
+  }
+  .agent-duplicate-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  .agent-duplicate-table th,
+  .agent-duplicate-table td {
+    border-top: 1px solid var(--border);
+    padding: 0.6rem 0.75rem;
+    vertical-align: top;
+  }
+  .agent-duplicate-table thead th {
+    border-top: 0;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .agent-duplicate-name {
+    display: block;
+    font-size: var(--text-sm);
+  }
+  .agent-duplicate-kind {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .agent-duplicate-verdict {
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
+  .agent-duplicate-hint {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .agent-duplicate-table td code {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+  }
+  .agent-duplicate-table td code + code {
+    margin-top: 0.25rem;
+  }
   .agent-capability-list {
     border-top: 1px solid var(--border);
   }
   .agent-capability-row {
     display: grid;
-    grid-template-columns:
-      minmax(12rem, 1.8fr) minmax(4.5rem, 0.55fr) minmax(7rem, 0.75fr)
-      minmax(6rem, 0.65fr) minmax(6rem, 0.65fr);
+    grid-template-columns: minmax(12rem, 1.8fr) minmax(4.5rem, 0.55fr) minmax(
+        7rem,
+        0.75fr
+      );
     align-items: center;
     gap: 0.7rem;
     min-height: 3.8rem;
@@ -1787,9 +1844,10 @@
   .agent-capability-group > summary {
     list-style: none;
     display: grid;
-    grid-template-columns:
-      minmax(12rem, 1.8fr) minmax(4.5rem, 0.55fr) minmax(7rem, 0.75fr)
-      minmax(6rem, 0.65fr) minmax(6rem, 0.65fr);
+    grid-template-columns: minmax(12rem, 1.8fr) minmax(4.5rem, 0.55fr) minmax(
+        7rem,
+        0.75fr
+      );
     align-items: center;
     gap: 0.7rem;
     min-height: 3.8rem;
@@ -1834,15 +1892,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .agent-capability-group
-    > summary
-    > span:not(.agent-origin-tag):not(.agent-status-tag) {
+  .agent-capability-group > summary > span:not(.agent-origin-tag) {
     color: var(--muted-foreground);
     font-size: var(--text-xs);
     white-space: nowrap;
   }
-  .agent-capability-group > summary > .agent-origin-tag,
-  .agent-capability-group > summary > .agent-status-tag {
+  .agent-capability-group > summary > .agent-origin-tag {
     font-size: var(--text-xs);
   }
   .agent-capability-group-members {

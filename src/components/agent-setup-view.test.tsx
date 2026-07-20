@@ -167,11 +167,54 @@ describe("AgentSetupView", () => {
       '<tr class="agent-comparison-group-row agent-comparison-group-fix"><th scope="rowgroup" colSpan="5"><span>Fixes</span><span>1</span></th></tr>',
     );
     expect(html).toContain(
-      '<tr class="agent-comparison-group-row agent-comparison-group-review"><th scope="rowgroup" colSpan="5"><span>Reviews</span><span>1</span></th></tr>',
+      '<tr class="agent-comparison-group-row agent-comparison-group-review"><th scope="rowgroup" colSpan="5"><span>Reviews · Instruction drift</span><span>1</span></th></tr>',
     );
     expect(html).not.toContain(
       "Present on 2 of 4 agents; review whether parity is intended.",
     );
+  });
+
+  test("Needs attention splits reviews into one section per reason", () => {
+    // Content drift and a missing install have different remedies, so they
+    // must not share a section — and content drift leads, being the more
+    // actionable of the two.
+    const driftInventories: AgentInventory[] = (
+      ["codex", "claude", "zcode"] as const
+    ).map((provider) => ({
+      provider,
+      scope: "global",
+      capabilities: [
+        skill(provider, "drifted", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: `superpowers@${provider === "codex" ? "openai-curated" : "claude-plugins-official"}`,
+          contentFingerprint: provider === "codex" ? "bbb" : "aaa",
+        }),
+        ...(provider === "zcode"
+          ? []
+          : [skill(provider, "lopsided", { origin: "marketplace" })]),
+      ],
+      warnings: [],
+    }));
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={driftInventories}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    const contentSection = html.indexOf("Reviews · Different content");
+    const missingSection = html.indexOf("Reviews · Missing from one agent");
+
+    expect(contentSection).toBeGreaterThanOrEqual(0);
+    expect(missingSection).toBeGreaterThan(contentSection);
+    // Empty reasons render no heading at all.
+    expect(html).not.toContain("Reviews · Different configuration");
+    // The section heading and the provider cells already carry the reason and
+    // the specifics, so review rows render no assessment message.
+    expect(html).not.toContain("agent-assessment-reason");
+    expect(html.indexOf(">drifted<")).toBeLessThan(missingSection);
+    expect(html.indexOf(">lopsided<")).toBeGreaterThan(missingSection);
   });
 
   test("Needs attention surfaces configuration warnings once, deduplicated", () => {
@@ -267,11 +310,20 @@ describe("AgentSetupView", () => {
 
     expect(html).toContain("Duplicate installs");
     expect(html).toContain("twice-installed");
-    expect(html).toContain("Identical copies");
+    // Identical copies read as plain "Redundant"; only differing copies carry
+    // the amber "Shadowed" badge, keeping color proportional to real risk.
+    expect(html).toContain("Redundant");
+    expect(html).toContain("Removing all but one is safe.");
     expect(html).toContain("shadowed");
-    expect(html).toContain("Copies differ");
+    expect(html).toContain("Shadowed");
+    expect(html).toContain("Copies differ — pick which one wins.");
     expect(html).toContain("/safe/one");
     expect(html).toContain("/safe/two");
+    // Agent-local hygiene leads; the cross-agent matrix region follows. This
+    // fixture has no Fix/Review rows, so that region is the empty state.
+    expect(html.indexOf("Duplicate installs")).toBeLessThan(
+      html.indexOf("No consensus drift needs attention."),
+    );
   });
 
   test("uses the correct plural for multiple fixes", () => {
@@ -886,7 +938,7 @@ describe("AgentSetupView", () => {
     );
   });
 
-  test("uses comparison status tags in inventory rows", () => {
+  test("omits status tags in inventory rows", () => {
     const statusInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -913,15 +965,11 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain('<span class="agent-status-tag badge-1">');
-    expect(html).toContain('<span class="agent-status-tag badge-4">');
-    const unavailableLabel = html.indexOf("Unavailable</span>");
-    const unavailableTag = html.lastIndexOf("<span", unavailableLabel);
-
-    expect(unavailableLabel).toBeGreaterThanOrEqual(0);
-    expect(html.slice(unavailableTag, unavailableLabel)).toContain(
-      "lucide-circle-x",
-    );
+    // The inventory hides disabled capabilities, so a per-row status tag adds
+    // no signal; status stays a Compare-view and Needs Attention concern.
+    expect(html).toContain("<strong>enabled-example</strong>");
+    expect(html).not.toContain("agent-status-tag");
+    expect(html).not.toContain("Unavailable</span>");
     expect(html).not.toContain("status-label");
   });
 
@@ -972,7 +1020,7 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Summary contains the plugin name, member count, origin, and status.
+    // Summary contains the plugin name, member count, and origin.
     expect(html).toContain(
       "<strong>superpowers@claude-plugins-official</strong>",
     );
@@ -980,9 +1028,7 @@ describe("AgentSetupView", () => {
     expect(html).toContain(
       '<span class="badge badge-3 agent-origin-tag">Marketplace</span>',
     );
-    expect(html).toContain(
-      '<span class="agent-status-tag badge-1">Enabled</span>',
-    );
+    expect(html).not.toContain("agent-status-tag");
     expect(html).toContain('<details class="agent-capability-group">');
 
     // Member rows are nested inside the group body container.
@@ -1149,7 +1195,7 @@ describe("AgentSetupView", () => {
     );
   });
 
-  test("inventory summary aggregates mixed member statuses", () => {
+  test("inventory group summary reports no status for mixed members", () => {
     const groupedInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1184,7 +1230,9 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain("Mixed · 1 not enabled");
+    expect(html).toContain("3 skills");
+    expect(html).not.toContain("Mixed");
+    expect(html).not.toContain("agent-status-tag");
   });
 
   test("inventory keeps personal/built_in/unknown skills flat even when several share an origin", () => {

@@ -20,6 +20,7 @@ import {
   type AgentInventory,
   type CapabilityKind,
   type CapabilityStatus,
+  type ComparisonAssessmentReason,
   type ComparisonDuplicate,
   type ComparisonRow,
   type InventoryWarning,
@@ -109,6 +110,41 @@ const originLabels: Record<AgentCapability["origin"], string> = {
   marketplace: "Marketplace",
   built_in: "Built in",
   unknown: "Unknown",
+};
+
+/**
+ * Inventory ordering for origins. Mostly alphabetical by label, except
+ * skills.sh sorts above Personal so managed installs read before local links.
+ */
+/**
+ * Review sections in the Needs Attention view, most actionable first. Each
+ * reason has a different remedy — reinstall from one source, reconcile config,
+ * install the missing copy — so they must not read as one list. Reasons absent
+ * here (the Fix-level ones, plus `provider_specific`/`consistent`) never reach
+ * a review section.
+ */
+const reviewSections: readonly {
+  reason: ComparisonAssessmentReason;
+  label: string;
+}[] = [
+  { reason: "content_drift", label: "Reviews · Different content" },
+  {
+    reason: "configuration_drift",
+    label: "Reviews · Different configuration",
+  },
+  { reason: "instruction_drift", label: "Reviews · Instruction drift" },
+  {
+    reason: "missing_from_one_provider",
+    label: "Reviews · Missing from one agent",
+  },
+];
+
+const originSortOrder: Record<AgentCapability["origin"], number> = {
+  built_in: 0,
+  marketplace: 1,
+  skills_sh: 2,
+  personal: 3,
+  unknown: 4,
 };
 
 const originBadges: Record<AgentCapability["origin"], string> = {
@@ -226,7 +262,7 @@ function compareInventoryCapabilities(
   const rightGroup = skillGroupKey(right) ?? "";
   return (
     kindSortOrder[left.kind] - kindSortOrder[right.kind] ||
-    originLabels[left.origin].localeCompare(originLabels[right.origin]) ||
+    originSortOrder[left.origin] - originSortOrder[right.origin] ||
     leftGroup.localeCompare(rightGroup) ||
     left.name.localeCompare(right.name) ||
     left.id.localeCompare(right.id)
@@ -253,9 +289,8 @@ function compareInventoryItems(
   const rightRank = right.kind === "group" ? 0 : 1;
   return (
     kindSortOrder[leftCapability.kind] - kindSortOrder[rightCapability.kind] ||
-    originLabels[leftCapability.origin].localeCompare(
-      originLabels[rightCapability.origin],
-    ) ||
+    originSortOrder[leftCapability.origin] -
+      originSortOrder[rightCapability.origin] ||
     leftRank - rightRank ||
     leftCapability.name.localeCompare(rightCapability.name) ||
     leftCapability.id.localeCompare(rightCapability.id)
@@ -286,30 +321,16 @@ interface SkillGroupSummary {
   name: string;
   memberCount: number;
   origin: "marketplace" | "skills_sh";
-  statusAggregate:
-    | { kind: "uniform"; status: CapabilityStatus }
-    | { kind: "mixed"; notEnabledCount: number };
 }
 
 /**
  * Build the summary that `CapabilityGroup` renders in its <summary>. Members
  * must share a group key (caller's responsibility). Name, origin, and kind
- * are derived from the first member; status is aggregated across all
- * members so the summary stays informative when the group is collapsed.
+ * are derived from the first member.
  */
 function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
   const first = members[0]!;
   const key = skillGroupKey(first)!;
-  const statuses = new Set(members.map((member) => member.status));
-  const statusAggregate: SkillGroupSummary["statusAggregate"] =
-    statuses.size === 1
-      ? { kind: "uniform", status: first.status }
-      : {
-          kind: "mixed",
-          notEnabledCount: members.filter(
-            (member) => member.status !== "enabled",
-          ).length,
-        };
   if (first.origin === "marketplace" && first.sourcePlugin) {
     return {
       key,
@@ -317,7 +338,6 @@ function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
       name: first.sourcePlugin,
       memberCount: members.length,
       origin: "marketplace",
-      statusAggregate,
     };
   }
   return {
@@ -326,7 +346,6 @@ function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
     name: first.sourceRepository!,
     memberCount: members.length,
     origin: "skills_sh",
-    statusAggregate,
   };
 }
 
@@ -743,12 +762,6 @@ function CapabilityRow({
   duplicateNames?: Set<string>;
 }) {
   const KindIcon = kindIcons[capability.kind];
-  const StatusIcon =
-    capability.status === "disabled"
-      ? CircleSlash2
-      : capability.status === "unavailable"
-        ? CircleX
-        : Check;
   // When the same capability name appears more than once in the visible
   // inventory, the source line alone can't tell the rows apart (e.g. two
   // ai-sdk installs both reclassified to skills.sh/vercel/ai). Surface the
@@ -780,9 +793,6 @@ function CapabilityRow({
       >
         {originLabels[capability.origin]}
       </span>
-      <span className={`agent-status-tag ${statusBadges[capability.status]}`}>
-        <StatusIcon size={13} /> {statusLabels[capability.status]}
-      </span>
     </div>
   );
 }
@@ -797,14 +807,6 @@ function CapabilityGroup({
   duplicateNames?: Set<string>;
 }) {
   const GroupIcon = summary.kind === "plugin" ? Plug : WandSparkles;
-  const statusText =
-    summary.statusAggregate.kind === "uniform"
-      ? statusLabels[summary.statusAggregate.status]
-      : `Mixed · ${summary.statusAggregate.notEnabledCount} not enabled`;
-  const statusClass =
-    summary.statusAggregate.kind === "uniform"
-      ? statusBadges[summary.statusAggregate.status]
-      : "badge-4";
 
   return (
     <details className="agent-capability-group">
@@ -819,7 +821,6 @@ function CapabilityGroup({
         >
           {originLabels[summary.origin]}
         </span>
-        <span className={`agent-status-tag ${statusClass}`}>{statusText}</span>
       </summary>
       <div className="agent-capability-group-members">
         {members.map((capability) => (
@@ -909,15 +910,29 @@ function ComparisonView({
         ]
       : [];
 
+  // Fixes share one section — they are all "this is broken, repair it".
+  // Reviews are judgement calls whose remedy depends entirely on the cause, so
+  // each reason gets its own section rather than one undifferentiated pile.
   const comparisonGroups = filters.comparisonMode
-    ? (["fix", "review"] as const)
-        .map((level) => ({
-          key: level,
-          label: level === "fix" ? "Fixes" : "Reviews",
-          rows: rows.filter((row) => row.assessment.level === level),
-        }))
-        .filter((group) => group.rows.length > 0)
-    : [{ key: "all", label: undefined, rows }];
+    ? [
+        {
+          id: "fix",
+          level: "fix",
+          label: "Fixes",
+          rows: rows.filter((row) => row.assessment.level === "fix"),
+        },
+        ...reviewSections.map((section) => ({
+          id: `review:${section.reason}`,
+          level: "review",
+          label: section.label,
+          rows: rows.filter(
+            (row) =>
+              row.assessment.level === "review" &&
+              row.assessment.reason === section.reason,
+          ),
+        })),
+      ].filter((group) => group.rows.length > 0)
+    : [{ id: "all", level: "all", label: undefined, rows }];
 
   return (
     <>
@@ -986,6 +1001,12 @@ function ComparisonView({
           </div>
         </section>
       ) : null}
+      {/* Warnings and duplicates are both agent-local inventory hygiene: short,
+          high-severity, and fixable without consulting the other agents. They
+          lead together, ahead of the long cross-agent matrix. */}
+      {duplicates.length > 0 ? (
+        <DuplicatesSection duplicates={duplicates} />
+      ) : null}
       {rows.length === 0 ? (
         <div className="card empty-state agent-empty-state">
           <h3>
@@ -1030,10 +1051,10 @@ function ComparisonView({
               </tr>
             </thead>
             {comparisonGroups.map((group) => (
-              <tbody key={group.key}>
+              <tbody key={group.id}>
                 {group.label ? (
                   <tr
-                    className={`agent-comparison-group-row agent-comparison-group-${group.key}`}
+                    className={`agent-comparison-group-row agent-comparison-group-${group.level}`}
                   >
                     <th scope="rowgroup" colSpan={agentProviders.length + 1}>
                       <span>{group.label}</span>
@@ -1053,9 +1074,6 @@ function ComparisonView({
           </table>
         </div>
       )}
-      {duplicates.length > 0 ? (
-        <DuplicatesSection duplicates={duplicates} />
-      ) : null}
     </>
   );
 }
@@ -1073,29 +1091,59 @@ function DuplicatesSection({
         </div>
         <span>Same capability installed more than once in a single agent</span>
       </header>
-      <div className="agent-warning-list">
-        {duplicates.map((duplicate) => (
-          <div
-            key={`${duplicate.provider}:${duplicate.kind}:${duplicate.name}`}
-            className="notice"
-          >
-            <AlertTriangle size={14} />
-            <span>
-              <span className={`badge ${providerBadges[duplicate.provider]}`}>
-                {providerLabels[duplicate.provider]}
-              </span>{" "}
-              <strong>{duplicate.name}</strong> —{" "}
-              {duplicate.identicalContent
-                ? "Identical copies; removing all but one is safe."
-                : "Copies differ; one may shadow the other, so pick which should win."}
-            </span>
-            {duplicate.copies.map((copy) =>
-              copy.sourcePath ? (
-                <code key={copy.id}>{shortenHomePath(copy.sourcePath)}</code>
-              ) : null,
-            )}
-          </div>
-        ))}
+      <div className="agent-duplicate-region">
+        <table className="agent-duplicate-table">
+          <thead>
+            <tr>
+              <th scope="col">Agent</th>
+              <th scope="col">Capability</th>
+              <th scope="col">Assessment</th>
+              <th scope="col">Locations</th>
+            </tr>
+          </thead>
+          <tbody>
+            {duplicates.map((duplicate) => (
+              <tr
+                key={`${duplicate.provider}:${duplicate.kind}:${duplicate.name}`}
+              >
+                <td>
+                  <span
+                    className={`badge ${providerBadges[duplicate.provider]}`}
+                  >
+                    {providerLabels[duplicate.provider]}
+                  </span>
+                </td>
+                <td>
+                  <span className="agent-duplicate-name">{duplicate.name}</span>
+                  <span className="agent-duplicate-kind">
+                    {capabilityKindLabels[duplicate.kind]}
+                  </span>
+                </td>
+                <td>
+                  {duplicate.identicalContent ? (
+                    <span className="agent-duplicate-verdict">Redundant</span>
+                  ) : (
+                    <span className="badge badge-4">Shadowed</span>
+                  )}
+                  <span className="agent-duplicate-hint">
+                    {duplicate.identicalContent
+                      ? "Removing all but one is safe."
+                      : "Copies differ — pick which one wins."}
+                  </span>
+                </td>
+                <td>
+                  {duplicate.copies.map((copy) =>
+                    copy.sourcePath ? (
+                      <code key={copy.id}>
+                        {shortenHomePath(copy.sourcePath)}
+                      </code>
+                    ) : null,
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
@@ -1146,6 +1194,10 @@ function ComparisonTableRow({
             </>
           ) : null}
         </div>
+        {/* Reviews are grouped into per-reason sections whose headings carry
+            the reason, and the provider cells carry the specifics — a message
+            here would only repeat both. Fixes share one section, so they still
+            need their message to say what is broken. */}
         {showAssessment && row.assessment.level === "fix" ? (
           <span className="agent-assessment-reason">
             {row.assessment.message}

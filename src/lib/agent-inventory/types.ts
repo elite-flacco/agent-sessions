@@ -56,6 +56,7 @@ export type ComparisonAssessmentReason =
   | "missing_from_one_provider"
   | "split_presence"
   | "configuration_drift"
+  | "content_drift"
   | "instruction_drift"
   | "provider_specific"
   | "consistent";

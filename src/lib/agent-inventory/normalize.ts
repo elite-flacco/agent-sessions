@@ -148,17 +148,45 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
   const signatures = new Set(
     present.map((provider) => assessmentSignature(row.cells[provider]!)),
   );
-  return signatures.size > 1
-    ? {
-        level: "review",
-        reason: "configuration_drift",
-        message: "Installed across all agents with differing configuration.",
-      }
-    : {
-        level: "context",
-        reason: "consistent",
-        message: "Consistent across all agents.",
-      };
+  if (signatures.size === 1) {
+    return {
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
+    };
+  }
+
+  // Every agent agrees on status/origin/packaging and only the skill body
+  // differs: the agents are running different builds of the same skill, which
+  // is a distinct problem from a configuration mismatch and gets its own
+  // section in the Needs Attention view.
+  const configurations = new Set(
+    present.map((provider) => configurationSignature(row.cells[provider]!)),
+  );
+  if (configurations.size === 1) {
+    return {
+      level: "review",
+      reason: "content_drift",
+      message: "Installed across all agents with differing content.",
+    };
+  }
+
+  return {
+    level: "review",
+    reason: "configuration_drift",
+    message: "Installed across all agents with differing configuration.",
+  };
+}
+
+/** The non-content half of `assessmentSignature`. */
+function configurationSignature(capability: AgentCapability): string {
+  const status =
+    capability.status === "enabled" || capability.status === "installed"
+      ? "active"
+      : capability.status;
+  return capability.kind === "skill"
+    ? [status, capability.origin].join(":")
+    : [status, capability.packaging, capability.origin].join(":");
 }
 
 function assessInstructionRow(row: ComparisonRow): ComparisonAssessment {

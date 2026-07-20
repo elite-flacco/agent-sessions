@@ -298,16 +298,60 @@ describe("buildComparisonRows", () => {
     expect(rows[0]?.isDiscrepancy).toBe(false);
   });
 
-  test("flags skills whose content differs across providers for review", () => {
+  test("flags skills whose content differs across providers as content drift", () => {
+    // Status, origin, and packaging agree everywhere — only the skill body
+    // differs, so this must read as content drift rather than a configuration
+    // mismatch; the Needs Attention view sections the two separately.
     const rows = buildComparisonRows([
       inventory("codex", [
-        providerCapability("codex", { contentFingerprint: "aaa" }),
+        providerCapability("codex", {
+          contentFingerprint: "bbb",
+          sourcePlugin: "superpowers@openai-curated",
+        }),
       ]),
       inventory("claude", [
-        providerCapability("claude", { contentFingerprint: "bbb" }),
+        providerCapability("claude", {
+          contentFingerprint: "aaa",
+          sourcePlugin: "superpowers@claude-plugins-official",
+        }),
       ]),
       inventory("zcode", [
-        providerCapability("zcode", { contentFingerprint: "aaa" }),
+        providerCapability("zcode", {
+          contentFingerprint: "aaa",
+          sourcePlugin: "superpowers@claude-plugins-official",
+        }),
+      ]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "content_drift",
+      message: "Installed across all agents with differing content.",
+    });
+  });
+
+  test("keeps configuration drift distinct from content drift", () => {
+    // Origin differs, so this is a genuine configuration mismatch even though
+    // the skill bodies are identical.
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", {
+          origin: "personal",
+          contentFingerprint: "aaa",
+        }),
+      ]),
+      inventory("claude", [
+        providerCapability("claude", {
+          origin: "skills_sh",
+          contentFingerprint: "aaa",
+        }),
+      ]),
+      inventory("zcode", [
+        providerCapability("zcode", {
+          origin: "skills_sh",
+          contentFingerprint: "aaa",
+        }),
       ]),
       inventory("pi", []),
     ]);
