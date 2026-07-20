@@ -63,12 +63,22 @@ The **Agent setup** page reads global configuration live when `/agents` is
 opened; it does not persist the inventory in Relay's database. This first
 version is global-only. Project-level configuration is not included yet.
 
-**Needs attention** evaluates every capability type across all four agents. It
-labels unavailable capabilities, missing instructions, and three-to-one gaps
-as **Fix**; two-to-two splits and shared configuration differences are
-**Review** items. Capabilities found on only one provider remain contextual in
-**Complete matrix** instead of being treated as errors. These labels are
-read-only heuristics and never modify agent configuration.
+**Needs attention** evaluates every capability type across the three primary
+agents (Pi stays contextual). **Fix** is reserved for genuinely broken state:
+capabilities whose install files are missing on disk (unavailable), missing
+global instructions, and skills.sh-managed skills absent from one agent —
+skills.sh installs exist to be synced everywhere. Other partial installs and
+configuration or content drift are **Review** items: skill drift compares
+whitespace-normalized SKILL.md fingerprints, so identically named skills with
+different content are flagged while line-ending differences are not.
+Deliberately disabled capabilities count as present (drift, not a missing
+install). The attention view also lists configuration warnings (malformed
+sources, stale plugin cache versions, skills.sh lockfile entries with no
+installed skill) and per-agent duplicate installs, distinguishing identical
+redundant copies from same-name copies with different content. Capabilities
+found on only one provider remain contextual in **Complete matrix** instead of
+being treated as errors. These labels are read-only heuristics and never
+modify agent configuration.
 
 | Provider    | Global sources                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -80,7 +90,11 @@ read-only heuristics and never modify agent configuration.
 Standalone skills installed by the skills.sh CLI are identified from
 `~/.agents/.skill-lock.json`. Locally linked skills, skills contributed by
 plugins, built-in skills, and unknown sources are labeled separately. Broken
-skill links remain visible as unavailable so the comparison can expose drift.
+skill links and plugins whose install directories are gone remain visible as
+unavailable so the comparison can expose drift. Plugins missing from a
+provider's enabled-plugins map read as **Installed** (state unknown) rather
+than disabled; only an explicit disable reads as **Disabled**, and disabled
+capabilities stay visible with their own status filter.
 
 The page allowlists display fields: capability name and type, enabled or
 installed status, packaging, provenance, source repository, and safe local

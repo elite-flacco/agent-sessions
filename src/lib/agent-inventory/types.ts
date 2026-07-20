@@ -19,6 +19,12 @@ export interface AgentCapability {
   sourceRepository?: string;
   sourcePath?: string;
   canonicalSourcePath?: string;
+  /**
+   * Whitespace-normalized SHA-256 of the skill's SKILL.md body. Lets the
+   * comparison detect skills that share a name but carry different content
+   * across providers (the drift that actually changes agent behavior).
+   */
+  contentFingerprint?: string;
 }
 
 export interface InstructionFile {
@@ -30,7 +36,7 @@ export interface InstructionFile {
 
 export interface InventoryWarning {
   sourcePath: string;
-  code: "unreadable" | "malformed" | "unsupported";
+  code: "unreadable" | "malformed" | "unsupported" | "stale";
   message: string;
 }
 
@@ -85,4 +91,11 @@ export interface ComparisonDuplicate {
   name: string;
   kind: CapabilityKind;
   copies: AgentCapability[];
+  /**
+   * True when every copy carries the same content fingerprint — a redundant
+   * install that is safe to clean up. False means the copies differ (or their
+   * content could not be read): same name, different behavior, so one copy
+   * shadows the other and the user should pick which one wins.
+   */
+  identicalContent: boolean;
 }

@@ -5,6 +5,7 @@ import type {
   AgentInventory,
   CapabilityOrigin,
   ComparisonAssessment,
+  ComparisonDuplicate,
   ComparisonRow,
 } from "./types";
 
@@ -63,15 +64,33 @@ export function dedupeCapabilities(
   return [...bySource.values()].sort(compareCapabilities);
 }
 
-// Dimensions compared across providers to decide whether an everywhere-present
-// capability has meaningful configuration drift. `sourceRepository` is
-// deliberately excluded: it reflects how each provider discovered/packaged the
-// capability (e.g. Codex/Claude leave it empty for installed plugins, Zcode
-// fills it from the marketplace cache), not anything the user controls. The
-// remaining three — status, packaging, origin — are the dimensions worth
-// flagging for review.
+// Raw per-provider signature used only to decide whether the Complete matrix
+// can collapse a row into a single all-agent cell — the collapsed cell shows
+// one status/packaging/origin, so it must only appear when they are literally
+// identical everywhere.
 function comparisonSignature(capability: AgentCapability): string {
   return [capability.status, capability.packaging, capability.origin].join(":");
+}
+
+/**
+ * Signature used for drift assessment and discrepancy highlighting.
+ * `sourceRepository` is deliberately excluded: it reflects how each provider
+ * discovered/packaged the capability, not anything the user controls.
+ * "enabled" and "installed" both mean "active" — the split is structural
+ * (plugin-contributed capabilities inherit "enabled", standalone ones read
+ * "installed") and must not read as drift. For skills, packaging is likewise
+ * structural noise, and the content fingerprint takes its place: two skills
+ * that share a name but differ in SKILL.md content are the drift that
+ * actually changes agent behavior.
+ */
+function assessmentSignature(capability: AgentCapability): string {
+  const status =
+    capability.status === "enabled" || capability.status === "installed"
+      ? "active"
+      : capability.status;
+  return capability.kind === "skill"
+    ? [status, capability.origin, capability.contentFingerprint ?? ""].join(":")
+    : [status, capability.packaging, capability.origin].join(":");
 }
 
 function formatProviderList(
@@ -99,8 +118,14 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
 
   if (present.length === 2) {
     const missing = primaryProviders.filter((provider) => !row.cells[provider]);
+    // skills.sh installs exist to be synced across agents, so a gap there is
+    // a genuine fix. For everything else (personal MCPs, marketplace plugins)
+    // partial presence is often deliberate — flag for review, not repair.
+    const crossAgentIntent = present.some(
+      (provider) => row.cells[provider]?.origin === "skills_sh",
+    );
     return {
-      level: "fix",
+      level: crossAgentIntent ? "fix" : "review",
       reason: "missing_from_one_provider",
       message: `Present on 2 of 3 agents; missing from ${formatProviderList(missing)}.`,
     };
@@ -121,7 +146,7 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
   }
 
   const signatures = new Set(
-    present.map((provider) => comparisonSignature(row.cells[provider]!)),
+    present.map((provider) => assessmentSignature(row.cells[provider]!)),
   );
   return signatures.size > 1
     ? {
@@ -226,20 +251,80 @@ export function buildComparisonRows(
       continue;
     }
 
-    const signatures = agentProviders.map((provider) => {
+    // Discrepancy highlighting tracks the primary agents only — Pi's absence
+    // or configuration must not mark a row that the three primaries agree on.
+    const primarySignatures = primaryProviders.map((provider) => {
+      const capability = row.cells[provider];
+      return capability ? assessmentSignature(capability) : undefined;
+    });
+    row.isDiscrepancy = new Set(primarySignatures).size > 1;
+    row.assessment = assessCapabilityRow(row);
+    // The collapsed all-agent cell renders one literal status/packaging/origin,
+    // so uniformity is judged on the raw signature across all four providers.
+    const rawSignatures = agentProviders.map((provider) => {
       const capability = row.cells[provider];
       return capability ? comparisonSignature(capability) : undefined;
     });
-    row.isDiscrepancy = new Set(signatures).size > 1;
-    row.assessment = assessCapabilityRow(row);
     row.isUniformAcrossProviders =
-      signatures.every((signature) => signature !== undefined) &&
-      new Set(signatures).size === 1;
+      rawSignatures.every((signature) => signature !== undefined) &&
+      new Set(rawSignatures).size === 1;
   }
 
   return [...rows.values()].sort((left, right) => {
     if (left.kind === "instruction") return 1;
     if (right.kind === "instruction") return -1;
+    const kind = left.kind.localeCompare(right.kind);
+    return kind || left.name.localeCompare(right.name);
+  });
+}
+
+/**
+ * Find same-name, same-kind capabilities that appear more than once in a
+ * single provider's inventory via distinct install paths. These are genuine
+ * on-disk duplicates (e.g. skills.sh cloned a skill AND a plugin cache
+ * independently pulled a copy) that the path-based dedupe cannot collapse.
+ * Surfaced in the Compare view's Needs Attention mode so the user can spot
+ * and clean them up. Cross-provider duplicates are NOT flagged here — only
+ * multiple copies within one provider.
+ */
+export function findComparisonDuplicates(
+  inventories: AgentInventory[],
+): ComparisonDuplicate[] {
+  const duplicates: ComparisonDuplicate[] = [];
+  for (const inventory of inventories) {
+    const byKey = new Map<string, AgentCapability[]>();
+    for (const capability of inventory.capabilities) {
+      // Disabled and unavailable copies are not in effect, so they cannot
+      // conflict with the active copy — only active duplicates matter here.
+      if (
+        capability.status !== "enabled" &&
+        capability.status !== "installed"
+      ) {
+        continue;
+      }
+      const key = `${capability.kind}:${canonicalCapabilityName(capability.name)}`;
+      const arr = byKey.get(key) ?? [];
+      arr.push(capability);
+      byKey.set(key, arr);
+    }
+    for (const [, copies] of byKey) {
+      if (copies.length < 2) continue;
+      const fingerprints = new Set(
+        copies.map((copy) => copy.contentFingerprint),
+      );
+      duplicates.push({
+        provider: inventory.provider,
+        name: copies[0]!.name,
+        kind: copies[0]!.kind,
+        copies,
+        identicalContent:
+          fingerprints.size === 1 && !fingerprints.has(undefined),
+      });
+    }
+  }
+  return duplicates.sort((left, right) => {
+    const provider = left.provider.localeCompare(right.provider);
+    if (provider) return provider;
     const kind = left.kind.localeCompare(right.kind);
     return kind || left.name.localeCompare(right.name);
   });

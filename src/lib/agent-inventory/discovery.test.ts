@@ -99,10 +99,10 @@ API_KEY = "secret-value"
     expect(serialized).not.toContain("secret-value");
   });
 
-  test("excludes disabled plugins, their skills, and disabled MCPs from the inventory", async () => {
+  test("keeps disabled plugins, their skills, and disabled MCPs visible with disabled status", async () => {
     const home = await createHome();
     const pluginRoot = join(home, "plugins", "disabled-plugin");
-    await skill(pluginRoot, "skills/secret-skill", "secret-skill");
+    await skill(pluginRoot, "skills/dormant-skill", "dormant-skill");
     await fixture(
       home,
       ".codex/config.toml",
@@ -122,13 +122,29 @@ enabled = false
     );
     const codex = result.find((item) => item.provider === "codex");
 
-    expect(
-      codex?.capabilities.some((c) => c.name === "disabled@openai-curated"),
-    ).toBe(false);
-    expect(codex?.capabilities.some((c) => c.name === "secret-skill")).toBe(
-      false,
+    // Deliberately-disabled capabilities stay in the inventory with status
+    // "disabled" so the comparison can distinguish "turned off on this agent"
+    // from "never installed"; command configuration still never leaks.
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "disabled@openai-curated",
+          kind: "plugin",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "dormant-skill",
+          kind: "skill",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "legacy",
+          kind: "mcp",
+          status: "disabled",
+        }),
+      ]),
     );
-    expect(codex?.capabilities.some((c) => c.name === "legacy")).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("legacy-secret");
   });
 
   test("resolves Codex plugin skills and MCPs from the cache when source is absent", async () => {
@@ -273,6 +289,8 @@ enabled = true
   test("discovers Claude and Zcode installed plugins with enabled state", async () => {
     const home = await createHome();
     const claudePlugin = join(home, "claude-plugin");
+    const claudeAbsentPlugin = join(home, "claude-absent-plugin");
+    await mkdir(claudeAbsentPlugin, { recursive: true });
     const claudeDisabledPlugin = join(home, "claude-disabled-plugin");
     const zcodePlugin = join(home, "zcode-plugin");
     const zcodeDisabledPlugin = join(home, "zcode-disabled-plugin");
@@ -299,6 +317,7 @@ enabled = true
       JSON.stringify({
         enabledPlugins: {
           "superpowers@claude-plugins-official": true,
+          "disabled-skills@market": false,
         },
       }),
     );
@@ -310,7 +329,7 @@ enabled = true
           "superpowers@claude-plugins-official": [
             { installPath: claudePlugin, version: "1.0.0" },
           ],
-          "disabled@market": [{ installPath: join(home, "disabled") }],
+          "disabled@market": [{ installPath: claudeAbsentPlugin }],
           "disabled-skills@market": [
             { installPath: claudeDisabledPlugin, version: "1.0.0" },
           ],
@@ -384,16 +403,28 @@ enabled = true
         }),
       ]),
     );
-    // Disabled plugins and their skills/MCPs are excluded from the inventory.
-    expect(claude?.capabilities.some((c) => c.name === "disabled@market")).toBe(
-      false,
+    // A plugin absent from enabledPlugins has an unknown enable state — it
+    // must surface as "installed", never silently read as disabled. An
+    // explicit `false` is a deliberate disable and stays visible as such.
+    expect(claude?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "disabled@market",
+          kind: "plugin",
+          status: "installed",
+        }),
+        expect.objectContaining({
+          name: "disabled-skills@market",
+          kind: "plugin",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "claude-disabled-tool",
+          kind: "skill",
+          status: "disabled",
+        }),
+      ]),
     );
-    expect(
-      claude?.capabilities.some((c) => c.name === "disabled-skills@market"),
-    ).toBe(false);
-    expect(
-      claude?.capabilities.some((c) => c.name === "claude-disabled-tool"),
-    ).toBe(false);
     expect(zcode?.capabilities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "github@market", status: "enabled" }),
@@ -412,12 +443,21 @@ enabled = true
         }),
       ]),
     );
-    expect(
-      zcode?.capabilities.some((c) => c.name === "disabled-skills@market"),
-    ).toBe(false);
-    expect(
-      zcode?.capabilities.some((c) => c.name === "zcode-disabled-tool"),
-    ).toBe(false);
+    // Absent from Zcode's enabledPlugins → enable state unknown → "installed".
+    expect(zcode?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "disabled-skills@market",
+          kind: "plugin",
+          status: "installed",
+        }),
+        expect.objectContaining({
+          name: "zcode-disabled-tool",
+          kind: "skill",
+          status: "installed",
+        }),
+      ]),
+    );
     expect(JSON.stringify(result)).not.toContain("do-not-return");
     expect(JSON.stringify(result)).not.toContain("plugin-secret-command");
   });
@@ -487,6 +527,43 @@ enabled = true
           packaging: "plugin",
           sourcePlugin: "android-emulator@zcode-plugins-official",
         }),
+      ]),
+    );
+  });
+
+  test("warns about stale Zcode cached plugin versions", async () => {
+    const home = await createHome();
+    const versionRoot = join(
+      home,
+      ".zcode",
+      "cli",
+      "plugins",
+      "cache",
+      "zcode-plugins-official",
+      "android-emulator",
+    );
+    await skill(join(versionRoot, "0.1.0"), "skills/tool", "tool");
+    await skill(join(versionRoot, "0.2.0"), "skills/tool", "tool");
+    await fixture(
+      home,
+      ".zcode/cli/config.json",
+      JSON.stringify({ plugins: { enabledPlugins: {} }, mcp: { servers: {} } }),
+    );
+    await fixture(
+      home,
+      ".zcode/cli/plugins/installed_plugins.json",
+      JSON.stringify({ plugins: [] }),
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const zcode = result.find((item) => item.provider === "zcode");
+
+    expect(zcode?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "stale", sourcePath: versionRoot }),
       ]),
     );
   });
@@ -583,7 +660,7 @@ enabled = true
         plugins: {
           // The plugin is physically cached but explicitly disabled in the UI.
           // The discovery layer must surface "disabled" (not "installed") so
-          // getAgentInventories can filter it out of the dashboard.
+          // the dashboard can render the deliberate disable.
           enabledPlugins: { "ios-simulator@zcode-plugins-official": false },
         },
         mcp: { servers: {} },
@@ -601,16 +678,26 @@ enabled = true
     );
     const zcode = result.find((item) => item.provider === "zcode");
 
-    // Explicitly-disabled cache-only plugins and their MCP/skill children are
-    // filtered out of the public inventory alongside every other disabled
-    // capability, so the dashboard never surfaces them as installed.
-    expect(zcode?.capabilities).not.toEqual(
+    // Explicitly-disabled cache-only plugins and their MCP/skill children stay
+    // in the inventory with status "disabled" so the comparison can tell a
+    // deliberate disable apart from a missing install.
+    expect(zcode?.capabilities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           name: "ios-simulator@zcode-plugins-official",
+          kind: "plugin",
+          status: "disabled",
         }),
-        expect.objectContaining({ name: "ios-simulator", kind: "mcp" }),
-        expect.objectContaining({ name: "ios-tool", kind: "skill" }),
+        expect.objectContaining({
+          name: "ios-simulator",
+          kind: "mcp",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "ios-tool",
+          kind: "skill",
+          status: "disabled",
+        }),
       ]),
     );
   });
@@ -633,6 +720,7 @@ enabled = true
       ".mcp.json",
       JSON.stringify({ mcpServers: { sharedMcp: { command: "unused" } } }),
     );
+    await mkdir(join(home, "alt-install"), { recursive: true });
     // Same plugin id appears in installed_plugins.json with a different
     // installPath; the cache walker must skip it so dedupe stays trivial.
     await fixture(
@@ -674,6 +762,277 @@ enabled = true
     expect(pluginCaps?.[0]?.sourcePath).toBe(join(home, "alt-install"));
   });
 
+  test("resolves the numerically highest cached plugin version, not the lexicographic one", async () => {
+    const home = await createHome();
+    const cacheBase = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-curated",
+      "versioned",
+    );
+    await skill(join(cacheBase, "9.0.0"), "skills/old-tool", "old-tool");
+    await skill(join(cacheBase, "10.0.0"), "skills/new-tool", "new-tool");
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."versioned@openai-curated"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    const plugin = codex?.capabilities.find(
+      (c) => c.name === "versioned@openai-curated",
+    );
+
+    expect(plugin?.sourcePath).toBe(join(cacheBase, "10.0.0"));
+  });
+
+  test("warns about stale cached plugin versions left behind by re-installs", async () => {
+    const home = await createHome();
+    const cacheBase = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-curated",
+      "versioned",
+    );
+    await skill(join(cacheBase, "1.0.0"), "skills/tool", "tool");
+    await skill(join(cacheBase, "1.1.0"), "skills/tool", "tool");
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."versioned@openai-curated"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "stale", sourcePath: cacheBase }),
+      ]),
+    );
+  });
+
+  test("warns about skills.sh lock entries with no installed skill on disk", async () => {
+    const home = await createHome();
+    const lockPath = await fixture(
+      home,
+      ".agents/.skill-lock.json",
+      JSON.stringify({
+        version: 1,
+        skills: {
+          "ghost-skill": {
+            source: "example/ghost-skill",
+            sourceType: "github",
+          },
+        },
+      }),
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "stale",
+          sourcePath: lockPath,
+          message: expect.stringContaining("ghost-skill"),
+        }),
+      ]),
+    );
+  });
+
+  test("treats an enabled = false line with a trailing comment as disabled", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[mcp_servers.commented]
+command = "unused"
+enabled = false # temporarily off
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    const server = codex?.capabilities.find((c) => c.name === "commented");
+
+    expect(server?.status).toBe("disabled");
+  });
+
+  test("ignores non-server entries in a bare .mcp.json map", async () => {
+    const home = await createHome();
+    const pluginRoot = join(home, "plugins", "bare");
+    await mkdir(pluginRoot, { recursive: true });
+    await fixture(
+      pluginRoot,
+      ".mcp.json",
+      JSON.stringify({
+        version: 2,
+        note: "not a server",
+        realServer: { command: "unused" },
+      }),
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."bare@openai-curated"]
+enabled = true
+source = "${pluginRoot}"
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    const mcpNames = codex?.capabilities
+      .filter((c) => c.kind === "mcp")
+      .map((c) => c.name);
+
+    expect(mcpNames).toContain("realServer");
+    expect(mcpNames).not.toContain("version");
+    expect(mcpNames).not.toContain("note");
+  });
+
+  test("marks plugins whose install path is missing on disk as unavailable", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."gone-source@openai-curated"]
+enabled = true
+source = "${join(home, "deleted-plugin")}"
+
+[plugins."gone-cache@openai-curated"]
+enabled = true
+`,
+    );
+    await fixture(
+      home,
+      ".claude/settings.json",
+      JSON.stringify({ enabledPlugins: { "gone@market": true } }),
+    );
+    await fixture(
+      home,
+      ".claude/plugins/installed_plugins.json",
+      JSON.stringify({
+        plugins: {
+          "gone@market": [{ installPath: join(home, "deleted-claude-plugin") }],
+        },
+      }),
+    );
+    await fixture(
+      home,
+      ".zcode/cli/config.json",
+      JSON.stringify({
+        plugins: { enabledPlugins: { "gone@market": true } },
+        mcp: { servers: {} },
+      }),
+    );
+    await fixture(
+      home,
+      ".zcode/cli/plugins/installed_plugins.json",
+      JSON.stringify({
+        plugins: [
+          {
+            id: "gone@market",
+            installPath: join(home, "deleted-zcode-plugin"),
+            marketplace: "market",
+          },
+        ],
+      }),
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    const claude = result.find((item) => item.provider === "claude");
+    const zcode = result.find((item) => item.provider === "zcode");
+
+    // A plugin the config still references but whose files are gone is a real
+    // problem to surface, not a healthy enabled capability.
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "gone-source@openai-curated",
+          status: "unavailable",
+        }),
+        expect.objectContaining({
+          name: "gone-cache@openai-curated",
+          status: "unavailable",
+        }),
+      ]),
+    );
+    expect(claude?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "gone@market", status: "unavailable" }),
+      ]),
+    );
+    expect(zcode?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "gone@market", status: "unavailable" }),
+      ]),
+    );
+  });
+
+  test("marks broken skill symlinks inside an enabled plugin as unavailable", async () => {
+    const home = await createHome();
+    const pluginRoot = join(home, "plugins", "linked");
+    await mkdir(join(pluginRoot, "skills"), { recursive: true });
+    await symlink(
+      join(home, "missing-target"),
+      join(pluginRoot, "skills", "broken-plugin-skill"),
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."linked@openai-curated"]
+enabled = true
+source = "${pluginRoot}"
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "broken-plugin-skill",
+          status: "unavailable",
+        }),
+      ]),
+    );
+  });
+
   test("discovers Pi skills, extensions, packages, and global instructions", async () => {
     const home = await createHome();
     await skill(join(home, ".pi", "agent", "skills"), "pi-helper", "pi-helper");
@@ -702,6 +1061,28 @@ enabled = true
       ]),
     );
     expect(pi?.instructionFile?.filename).toBe("AGENTS.md");
+  });
+
+  test("fingerprints skill content and normalizes whitespace-only instruction differences", async () => {
+    const home = await createHome();
+    await skill(join(home, ".codex", "skills"), "fp-skill", "fp-skill");
+    // Identical instructions apart from line endings and trailing whitespace
+    // must produce identical fingerprints so they never read as drift.
+    await fixture(home, ".codex/AGENTS.md", "# Shared instructions\n");
+    await fixture(home, ".claude/CLAUDE.md", "# Shared instructions \r\n\r\n");
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    const claude = result.find((item) => item.provider === "claude");
+    const fpSkill = codex?.capabilities.find((c) => c.name === "fp-skill");
+
+    expect(fpSkill?.contentFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(codex?.instructionFile?.contentFingerprint).toBe(
+      claude?.instructionFile?.contentFingerprint,
+    );
   });
 
   test("scopes malformed source warnings and continues other discovery", async () => {

@@ -3,6 +3,7 @@ import {
   buildComparisonRows,
   canonicalCapabilityName,
   dedupeCapabilities,
+  findComparisonDuplicates,
 } from "./normalize";
 import type { AgentCapability, AgentInventory } from "./types";
 
@@ -84,6 +85,77 @@ describe("dedupeCapabilities", () => {
   });
 });
 
+describe("findComparisonDuplicates", () => {
+  test("labels same-content copies as redundant and different-content copies as shadowing", () => {
+    const duplicates = findComparisonDuplicates([
+      inventory("codex", [
+        capability({
+          id: "codex:skill:one",
+          canonicalSourcePath: "/tmp/one",
+          contentFingerprint: "same",
+        }),
+        capability({
+          id: "codex:skill:two",
+          canonicalSourcePath: "/tmp/two",
+          contentFingerprint: "same",
+        }),
+      ]),
+      inventory("claude", [
+        capability({
+          id: "claude:skill:one",
+          name: "other-skill",
+          canonicalSourcePath: "/tmp/three",
+          contentFingerprint: "aaa",
+        }),
+        capability({
+          id: "claude:skill:two",
+          name: "other-skill",
+          canonicalSourcePath: "/tmp/four",
+          contentFingerprint: "bbb",
+        }),
+      ]),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(duplicates).toEqual([
+      expect.objectContaining({
+        provider: "claude",
+        name: "other-skill",
+        identicalContent: false,
+      }),
+      expect.objectContaining({
+        provider: "codex",
+        name: "frontend-rules",
+        identicalContent: true,
+      }),
+    ]);
+  });
+
+  test("ignores disabled copies when detecting duplicates", () => {
+    // One active copy plus a copy inside a disabled plugin is not a conflict:
+    // only one copy is in effect.
+    const duplicates = findComparisonDuplicates([
+      inventory("codex", [
+        capability({
+          id: "codex:skill:active",
+          canonicalSourcePath: "/tmp/active",
+        }),
+        capability({
+          id: "codex:skill:dormant",
+          status: "disabled",
+          canonicalSourcePath: "/tmp/dormant",
+        }),
+      ]),
+      inventory("claude", []),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(duplicates).toEqual([]);
+  });
+});
+
 describe("buildComparisonRows", () => {
   test("aligns equivalent capability names across providers", () => {
     const rows = buildComparisonRows([
@@ -162,13 +234,18 @@ describe("buildComparisonRows", () => {
       reason: "consistent",
       message: "Consistent across all agents.",
     });
+    expect(rows[0]?.isDiscrepancy).toBe(false);
     expect(rows[0]?.isUniformAcrossProviders).toBe(false);
   });
 
-  test("classifies a capability missing from one primary provider as a fix", () => {
+  test("classifies a skills.sh capability missing from one primary provider as a fix", () => {
     const rows = buildComparisonRows([
-      inventory("codex", [providerCapability("codex")]),
-      inventory("claude", [providerCapability("claude")]),
+      inventory("codex", [
+        providerCapability("codex", { origin: "skills_sh" }),
+      ]),
+      inventory("claude", [
+        providerCapability("claude", { origin: "skills_sh" }),
+      ]),
       inventory("zcode", []),
       inventory("pi", []),
     ]);
@@ -179,6 +256,82 @@ describe("buildComparisonRows", () => {
       message: "Present on 2 of 3 agents; missing from Zcode.",
     });
     expect(rows[0]?.isUniformAcrossProviders).toBe(false);
+  });
+
+  test("classifies a non-skills.sh capability missing from one primary provider as a review", () => {
+    // A personal MCP or marketplace plugin on 2 of 3 agents is often a
+    // deliberate choice — worth reviewing, but not "broken".
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "missing_from_one_provider",
+      message: "Present on 2 of 3 agents; missing from Zcode.",
+    });
+    expect(rows[0]?.isUniformAcrossProviders).toBe(false);
+  });
+
+  test("does not flag installed versus enabled as configuration drift", () => {
+    // Standalone skills read "installed" while plugin-contributed ones read
+    // "enabled"; both mean "active" and must not drift against each other.
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", { status: "installed" }),
+      ]),
+      inventory("claude", [
+        providerCapability("claude", { status: "enabled" }),
+      ]),
+      inventory("zcode", [providerCapability("zcode", { status: "enabled" })]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
+    });
+    expect(rows[0]?.isDiscrepancy).toBe(false);
+  });
+
+  test("flags skills whose content differs across providers for review", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", { contentFingerprint: "aaa" }),
+      ]),
+      inventory("claude", [
+        providerCapability("claude", { contentFingerprint: "bbb" }),
+      ]),
+      inventory("zcode", [
+        providerCapability("zcode", { contentFingerprint: "aaa" }),
+      ]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "configuration_drift",
+      message: "Installed across all agents with differing configuration.",
+    });
+  });
+
+  test("treats a deliberately disabled capability as present drift, not a missing fix", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [providerCapability("codex")]),
+      inventory("claude", [providerCapability("claude")]),
+      inventory("zcode", [providerCapability("zcode", { status: "disabled" })]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "review",
+      reason: "configuration_drift",
+      message: "Installed across all agents with differing configuration.",
+    });
   });
 
   test("gives unavailable capabilities precedence over presence consensus", () => {

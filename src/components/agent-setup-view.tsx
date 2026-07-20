@@ -15,11 +15,14 @@ import Link from "next/link";
 import { AgentFilterForm } from "@/components/agent-filter-form";
 import {
   buildComparisonRows,
+  findComparisonDuplicates,
   type AgentCapability,
   type AgentInventory,
   type CapabilityKind,
   type CapabilityStatus,
+  type ComparisonDuplicate,
   type ComparisonRow,
+  type InventoryWarning,
 } from "@/lib/agent-inventory";
 import { providerBadges, providerLabels } from "@/lib/labels";
 import { shortenHomePath } from "@/lib/format";
@@ -145,7 +148,9 @@ export function parseAgentSetupFilters(
     kind: ["plugin", "skill", "mcp", "instruction"].includes(kind ?? "")
       ? (kind as AgentSetupKind)
       : undefined,
-    status: ["enabled", "installed", "unavailable"].includes(status ?? "")
+    status: ["enabled", "installed", "disabled", "unavailable"].includes(
+      status ?? "",
+    )
       ? (status as CapabilityStatus)
       : undefined,
     discrepanciesOnly: first(params.discrepancies) === "1" || undefined,
@@ -547,13 +552,11 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           defaultValue={filters.status ?? ""}
         >
           <option value="">All statuses</option>
-          {Object.entries(statusLabels)
-            .filter(([value]) => value !== "disabled")
-            .map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
+          {Object.entries(statusLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
       </label>
       {filters.view === "compare" && !filters.comparisonMode ? (
@@ -865,6 +868,34 @@ function ComparisonView({
     rows = rows.filter((row) => row.isDiscrepancy);
   }
 
+  const attentionInventories = filters.provider
+    ? inventories.filter((inventory) => inventory.provider === filters.provider)
+    : inventories;
+  const duplicates =
+    filters.comparisonMode === "attention"
+      ? findComparisonDuplicates(attentionInventories)
+      : [];
+  // Warnings mean the inventory itself may be incomplete (malformed config,
+  // stale artifacts) — the highest-severity condition the discovery layer can
+  // report, so the attention view leads with them. Shared-source warnings
+  // (e.g. the skills.sh lockfile) repeat on every provider; dedupe by content.
+  const attentionWarnings =
+    filters.comparisonMode === "attention"
+      ? [
+          ...new Map(
+            attentionInventories
+              .flatMap((inventory) => inventory.warnings)
+              .map(
+                (warning) =>
+                  [
+                    `${warning.sourcePath}:${warning.code}:${warning.message}`,
+                    warning,
+                  ] as const,
+              ),
+          ).values(),
+        ]
+      : [];
+
   const comparisonGroups = filters.comparisonMode
     ? (["fix", "review"] as const)
         .map((level) => ({
@@ -920,6 +951,28 @@ function ComparisonView({
         </div>
       </div>
 
+      {attentionWarnings.length > 0 ? (
+        <section className="card agent-provider-section">
+          <header className="agent-provider-heading">
+            <div>
+              <strong>Configuration warnings</strong>
+            </div>
+            <span>Discovery could not fully trust these sources</span>
+          </header>
+          <div className="agent-warning-list">
+            {attentionWarnings.map((warning: InventoryWarning) => (
+              <div
+                key={`${warning.sourcePath}:${warning.code}:${warning.message}`}
+                className="notice"
+              >
+                <AlertTriangle size={14} />
+                <span>{warning.message}</span>
+                <code>{warning.sourcePath}</code>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {rows.length === 0 ? (
         <div className="card empty-state agent-empty-state">
           <h3>
@@ -987,7 +1040,51 @@ function ComparisonView({
           </table>
         </div>
       )}
+      {duplicates.length > 0 ? (
+        <DuplicatesSection duplicates={duplicates} />
+      ) : null}
     </>
+  );
+}
+
+function DuplicatesSection({
+  duplicates,
+}: {
+  duplicates: ComparisonDuplicate[];
+}) {
+  return (
+    <section className="card agent-provider-section">
+      <header className="agent-provider-heading">
+        <div>
+          <strong>Duplicate installs</strong>
+        </div>
+        <span>Same capability installed more than once in a single agent</span>
+      </header>
+      <div className="agent-warning-list">
+        {duplicates.map((duplicate) => (
+          <div
+            key={`${duplicate.provider}:${duplicate.kind}:${duplicate.name}`}
+            className="notice"
+          >
+            <AlertTriangle size={14} />
+            <span>
+              <span className={`badge ${providerBadges[duplicate.provider]}`}>
+                {providerLabels[duplicate.provider]}
+              </span>{" "}
+              <strong>{duplicate.name}</strong> —{" "}
+              {duplicate.identicalContent
+                ? "Identical copies; removing all but one is safe."
+                : "Copies differ; one may shadow the other, so pick which should win."}
+            </span>
+            {duplicate.copies.map((copy) =>
+              copy.sourcePath ? (
+                <code key={copy.id}>{shortenHomePath(copy.sourcePath)}</code>
+              ) : null,
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

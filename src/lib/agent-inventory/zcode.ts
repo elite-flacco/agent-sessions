@@ -6,6 +6,7 @@ import {
   discoverPluginMcps,
   discoverSkillRoots,
   objectValue,
+  pluginStatusWithPresence,
   readInstruction,
   readJsonSource,
   safeAbsolutePath,
@@ -61,7 +62,15 @@ export async function discoverZcode({
     if (!plugin || typeof plugin.id !== "string") continue;
     knownIds.add(plugin.id);
     const path = safeAbsolutePath(plugin.installPath);
-    const pluginStatus = enabled[plugin.id] === true ? "enabled" : "disabled";
+    // Same rule as the cache walker: absence from enabledPlugins is an
+    // unknown state ("installed"), only an explicit `false` reads as disabled.
+    const configuredStatus =
+      enabled[plugin.id] === true
+        ? "enabled"
+        : enabled[plugin.id] === false
+          ? "disabled"
+          : "installed";
+    const pluginStatus = await pluginStatusWithPresence(configuredStatus, path);
     capabilities.push(
       capability("zcode", "plugin", plugin.id, {
         status: pluginStatus,

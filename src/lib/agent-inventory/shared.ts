@@ -57,6 +57,15 @@ function warning(
   };
 }
 
+export function staleVersionsWarning(versionRoot: string): InventoryWarning {
+  return {
+    sourcePath: versionRoot,
+    code: "stale",
+    message:
+      "Multiple cached plugin versions on disk; only the newest is used and older copies can be removed.",
+  };
+}
+
 function isMissing(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -101,6 +110,21 @@ export async function readJsonSource(
   }
 }
 
+/**
+ * Fingerprint content with line endings and trailing whitespace normalized
+ * away, so a CRLF checkout or a stray trailing newline never reads as
+ * cross-provider drift. Raw content is preserved separately for display.
+ */
+export function contentFingerprint(content: string): string {
+  const normalized = content
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n")
+    .trimEnd();
+  return createHash("sha256").update(normalized).digest("hex");
+}
+
 export async function readInstruction(
   sourcePath: string,
   warnings: InventoryWarning[],
@@ -111,7 +135,7 @@ export async function readInstruction(
     filename: basename(sourcePath),
     sourcePath,
     content,
-    contentFingerprint: createHash("sha256").update(content).digest("hex"),
+    contentFingerprint: contentFingerprint(content),
   };
 }
 
@@ -128,6 +152,30 @@ export async function readSkillLock(
         typeof entry[1] === "object" && entry[1] !== null,
     ),
   );
+}
+
+/**
+ * Compare plugin cache version directory names numerically segment by segment
+ * ("10.0.0" > "9.0.0"), falling back to string comparison for non-numeric
+ * segments (content hashes, prerelease tags). A plain lexicographic sort would
+ * pick "9.0.0" over "10.0.0" and surface a stale copy as the active one.
+ */
+export function compareVersionDirs(left: string, right: string): number {
+  const leftParts = left.split(".");
+  const rightParts = right.split(".");
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] ?? "";
+    const rightPart = rightParts[index] ?? "";
+    const leftNumber = /^\d+$/.test(leftPart) ? Number(leftPart) : undefined;
+    const rightNumber = /^\d+$/.test(rightPart) ? Number(rightPart) : undefined;
+    const compared =
+      leftNumber !== undefined && rightNumber !== undefined
+        ? leftNumber - rightNumber
+        : leftPart.localeCompare(rightPart);
+    if (compared !== 0) return compared;
+  }
+  return 0;
 }
 
 function pathInside(path: string, root: string): boolean {
@@ -173,11 +221,13 @@ async function capabilityFromSkillPath(
   try {
     canonicalSourcePath = await realpath(sourcePath);
   } catch {
+    // A skill path that cannot resolve (broken symlink, deleted target) is
+    // unavailable no matter what status its contributing plugin carries.
     return {
       id: `${context.provider}:skill:${canonicalCapabilityName(fallback)}:${sourcePath}`,
       name: fallback,
       kind: "skill",
-      status: context.status ?? "unavailable",
+      status: "unavailable",
       packaging: context.packaging ?? "standalone",
       origin: context.origin ?? "unknown",
       sourcePlugin: context.sourcePlugin,
@@ -202,6 +252,7 @@ async function capabilityFromSkillPath(
     id: `${context.provider}:skill:${canonicalCapabilityName(name)}:${canonicalSourcePath}`,
     name,
     kind: "skill",
+    contentFingerprint: contentFingerprint(content),
     status: context.status ?? "installed",
     packaging:
       provenance.origin === "built_in"
@@ -313,7 +364,11 @@ export async function discoverPluginMcps(
     const configured = objectValue(manifest.mcpServers);
     const servers =
       configured ?? (basename(manifestPath) === ".mcp.json" ? manifest : {});
-    for (const name of Object.keys(servers)) names.add(name);
+    // In the bare-map fallback, only object-valued entries can be server
+    // definitions; scalar keys (version, notes) must not become phantom MCPs.
+    for (const [name, value] of Object.entries(servers)) {
+      if (objectValue(value)) names.add(name);
+    }
   }
   return [...names].map((name) =>
     capability(provider, "mcp", name, {
@@ -375,8 +430,11 @@ export async function discoverCachePlugins(
       const versionDirs = versions
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
-        .sort();
+        .sort(compareVersionDirs);
       if (versionDirs.length === 0) continue;
+      if (versionDirs.length > 1) {
+        warnings.push(staleVersionsWarning(versionRoot));
+      }
       const path = join(versionRoot, versionDirs[versionDirs.length - 1]!);
       // Cache-only plugins are physically present in the marketplace cache
       // but not recorded in installed_plugins.json. Their enabled state comes
@@ -453,4 +511,20 @@ export async function isPathPresent(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Downgrade a plugin's configured status to "unavailable" when its install
+ * path is missing on disk (or was never resolvable at all): the config still
+ * references the plugin, but there is nothing to run. Deliberately disabled
+ * plugins are left as "disabled" — missing files for a plugin the user turned
+ * off are not a problem worth flagging.
+ */
+export async function pluginStatusWithPresence(
+  status: CapabilityStatus,
+  installPath: string | undefined,
+): Promise<CapabilityStatus> {
+  if (status === "disabled") return status;
+  if (!installPath || !(await isPathPresent(installPath))) return "unavailable";
+  return status;
 }

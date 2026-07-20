@@ -3,15 +3,22 @@ import { readdir } from "node:fs/promises";
 import { dedupeCapabilities } from "./normalize";
 import {
   capability,
+  compareVersionDirs,
   discoverPluginMcps,
   discoverSkillRoots,
+  pluginStatusWithPresence,
   readInstruction,
   readTextSource,
   safeAbsolutePath,
+  staleVersionsWarning,
   type SkillDiscoveryContext,
   type SkillLock,
 } from "./shared";
-import type { AgentCapability, AgentInventory } from "./types";
+import type {
+  AgentCapability,
+  AgentInventory,
+  InventoryWarning,
+} from "./types";
 
 interface CodexOptions {
   homeDir: string;
@@ -42,7 +49,7 @@ function tableKey(name: string, prefix: string): string | undefined {
 }
 
 function enabled(body: string): boolean {
-  return !/^\s*enabled\s*=\s*false\s*$/m.test(body);
+  return !/^\s*enabled\s*=\s*false\s*(?:#.*)?$/m.test(body);
 }
 
 function sourcePath(body: string): string | undefined {
@@ -59,6 +66,7 @@ function sourcePath(body: string): string | undefined {
 async function resolveCachedPluginRoot(
   homeDir: string,
   pluginId: string,
+  warnings: InventoryWarning[],
 ): Promise<string | undefined> {
   const atIndex = pluginId.lastIndexOf("@");
   if (atIndex <= 0 || atIndex === pluginId.length - 1) return undefined;
@@ -81,8 +89,9 @@ async function resolveCachedPluginRoot(
   const versions = entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .sort();
+    .sort(compareVersionDirs);
   if (versions.length === 0) return undefined;
+  if (versions.length > 1) warnings.push(staleVersionsWarning(cacheRoot));
   return join(cacheRoot, versions[versions.length - 1]!);
 }
 
@@ -110,8 +119,12 @@ export async function discoverCodex({
         if (!name) continue;
         const explicitPath = sourcePath(table.body);
         const path =
-          explicitPath ?? (await resolveCachedPluginRoot(homeDir, name));
-        const pluginStatus = enabled(table.body) ? "enabled" : "disabled";
+          explicitPath ??
+          (await resolveCachedPluginRoot(homeDir, name, warnings));
+        const pluginStatus = await pluginStatusWithPresence(
+          enabled(table.body) ? "enabled" : "disabled",
+          path,
+        );
         // Split `name` ("<plugin>@<marketplace>") so the marketplace can be
         // surfaced as sourceRepository, matching how Claude/Zcode publish
         // plugin capabilities. Skills contributed by this plugin inherit the

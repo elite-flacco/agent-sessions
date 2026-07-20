@@ -5,6 +5,7 @@ import {
   discoverPluginMcps,
   discoverSkillRoots,
   objectValue,
+  pluginStatusWithPresence,
   readInstruction,
   readJsonSource,
   safeAbsolutePath,
@@ -57,7 +58,19 @@ export async function discoverClaude({
   };
 
   for (const plugin of installedPlugins(registry?.plugins)) {
-    const pluginStatus = enabled[plugin.id] === true ? "enabled" : "disabled";
+    // Absence from enabledPlugins means the enable state is unknown, not that
+    // the plugin is off — surface "installed" so it never silently disappears.
+    // Only an explicit `false` is a deliberate disable.
+    const configuredStatus =
+      enabled[plugin.id] === true
+        ? "enabled"
+        : enabled[plugin.id] === false
+          ? "disabled"
+          : "installed";
+    const pluginStatus = await pluginStatusWithPresence(
+      configuredStatus,
+      plugin.installPath,
+    );
     // Split `plugin.id` ("<plugin>@<marketplace>") so the marketplace can be
     // surfaced as sourceRepository, matching how Zcode publishes plugin
     // capabilities. Skills contributed by this plugin inherit the same

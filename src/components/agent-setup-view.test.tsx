@@ -113,6 +113,12 @@ describe("parseAgentSetupFilters", () => {
     ).toBeUndefined();
   });
 
+  test("accepts the disabled status filter", () => {
+    expect(parseAgentSetupFilters({ status: "disabled" }).status).toBe(
+      "disabled",
+    );
+  });
+
   test("parses the consensus attention comparison mode", () => {
     expect(
       parseAgentSetupFilters({
@@ -166,6 +172,106 @@ describe("AgentSetupView", () => {
     expect(html).not.toContain(
       "Present on 2 of 4 agents; review whether parity is intended.",
     );
+  });
+
+  test("Needs attention surfaces configuration warnings once, deduplicated", () => {
+    const shared = {
+      sourcePath: "/safe/.agents/.skill-lock.json",
+      code: "stale" as const,
+      message: 'Skill "ghost" is tracked in the lockfile but not installed.',
+    };
+    const warned: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [],
+        warnings: [shared],
+      },
+      {
+        provider: "claude",
+        scope: "global",
+        capabilities: [],
+        warnings: [shared],
+      },
+      {
+        provider: "zcode",
+        scope: "global",
+        capabilities: [],
+        warnings: [
+          {
+            sourcePath: "/safe/.zcode/config.json",
+            code: "malformed",
+            message: "Could not parse global provider configuration.",
+          },
+        ],
+      },
+      { provider: "pi", scope: "global", capabilities: [], warnings: [] },
+    ];
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={warned}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    expect(html).toContain("Configuration warnings");
+    expect(html).toContain("Could not parse global provider configuration.");
+    // The shared lockfile warning appears on multiple provider inventories but
+    // must render only once in the attention list.
+    expect(html.split("ghost").length - 1).toBe(1);
+  });
+
+  test("Needs attention surfaces per-provider duplicate installs with content framing", () => {
+    const duplicated: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [
+          skill("codex", "twice-installed", {
+            id: "codex:skill:twice-installed:one",
+            sourcePath: "/safe/one",
+            canonicalSourcePath: "/safe/one",
+            contentFingerprint: "same",
+          }),
+          skill("codex", "twice-installed", {
+            id: "codex:skill:twice-installed:two",
+            sourcePath: "/safe/two",
+            canonicalSourcePath: "/safe/two",
+            contentFingerprint: "same",
+          }),
+          skill("codex", "shadowed", {
+            id: "codex:skill:shadowed:one",
+            sourcePath: "/safe/shadow-one",
+            canonicalSourcePath: "/safe/shadow-one",
+            contentFingerprint: "aaa",
+          }),
+          skill("codex", "shadowed", {
+            id: "codex:skill:shadowed:two",
+            sourcePath: "/safe/shadow-two",
+            canonicalSourcePath: "/safe/shadow-two",
+            contentFingerprint: "bbb",
+          }),
+        ],
+        warnings: [],
+      },
+      { provider: "claude", scope: "global", capabilities: [], warnings: [] },
+      { provider: "zcode", scope: "global", capabilities: [], warnings: [] },
+      { provider: "pi", scope: "global", capabilities: [], warnings: [] },
+    ];
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={duplicated}
+        filters={{ view: "compare", comparisonMode: "attention" }}
+      />,
+    );
+
+    expect(html).toContain("Duplicate installs");
+    expect(html).toContain("twice-installed");
+    expect(html).toContain("Identical copies");
+    expect(html).toContain("shadowed");
+    expect(html).toContain("Copies differ");
+    expect(html).toContain("/safe/one");
+    expect(html).toContain("/safe/two");
   });
 
   test("uses the correct plural for multiple fixes", () => {
