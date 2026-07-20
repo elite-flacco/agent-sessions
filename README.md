@@ -93,8 +93,10 @@ plugins, built-in skills, and unknown sources are labeled separately. Broken
 skill links and plugins whose install directories are gone remain visible as
 unavailable so the comparison can expose drift. Plugins missing from a
 provider's enabled-plugins map read as **Installed** (state unknown) rather
-than disabled; only an explicit disable reads as **Disabled**, and disabled
-capabilities stay visible with their own status filter.
+than disabled; only an explicit disable reads as **Disabled**. Disabled
+capabilities appear only in the Compare view (where they distinguish a
+deliberate disable from a missing install); the Inventory list and summary
+counts show what is in effect.
 
 The page allowlists display fields: capability name and type, enabled or
 installed status, packaging, provenance, source repository, and safe local

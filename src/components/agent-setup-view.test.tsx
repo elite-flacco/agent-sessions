@@ -681,6 +681,78 @@ describe("AgentSetupView", () => {
     requestSubmit.mockRestore();
   });
 
+  test("inventory mode hides disabled capabilities and excludes them from counts", () => {
+    const withDisabled: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [
+          skill("codex", "active-skill"),
+          skill("codex", "dormant-skill", { status: "disabled" }),
+        ],
+        warnings: [],
+      },
+      { provider: "claude", scope: "global", capabilities: [], warnings: [] },
+      { provider: "zcode", scope: "global", capabilities: [], warnings: [] },
+      { provider: "pi", scope: "global", capabilities: [], warnings: [] },
+    ];
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={withDisabled}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).toContain("active-skill");
+    expect(html).not.toContain("dormant-skill");
+    expect(html).toContain("1 capabilities");
+  });
+
+  test("offers the Disabled status filter only in compare mode", () => {
+    const inventoryHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory" }}
+      />,
+    );
+    const compareHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    expect(inventoryHtml).not.toContain('<option value="disabled">');
+    expect(compareHtml).toContain('<option value="disabled">');
+  });
+
+  test("compare mode still renders disabled cells", () => {
+    const withDisabled: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [skill("codex", "shared-skill", { status: "disabled" })],
+        warnings: [],
+      },
+      {
+        provider: "claude",
+        scope: "global",
+        capabilities: [skill("claude", "shared-skill", { status: "enabled" })],
+        warnings: [],
+      },
+      { provider: "zcode", scope: "global", capabilities: [], warnings: [] },
+      { provider: "pi", scope: "global", capabilities: [], warnings: [] },
+    ];
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={withDisabled}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    expect(html).toContain("Disabled</summary>");
+  });
+
   test("does not render a redundant filter submit button", () => {
     const html = renderToStaticMarkup(
       <AgentSetupView
@@ -1094,11 +1166,13 @@ describe("AgentSetupView", () => {
           sourcePlugin: "superpowers@claude-plugins-official",
           status: "enabled",
         }),
+        // "installed" (unknown enable state) is the non-enabled status that
+        // still renders in the inventory; disabled members are hidden there.
         skill("codex", "gamma", {
           origin: "marketplace",
           packaging: "plugin",
           sourcePlugin: "superpowers@claude-plugins-official",
-          status: "disabled",
+          status: "installed",
         }),
       ],
       warnings: [],

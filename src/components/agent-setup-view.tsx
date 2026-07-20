@@ -180,6 +180,10 @@ function matchesCapability(
   capability: AgentCapability,
   filters: AgentSetupFilters,
 ): boolean {
+  // Disabled capabilities are retained in the discovery data so the Compare
+  // view can tell deliberate disables from missing installs, but the
+  // Inventory list shows only what is in effect.
+  if (capability.status === "disabled") return false;
   if (filters.kind && filters.kind !== capability.kind) return false;
   if (filters.status && filters.status !== capability.status) return false;
   if (!filters.q) return true;
@@ -452,10 +456,15 @@ function ProviderSummary({
   active: boolean;
   href: string;
 }) {
+  // Summary counts describe what is in effect; deliberately disabled
+  // capabilities only appear in the Compare view.
+  const activeCapabilities = inventory.capabilities.filter(
+    (capability) => capability.status !== "disabled",
+  );
   const counts = Object.fromEntries(
     (["plugin", "skill", "mcp"] as const).map((kind) => [
       kind,
-      inventory.capabilities.filter((capability) => capability.kind === kind)
+      activeCapabilities.filter((capability) => capability.kind === kind)
         .length,
     ]),
   );
@@ -479,7 +488,7 @@ function ProviderSummary({
           </span>
         ) : null}
       </div>
-      <strong>{inventory.capabilities.length} capabilities</strong>
+      <strong>{activeCapabilities.length} capabilities</strong>
       <span>
         {countLabel(counts.plugin ?? 0, "plugin")} ·{" "}
         {countLabel(counts.skill ?? 0, "skill")} ·{" "}
@@ -552,11 +561,15 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           defaultValue={filters.status ?? ""}
         >
           <option value="">All statuses</option>
-          {Object.entries(statusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
+          {Object.entries(statusLabels)
+            .filter(
+              ([value]) => value !== "disabled" || filters.view === "compare",
+            )
+            .map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
         </select>
       </label>
       {filters.view === "compare" && !filters.comparisonMode ? (
