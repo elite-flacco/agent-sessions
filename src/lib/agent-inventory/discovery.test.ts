@@ -762,6 +762,64 @@ enabled = true
     expect(pluginCaps?.[0]?.sourcePath).toBe(join(home, "alt-install"));
   });
 
+  test("applies Codex per-skill disables from skills.config entries", async () => {
+    const home = await createHome();
+    const pluginRoot = join(home, "plugins", "vercel");
+    await skill(pluginRoot, "skills/ai-sdk", "ai-sdk");
+    await skill(pluginRoot, "skills/chat-sdk", "chat-sdk");
+    await skill(
+      join(home, ".codex", "skills"),
+      "standalone-off",
+      "standalone-off",
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."vercel@openai-curated"]
+enabled = true
+source = "${pluginRoot}"
+
+[[skills.config]]
+name = "vercel:chat-sdk"
+enabled = false
+
+[[skills.config]]
+name = "standalone-off"
+enabled = false
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    // Codex records per-skill disables as [[skills.config]] entries named
+    // "<plugin-short-name>:<skill>" (or bare "<skill>" for standalone skills).
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "ai-sdk", status: "enabled" }),
+        expect.objectContaining({ name: "chat-sdk", status: "disabled" }),
+        expect.objectContaining({
+          name: "standalone-off",
+          status: "disabled",
+        }),
+      ]),
+    );
+    // The [[skills.config]] block must not leak into the preceding plugin
+    // table's body and disable the plugin itself.
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "vercel@openai-curated",
+          kind: "plugin",
+          status: "enabled",
+        }),
+      ]),
+    );
+  });
+
   test("resolves the numerically highest cached plugin version, not the lexicographic one", async () => {
     const home = await createHome();
     const cacheBase = join(

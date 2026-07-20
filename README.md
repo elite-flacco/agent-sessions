@@ -93,7 +93,10 @@ plugins, built-in skills, and unknown sources are labeled separately. Broken
 skill links and plugins whose install directories are gone remain visible as
 unavailable so the comparison can expose drift. Plugins missing from a
 provider's enabled-plugins map read as **Installed** (state unknown) rather
-than disabled; only an explicit disable reads as **Disabled**. Disabled
+than disabled; only an explicit disable reads as **Disabled**. Codex per-skill
+disables (`[[skills.config]]` entries in `config.toml`) are applied on top of
+the plugin's state, so individually disabled plugin skills read as Disabled
+too. Disabled
 capabilities appear only in the Compare view (where they distinguish a
 deliberate disable from a missing install); the Inventory list and summary
 counts show what is in effect.

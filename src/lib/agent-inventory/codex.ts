@@ -32,7 +32,10 @@ interface TomlTable {
 }
 
 function tables(content: string): TomlTable[] {
-  const matches = [...content.matchAll(/^\s*\[([^\]]+)]\s*$/gm)];
+  // Matches both `[table]` and `[[array-of-tables]]` headers. Array tables
+  // (e.g. `[[skills.config]]`) must terminate the preceding table's body —
+  // otherwise their `enabled = false` lines would leak into it.
+  const matches = [...content.matchAll(/^\s*\[\[?([^\][]+)]]?\s*$/gm)];
   return matches.map((match, index) => ({
     name: match[1] ?? "",
     body: content.slice(
@@ -55,6 +58,37 @@ function enabled(body: string): boolean {
 function sourcePath(body: string): string | undefined {
   const source = body.match(/^\s*source\s*=\s*"([^"]+)"\s*$/m)?.[1];
   return safeAbsolutePath(source);
+}
+
+function skillConfigName(body: string): string | undefined {
+  return body.match(/^\s*name\s*=\s*"([^"]+)"\s*(?:#.*)?$/m)?.[1];
+}
+
+/**
+ * Codex records per-skill enable state in `[[skills.config]]` entries whose
+ * `name` is `<plugin-short-name>:<skill>` for plugin-contributed skills or a
+ * bare `<skill>` for standalone ones. Apply explicit `enabled = false`
+ * overrides so individually disabled skills stop inheriting their plugin's
+ * enabled status. Broken (unavailable) skills keep their status.
+ */
+function applySkillOverrides(
+  capabilities: AgentCapability[],
+  overrides: Map<string, boolean>,
+): AgentCapability[] {
+  if (overrides.size === 0) return capabilities;
+  return capabilities.map((capability) => {
+    if (capability.kind !== "skill") return capability;
+    if (capability.status !== "enabled" && capability.status !== "installed") {
+      return capability;
+    }
+    const shortPlugin = capability.sourcePlugin?.split("@")[0];
+    const key = (
+      shortPlugin ? `${shortPlugin}:${capability.name}` : capability.name
+    ).toLocaleLowerCase();
+    return overrides.get(key) === false
+      ? { ...capability, status: "disabled" }
+      : capability;
+  });
 }
 
 /**
@@ -111,9 +145,17 @@ export async function discoverCodex({
     personalSkillRoots,
   };
 
+  const skillOverrides = new Map<string, boolean>();
   if (config) {
     const seenMcps = new Set<string>();
     for (const table of tables(config)) {
+      if (table.name === "skills.config") {
+        const name = skillConfigName(table.body);
+        if (name) {
+          skillOverrides.set(name.toLocaleLowerCase(), enabled(table.body));
+        }
+        continue;
+      }
       if (table.name.startsWith("plugins.")) {
         const name = tableKey(table.name, "plugins.");
         if (!name) continue;
@@ -187,7 +229,9 @@ export async function discoverCodex({
   return {
     provider: "codex",
     scope: "global",
-    capabilities: dedupeCapabilities(capabilities),
+    capabilities: dedupeCapabilities(
+      applySkillOverrides(capabilities, skillOverrides),
+    ),
     instructionFile: await readInstruction(
       join(homeDir, ".codex", "AGENTS.md"),
       warnings,
