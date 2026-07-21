@@ -57,15 +57,18 @@ export const zcodeAdapter: ProviderAdapter = {
       },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
-          if (row.status === "cancelled") return "interrupted";
-          if (row.status === "failed") return "needs_attention";
+          if (row.status === "cancelled") return { status: "interrupted" };
+          // Rollout rows carry no error text, so the reason is the generic
+          // execution failure; the DB reconcile path derives richer reasons.
+          if (row.status === "failed")
+            return { status: "failed", reason: "execution_error" };
           if (
             row.status === "completed" ||
             Boolean(row.completedAt) ||
             row.type === "result" ||
             row.type === "turn_complete"
           )
-            return "completed";
+            return { status: "completed" };
         }
         return undefined;
       },

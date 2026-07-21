@@ -28,6 +28,7 @@ function session(
     cwd: "/workspace/agent-sessions",
     branch: "main",
     status: "completed",
+    statusReason: null,
     startedAt: "2026-07-15T12:00:00.000Z",
     endedAt: "2026-07-15T12:05:00.000Z",
     updatedAt: "2026-07-15T12:05:00.000Z",

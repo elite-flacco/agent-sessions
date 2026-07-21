@@ -584,7 +584,8 @@ describe("provider adapters", () => {
       },
     ]);
     expect(cancelled.sessions[0]?.status).toBe("interrupted");
-    expect(failed.sessions[0]?.status).toBe("needs_attention");
+    expect(failed.sessions[0]?.status).toBe("failed");
+    expect(failed.sessions[0]?.statusReason).toBe("execution_error");
   });
 
   it("resolves the Zcode workspace from Zcode's session DB when the rollout omits cwd", async () => {

@@ -199,6 +199,7 @@ describe("OverviewView", () => {
         cwd: "/workspace/agent-sessions",
         branch: "main",
         status: "running",
+        statusReason: null,
         startedAt: "2026-07-15T12:00:00.000Z",
         endedAt: null,
         updatedAt: "2026-07-15T12:05:00.000Z",

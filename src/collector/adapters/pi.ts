@@ -31,12 +31,12 @@ export const piAdapter: ProviderAdapter = {
       },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
-          if (row.type === "session_end") return "completed";
+          if (row.type === "session_end") return { status: "completed" };
           if (row.type !== "message") continue;
           const message = record(row.message);
           if (message?.role === "user") return undefined;
           if (message?.role === "assistant" && message.stopReason === "stop")
-            return "completed";
+            return { status: "completed" };
         }
         return undefined;
       },

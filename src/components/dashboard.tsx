@@ -20,7 +20,12 @@ import {
   relativeTime,
   runtime,
 } from "@/lib/format";
-import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
+import {
+  providerBadges,
+  providerLabels,
+  statusDisplay,
+  statusLabels,
+} from "@/lib/labels";
 import type {
   ProjectOption,
   ProjectSummary,
@@ -401,7 +406,7 @@ function SessionRow({
         </div>
         <div className={`status-label status-${session.status}`}>
           <i />
-          {statusLabels[session.status]}
+          {statusDisplay(session.status, session.statusReason)}
         </div>
         <span
           className="mono session-secondary"

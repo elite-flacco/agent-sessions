@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { SessionStatus, StatusReason, TerminalStatus } from "@/lib/types";
 
 export const homePath = (...parts: string[]) =>
   path.join(os.homedir(), ...parts);
@@ -78,10 +79,13 @@ export function repositoryFromCwd(cwd?: string): string | undefined {
 
 export function staleStatus(
   updatedAt: string,
-  terminalStatus?: "completed" | "interrupted" | "needs_attention",
-): "completed" | "running" | "interrupted" | "incomplete" | "needs_attention" {
-  if (terminalStatus) return terminalStatus;
-  return Date.now() - new Date(updatedAt).getTime() < 10 * 60 * 1000
-    ? "running"
-    : "incomplete";
+  terminal?: TerminalStatus,
+): { status: SessionStatus; reason?: StatusReason } {
+  if (terminal) return { status: terminal.status, reason: terminal.reason };
+  return {
+    status:
+      Date.now() - new Date(updatedAt).getTime() < 10 * 60 * 1000
+        ? "running"
+        : "incomplete",
+  };
 }

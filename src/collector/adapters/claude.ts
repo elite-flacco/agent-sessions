@@ -64,13 +64,13 @@ export const claudeAdapter: ProviderAdapter = {
       },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
-          if (row.type === "result") return "completed";
+          if (row.type === "result") return { status: "completed" };
           if (row.type === "user") return undefined;
           if (
             row.type === "assistant" &&
             record(row.message)?.stop_reason === "end_turn"
           )
-            return "completed";
+            return { status: "completed" };
         }
         return undefined;
       },

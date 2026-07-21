@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   cwd TEXT,
   branch TEXT,
   status TEXT NOT NULL,
+  status_reason TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   updated_at TEXT NOT NULL,

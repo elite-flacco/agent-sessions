@@ -77,8 +77,8 @@ export const codexAdapter: ProviderAdapter = {
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
           const type = record(row.payload)?.type;
-          if (type === "task_complete") return "completed";
-          if (type === "turn_aborted") return "interrupted";
+          if (type === "task_complete") return { status: "completed" };
+          if (type === "turn_aborted") return { status: "interrupted" };
           if (type === "task_started") return undefined;
         }
         return undefined;

@@ -337,6 +337,137 @@ describe("collector sync", () => {
     }
   });
 
+  it("classifies terminal Zcode errors into failed with a reason", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-errors.db");
+    const Database = (await import("better-sqlite3")).default;
+    const zcodeDb = new Database(zcodeDbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+    `);
+    const startedAt = Date.now() - 60 * 60_000;
+    const updatedAt = Date.now() - 30 * 60_000;
+    const cases: Array<{
+      id: string;
+      message: string;
+      status: string;
+      reason: string | null;
+    }> = [
+      {
+        id: "z-usage",
+        message: "[1308][Usage limit reached for 5 hour.]",
+        status: "failed",
+        reason: "usage_limit",
+      },
+      {
+        id: "z-balance",
+        message: "[1113][Insufficient balance or no resource package.]",
+        status: "failed",
+        reason: "insufficient_balance",
+      },
+      {
+        id: "z-network",
+        message: "Network connection failed for the provider request.",
+        status: "failed",
+        reason: "network_error",
+      },
+      {
+        id: "z-model",
+        message:
+          "Model returned no text, no tool calls, and no usage before completing the turn.",
+        status: "failed",
+        reason: "model_error",
+      },
+      {
+        id: "z-exec",
+        message: "Turn execution failed",
+        status: "failed",
+        reason: "execution_error",
+      },
+      {
+        id: "z-cancel",
+        message: "Request cancelled by user",
+        status: "interrupted",
+        reason: null,
+      },
+    ];
+    for (const item of cases) {
+      zcodeDb
+        .prepare(
+          `INSERT INTO session
+           (id, directory, title, parent_id, task_type, title_source, time_created, time_updated)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          item.id,
+          "/work/zcode-project",
+          item.id,
+          null,
+          "interactive",
+          "generated",
+          startedAt,
+          updatedAt,
+        );
+      zcodeDb
+        .prepare(
+          "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+        )
+        .run(
+          `${item.id}-assistant`,
+          item.id,
+          updatedAt,
+          JSON.stringify({
+            role: "assistant",
+            error: {
+              name: "AiSdkModelAdapterError",
+              data: { message: item.message },
+            },
+          }),
+        );
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+           (external_id, provider, title, status, started_at, updated_at)
+           VALUES (?, 'zcode', ?, 'completed', ?, ?)`,
+        )
+        .run(
+          item.id,
+          item.id,
+          new Date(startedAt).toISOString(),
+          new Date(updatedAt).toISOString(),
+        );
+    }
+    zcodeDb.close();
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      for (const item of cases) {
+        expect(
+          sqlite
+            .prepare(
+              "SELECT status, status_reason statusReason FROM sessions WHERE external_id = ?",
+            )
+            .get(item.id),
+        ).toEqual({ status: item.status, statusReason: item.reason });
+      }
+    } finally {
+      delete process.env.ZCODE_DB_PATH;
+      __resetZcodeDbCache();
+    }
+  });
+
   it("keeps an active Zcode session running by advancing updated_at from the Zcode DB", async () => {
     const zcodeDbPath = path.join(directory, "zcode-running.db");
     const Database = (await import("better-sqlite3")).default;

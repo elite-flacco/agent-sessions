@@ -19,7 +19,7 @@ import {
   relativeTime,
   runtime,
 } from "@/lib/format";
-import { providerLabels, statusLabels } from "@/lib/labels";
+import { providerLabels, statusDisplay } from "@/lib/labels";
 import type {
   OverviewData,
   OverviewPatterns,
@@ -109,7 +109,7 @@ export function OverviewView({
             </div>
             {running.length ? (
               running.map((session) => (
-                <SessionLine key={session.id} session={session} />
+                <SessionLine key={session.id} session={session} hideStatus />
               ))
             ) : (
               <p className="overview-empty">
@@ -173,7 +173,13 @@ export function OverviewView({
   );
 }
 
-function SessionLine({ session }: { session: SessionListItem }) {
+function SessionLine({
+  session,
+  hideStatus = false,
+}: {
+  session: SessionListItem;
+  hideStatus?: boolean;
+}) {
   return (
     <Link
       className="project-session-row session-line-row"
@@ -187,7 +193,11 @@ function SessionLine({ session }: { session: SessionListItem }) {
       <div>
         <strong>{session.title}</strong>
         <p>
-          {providerLabels[session.provider]} · {statusLabels[session.status]} ·{" "}
+          {providerLabels[session.provider]}
+          {hideStatus
+            ? ""
+            : ` · ${statusDisplay(session.status, session.statusReason)}`}{" "}
+          ·{" "}
           {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)} ·{" "}
           {session.repository ?? "Unknown workspace"}
         </p>

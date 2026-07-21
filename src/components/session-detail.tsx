@@ -11,7 +11,7 @@ import {
   costSourceLabels,
   providerBadges,
   providerLabels,
-  statusLabels,
+  statusDisplay,
 } from "@/lib/labels";
 import type {
   SessionDetail,
@@ -60,7 +60,7 @@ export function SessionDetailView({
             </span>
             <span className={`status-label status-${session.status}`}>
               <i />
-              {statusLabels[session.status]}
+              {statusDisplay(session.status, session.statusReason)}
             </span>
           </div>
         </div>
@@ -135,7 +135,7 @@ export function SessionDetailView({
                 </div>
                 <span className={`status-label status-${child.status}`}>
                   <i />
-                  {statusLabels[child.status]}
+                  {statusDisplay(child.status, child.statusReason)}
                 </span>
               </Link>
             ))}

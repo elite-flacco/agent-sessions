@@ -8,6 +8,7 @@ import {
   type AgentProvider,
   type CostSource,
   type SessionStatus,
+  type StatusReason,
 } from "./types";
 
 export interface SessionListItem {
@@ -24,6 +25,7 @@ export interface SessionListItem {
   cwd: string | null;
   branch: string | null;
   status: SessionStatus;
+  statusReason: StatusReason | null;
   startedAt: string;
   endedAt: string | null;
   updatedAt: string;
@@ -141,7 +143,7 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
     // "attention" is a pseudo-status matching every session that failed:
     // it must stay in sync with the overview failure count and lists.
     if (filters.status === "attention") {
-      clauses.push(`${status} IN ('interrupted', 'needs_attention')`);
+      clauses.push(`${status} IN ('interrupted', 'needs_attention', 'failed')`);
       params.push(staleCutoff());
     } else {
       clauses.push(`${status} = ?`);
@@ -167,7 +169,7 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-      title, summary, repository, cwd, branch, ${status} status,
+      title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY started_at DESC LIMIT 250`,
     )
@@ -222,7 +224,7 @@ export function getSession(sessionId: number): SessionDetail | null {
         `SELECT id, external_id externalId, source_path sourcePath, provider,
         parent_external_id parentExternalId, session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
         title, summary, repository, cwd, branch,
-        ${status} status, started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
+        ${status} status, status_reason statusReason, started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
         output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
         FROM sessions WHERE id = ?`,
       )
@@ -236,7 +238,7 @@ export function getSessionChildren(session: SessionDetail): SessionListItem[] {
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
        session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-       title, summary, repository, cwd, branch, ${status} status,
+       title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
        started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
        output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
        FROM sessions WHERE provider = ? AND parent_external_id = ? ORDER BY started_at`,
@@ -258,7 +260,7 @@ export function getSessionParent(
       .prepare(
         `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
          session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-         title, summary, repository, cwd, branch, ${status} status,
+         title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
          started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
          output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
          FROM sessions WHERE provider = ? AND external_id = ?`,
@@ -483,7 +485,7 @@ export function getProjectSessions(key: string): SessionListItem[] {
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-      title, summary, repository, cwd, branch, ${status} status,
+      title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions WHERE ${where}
     ORDER BY started_at DESC LIMIT 50`,
@@ -537,7 +539,7 @@ export function getOverview(): OverviewData {
       .prepare(
         `SELECT COUNT(*) sessions,
           COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs,
-          COALESCE(SUM(CASE WHEN ${status} IN ('interrupted', 'needs_attention') THEN 1 ELSE 0 END), 0) failures
+          COALESCE(SUM(CASE WHEN ${status} IN ('interrupted', 'needs_attention', 'failed') THEN 1 ELSE 0 END), 0) failures
         FROM sessions WHERE started_at >= ?`,
       )
       .get(staleCutoff(), since) as {
@@ -603,7 +605,7 @@ export function getRunningSessions(limit = 8): SessionListItem[] {
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-      title, summary, repository, cwd, branch, ${status} status,
+      title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
     WHERE status = 'running' AND updated_at >= ? ORDER BY updated_at DESC LIMIT ?`,
@@ -620,10 +622,10 @@ export function getAttentionSessions(limit = 8): SessionListItem[] {
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
-      title, summary, repository, cwd, branch, ${status} status,
+      title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions
-    WHERE ${status} IN ('interrupted', 'needs_attention') AND updated_at >= ?
+    WHERE ${status} IN ('interrupted', 'needs_attention', 'failed') AND updated_at >= ?
     ORDER BY updated_at DESC LIMIT ?`,
     )
     .all(

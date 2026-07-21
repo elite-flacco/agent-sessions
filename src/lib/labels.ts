@@ -1,4 +1,9 @@
-import type { AgentProvider, CostSource, SessionStatus } from "./types";
+import type {
+  AgentProvider,
+  CostSource,
+  SessionStatus,
+  StatusReason,
+} from "./types";
 
 export const providerLabels: Record<AgentProvider, string> = {
   codex: "Codex",
@@ -23,8 +28,30 @@ export const costSourceLabels: Record<CostSource, string> = {
 export const statusLabels: Record<SessionStatus, string> = {
   running: "Running",
   completed: "Completed",
-  needs_attention: "Needs attention",
+  needs_attention: "Awaiting input",
+  failed: "Failed",
   interrupted: "Interrupted",
   incomplete: "Incomplete",
   unknown: "Unknown",
 };
+
+export const statusReasonLabels: Record<StatusReason, string> = {
+  usage_limit: "Usage limit",
+  insufficient_balance: "Insufficient balance",
+  network_error: "Network error",
+  model_error: "Model error",
+  execution_error: "Execution failed",
+};
+
+/**
+ * The user-facing status text, appending the specific reason when present
+ * (e.g. "Failed · Usage limit"). Reasons attach only to `failed`.
+ */
+export function statusDisplay(
+  status: SessionStatus,
+  reason?: StatusReason | null,
+): string {
+  return reason
+    ? `${statusLabels[status]} · ${statusReasonLabels[reason]}`
+    : statusLabels[status];
+}

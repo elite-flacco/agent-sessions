@@ -6,6 +6,7 @@ import type {
   ModelUsage,
   NormalizedSession,
   ParseResult,
+  TerminalStatus,
 } from "@/lib/types";
 import {
   parseLines,
@@ -29,9 +30,7 @@ export interface JsonlStrategy {
     agentLabel?: string;
     agentDepth?: number;
   };
-  terminalStatus(
-    rows: Record<string, unknown>[],
-  ): "completed" | "interrupted" | "needs_attention" | undefined;
+  terminalStatus(rows: Record<string, unknown>[]): TerminalStatus | undefined;
   events(rows: Record<string, unknown>[]): ActivityEvent[];
   usage?(rows: Record<string, unknown>[]): ModelUsage[];
 }
@@ -178,6 +177,7 @@ export async function parseJsonl(
           0 || entry.reportedCostUsd !== undefined,
     );
     const terminalStatus = strategy.terminalStatus(rows);
+    const derived = staleStatus(updatedAt, terminalStatus);
     const hierarchy = strategy.hierarchy?.(rows) ?? {};
     const session: NormalizedSession = {
       externalId: strategy.identify(rows, filePath),
@@ -189,7 +189,8 @@ export async function parseJsonl(
       repository: repositoryFromCwd(cwd),
       cwd,
       branch: strategy.branch(rows),
-      status: staleStatus(updatedAt, terminalStatus),
+      status: derived.status,
+      statusReason: derived.reason,
       startedAt,
       endedAt: terminalStatus ? updatedAt : undefined,
       updatedAt,

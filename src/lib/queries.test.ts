@@ -314,6 +314,21 @@ describe("project and overview queries", () => {
         new Date(now.getTime() - 4 * 24 * 60 * 60_000).toISOString(),
         threeDaysAgo.toISOString(),
       );
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, status_reason, started_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "failed-usage",
+        "zcode",
+        "Failed on usage limit",
+        "failed",
+        "usage_limit",
+        new Date(now.getTime() - 3 * 24 * 60 * 60_000).toISOString(),
+        twoDaysAgo.toISOString(),
+      );
     try {
       expect(
         queries.getRunningSessions().map((session) => session.title),
@@ -324,19 +339,24 @@ describe("project and overview queries", () => {
       );
       expect(
         attention.every((session) =>
-          ["interrupted", "needs_attention"].includes(session.status),
+          ["interrupted", "needs_attention", "failed"].includes(session.status),
         ),
       ).toBe(true);
       expect(attention.map((session) => session.title)).toContain(
         "Waiting for approval",
       );
+      const failed = attention.find(
+        (session) => session.title === "Failed on usage limit",
+      );
+      expect(failed?.status).toBe("failed");
+      expect(failed?.statusReason).toBe("usage_limit");
       expect(attention.map((session) => session.title)).not.toContain(
         "Old attention",
       );
     } finally {
       sqlite
-        .prepare("DELETE FROM sessions WHERE external_id IN (?, ?)")
-        .run("waiting-approval", "old-attention");
+        .prepare("DELETE FROM sessions WHERE external_id IN (?, ?, ?)")
+        .run("waiting-approval", "old-attention", "failed-usage");
     }
   });
 

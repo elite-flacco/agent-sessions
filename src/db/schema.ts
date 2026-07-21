@@ -24,6 +24,7 @@ export const sessions = sqliteTable(
     cwd: text("cwd"),
     branch: text("branch"),
     status: text("status").notNull(),
+    statusReason: text("status_reason"),
     startedAt: text("started_at").notNull(),
     endedAt: text("ended_at"),
     updatedAt: text("updated_at").notNull(),

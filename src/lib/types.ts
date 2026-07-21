@@ -5,11 +5,27 @@ export const sessionStatuses = [
   "running",
   "completed",
   "needs_attention",
+  "failed",
   "interrupted",
   "incomplete",
   "unknown",
 ] as const;
 export type SessionStatus = (typeof sessionStatuses)[number];
+
+export const statusReasons = [
+  "usage_limit",
+  "insufficient_balance",
+  "network_error",
+  "model_error",
+  "execution_error",
+] as const;
+export type StatusReason = (typeof statusReasons)[number];
+
+/** A resolved terminal outcome derived from a source, before staleness. */
+export interface TerminalStatus {
+  status: "completed" | "interrupted" | "needs_attention" | "failed";
+  reason?: StatusReason;
+}
 
 export const UNKNOWN_PROJECT_KEY = "(unknown)";
 export const TASKS_PROJECT_KEY = "(tasks)";
@@ -49,6 +65,7 @@ export interface NormalizedSession {
   cwd?: string;
   branch?: string;
   status: SessionStatus;
+  statusReason?: StatusReason;
   startedAt: string;
   endedAt?: string;
   updatedAt: string;

@@ -6,6 +6,8 @@ import type {
   AgentProvider,
   NormalizedSession,
   ProviderAdapter,
+  SessionStatus,
+  StatusReason,
 } from "@/lib/types";
 import { getCodexThreadTitle } from "@/lib/codex-db";
 import { sqlite } from "@/db/client";
@@ -80,17 +82,18 @@ function persistSession(session: NormalizedSession): void {
       .prepare(
         `INSERT INTO sessions (
         external_id, source_path, provider, parent_external_id, session_kind, agent_label, agent_depth,
-        title, summary, repository, cwd, branch, status, started_at, ended_at,
+        title, summary, repository, cwd, branch, status, status_reason, started_at, ended_at,
         updated_at, files_changed, additions, deletions, input_tokens, output_tokens, cached_tokens, model, estimated_cost_usd
       ) VALUES (
         @externalId, @sourcePath, @provider, @parentExternalId, @sessionKind, @agentLabel, @agentDepth,
-        @title, @summary, @repository, @cwd, @branch, @status, @startedAt, @endedAt,
+        @title, @summary, @repository, @cwd, @branch, @status, @statusReason, @startedAt, @endedAt,
         @updatedAt, @filesChanged, @additions, @deletions, @inputTokens, @outputTokens, @cachedTokens, @model, @estimatedCostUsd
       ) ON CONFLICT(provider, external_id) DO UPDATE SET
         source_path=COALESCE(excluded.source_path, sessions.source_path), parent_external_id=excluded.parent_external_id,
         session_kind=excluded.session_kind, agent_label=excluded.agent_label, agent_depth=excluded.agent_depth,
         title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
         cwd=COALESCE(excluded.cwd, sessions.cwd), branch=COALESCE(excluded.branch, sessions.branch), status=excluded.status,
+        status_reason=excluded.status_reason,
         started_at=MIN(excluded.started_at, sessions.started_at), ended_at=COALESCE(excluded.ended_at, sessions.ended_at),
         updated_at=MAX(excluded.updated_at, sessions.updated_at), input_tokens=COALESCE(excluded.input_tokens, sessions.input_tokens),
         output_tokens=COALESCE(excluded.output_tokens, sessions.output_tokens), cached_tokens=COALESCE(excluded.cached_tokens, sessions.cached_tokens),
@@ -107,6 +110,7 @@ function persistSession(session: NormalizedSession): void {
         repository: session.repository ?? null,
         cwd: session.cwd ?? null,
         branch: session.branch ?? null,
+        statusReason: session.statusReason ?? null,
         endedAt: session.endedAt ?? null,
         filesChanged: session.filesChanged ?? null,
         additions: session.additions ?? null,
@@ -221,10 +225,30 @@ function zcodeTitle(
   return safeTitle(`Review ${labels.join(" & ")} skills`, fallback);
 }
 
+// Maps a terminal Zcode error to a failure reason. `needs_attention` is
+// reserved for an unresolved AskUserQuestion; a cancel is an abort, not a
+// failure. Every other error is a `failed` outcome with a specific reason.
+function classifyZcodeError(error: unknown): {
+  status: "interrupted" | "failed";
+  reason?: StatusReason;
+} {
+  const text = JSON.stringify(error);
+  if (/cancel/i.test(text)) return { status: "interrupted" };
+  if (/usage limit|rate limit/i.test(text))
+    return { status: "failed", reason: "usage_limit" };
+  if (/insufficient balance|no resource package|recharge/i.test(text))
+    return { status: "failed", reason: "insufficient_balance" };
+  if (/network connection failed/i.test(text))
+    return { status: "failed", reason: "network_error" };
+  if (/no text.*no tool calls|no usage before completing/i.test(text))
+    return { status: "failed", reason: "model_error" };
+  return { status: "failed", reason: "execution_error" };
+}
+
 function zcodeStoredStatus(
   messages: ZcodeStoredMessage[],
   updatedAt: string,
-): "completed" | "running" | "incomplete" | "interrupted" | "needs_attention" {
+): { status: SessionStatus; reason?: StatusReason } {
   for (const message of [...messages].reverse()) {
     for (const part of [...message.parts].reverse()) {
       const data = record(part.data);
@@ -234,23 +258,19 @@ function zcodeStoredStatus(
         data.tool === "AskUserQuestion" &&
         state?.status === "running"
       )
-        return "needs_attention";
+        return { status: "needs_attention" };
     }
   }
   for (const message of [...messages].reverse()) {
     const data = record(message.data);
     if (!data) continue;
-    // An explicit cancel is an abort marker, not a failure.
-    if (data.error)
-      return /cancel/i.test(JSON.stringify(data.error))
-        ? "interrupted"
-        : "needs_attention";
+    if (data.error) return classifyZcodeError(data.error);
     if (data.role === "assistant") {
       // An assistant message with no `time.completed` and no error is a turn
       // still in flight. Stop here so staleStatus can derive running/incomplete
       // from updated_at — never skip past it to an older completed turn.
       if (!record(data.time)?.completed) break;
-      return "completed";
+      return { status: "completed" };
     }
     if (data.role === "user") break;
   }
@@ -289,7 +309,7 @@ function reconcileZcodeMetadata(): void {
   const update = sqlite.prepare(
     `UPDATE sessions
      SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-         session_kind = ?, agent_depth = ?, status = ?, ended_at = ?, updated_at = ?
+         session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?
      WHERE id = ?`,
   );
   const write = sqlite.transaction(() => {
@@ -306,11 +326,16 @@ function reconcileZcodeMetadata(): void {
         messages.length && updatedAt
           ? zcodeStoredStatus(messages, updatedAt)
           : undefined;
-      const status =
+      const keepInterrupted =
         session.status === "interrupted" &&
-        (storedStatus === "running" || storedStatus === "incomplete")
-          ? session.status
-          : (storedStatus ?? session.status);
+        (storedStatus?.status === "running" ||
+          storedStatus?.status === "incomplete");
+      const status = keepInterrupted
+        ? session.status
+        : (storedStatus?.status ?? session.status);
+      const statusReason = keepInterrupted
+        ? null
+        : (storedStatus?.reason ?? null);
       // The Zcode DB is often fresher than the rollout JSONL (event-only
       // subagents, interactive turns). Advance updated_at so a genuinely
       // active session does not read as stale at query time.
@@ -331,7 +356,10 @@ function reconcileZcodeMetadata(): void {
         metadata.taskType === "subagent_child" ? "subagent" : "main",
         metadata.parentId ? 1 : 0,
         status,
-        status === "completed" || status === "needs_attention"
+        statusReason,
+        status === "completed" ||
+          status === "needs_attention" ||
+          status === "failed"
           ? (updatedAt ?? null)
           : null,
         freshestUpdatedAt,
@@ -354,7 +382,10 @@ function reconcileZcodeMetadata(): void {
     const startedAt = new Date(metadata.timeCreated).toISOString();
     const updatedAt = new Date(metadata.timeUpdated).toISOString();
     const messages = readZcodeSessionMessages(metadata.id) ?? [];
-    const status = zcodeStoredStatus(messages, updatedAt);
+    const { status, reason: statusReason } = zcodeStoredStatus(
+      messages,
+      updatedAt,
+    );
     const title = zcodeTitle(
       safeTitle(metadata.title, "Zcode coding session"),
       metadata.taskType,
@@ -371,9 +402,12 @@ function reconcileZcodeMetadata(): void {
       repository: repositoryFromCwd(metadata.directory),
       cwd: metadata.directory,
       status,
+      statusReason,
       startedAt,
       endedAt:
-        status === "completed" || status === "needs_attention"
+        status === "completed" ||
+        status === "needs_attention" ||
+        status === "failed"
           ? updatedAt
           : undefined,
       updatedAt,
