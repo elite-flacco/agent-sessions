@@ -51,6 +51,7 @@
   --success: #70c98e;
   --warning: #d4a85c;
   --danger: #e67483;
+  --info: #6fa8dc;
   --badge-1: #17382d;
   --badge-1-foreground: #8ed7b5;
   --badge-2: #172d43;
@@ -673,7 +674,10 @@
   .status-running {
     color: var(--success);
   }
-  .status-needs_attention,
+  .status-needs_attention {
+    color: var(--info);
+  }
+  .status-failed,
   .status-interrupted {
     color: var(--warning);
   }
@@ -2296,12 +2300,6 @@
     .agent-filter-row .search-control {
       grid-column: 1 / -1;
     }
-    .agent-capability-row {
-      grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(6rem, 0.7fr));
-    }
-    .agent-capability-group > summary {
-      grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(6rem, 0.7fr));
-    }
     .inspector {
       order: 2;
     }
@@ -2421,9 +2419,6 @@
     }
     .agent-filter-row .search-control {
       grid-column: auto;
-    }
-    .agent-capability-row {
-      grid-template-columns: minmax(0, 1fr) auto;
     }
     .agent-capability-group > summary {
       grid-template-columns: minmax(0, 1fr) auto;
