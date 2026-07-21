@@ -64,6 +64,7 @@ describe("Dashboard session rows", () => {
       <Dashboard
         sessions={[]}
         projects={[]}
+        projectOptions={[]}
         summary={{
           sessionsToday: 0,
           activeNow: 0,
@@ -100,6 +101,7 @@ describe("Dashboard session rows", () => {
           session(2, "Parent session", [child]),
         ]}
         projects={[]}
+        projectOptions={[]}
         summary={{
           sessionsToday: 2,
           activeNow: 0,
@@ -145,6 +147,7 @@ describe("Dashboard session rows", () => {
           ]),
         ]}
         projects={[]}
+        projectOptions={[]}
         summary={{
           sessionsToday: 1,
           activeNow: 0,

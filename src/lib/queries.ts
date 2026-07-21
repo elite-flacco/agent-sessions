@@ -58,6 +58,7 @@ export interface SessionFilters {
   status?: string;
   range?: string;
   sort?: string;
+  project?: string;
 }
 
 const STALE_RUNNING_MS = 10 * 60 * 1000;
@@ -147,6 +148,15 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
       params.push(staleCutoff(), filters.status);
     }
   }
+  if (filters.project && filters.project !== "all") {
+    // Sessions with no repository share the "(unknown)" project key.
+    if (filters.project === UNKNOWN_PROJECT_KEY) {
+      clauses.push("repository IS NULL");
+    } else {
+      clauses.push("repository = ?");
+      params.push(filters.project);
+    }
+  }
   const date = cutoff(filters.range);
   if (date) {
     clauses.push("started_at >= ?");
@@ -171,6 +181,29 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
   else if (filters.sort === "cost")
     roots.sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1));
   return roots;
+}
+
+export interface ProjectOption {
+  key: string;
+  label: string;
+  sessionCount: number;
+}
+
+/**
+ * Git-backed repositories for the "Filter by project" control. Reuses the same
+ * project/task categorization as the Projects rollup so the dropdown lists only
+ * real repositories and stays consistent with that view. Kept independent of
+ * the active filters so selecting one project never narrows the list to that
+ * single option, and ordered by most recent activity.
+ */
+export function getProjectOptions(): ProjectOption[] {
+  return getProjects()
+    .filter((project) => project.category === "project" && project.repository)
+    .map((project) => ({
+      key: project.key,
+      label: project.repository as string,
+      sessionCount: project.sessionCount,
+    }));
 }
 
 export function getSessionEvents(sessionId: number): SessionEventRow[] {

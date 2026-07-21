@@ -22,6 +22,7 @@ import {
 } from "@/lib/format";
 import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type {
+  ProjectOption,
   ProjectSummary,
   SessionFilters,
   SessionTreeItem,
@@ -33,6 +34,7 @@ export type WorkspaceView = "sessions" | "projects";
 interface DashboardProps {
   sessions: SessionTreeItem[];
   projects: ProjectSummary[];
+  projectOptions: ProjectOption[];
   summary: {
     sessionsToday: number;
     activeNow: number;
@@ -55,6 +57,7 @@ function sessionCount(sessions: SessionTreeItem[]): number {
 export function Dashboard({
   sessions,
   projects,
+  projectOptions,
   summary,
   syncState,
   costToday,
@@ -203,6 +206,18 @@ export function Dashboard({
           ]}
         />
         <FilterSelect
+          label="Filter by project"
+          value={filters.project ?? "all"}
+          onChange={(value) => updateParam("project", value)}
+          options={[
+            { value: "all", label: "All projects" },
+            ...projectOptions.map((option) => ({
+              value: option.key,
+              label: `${option.label} (${option.sessionCount})`,
+            })),
+          ]}
+        />
+        <FilterSelect
           label="Filter by status"
           value={filters.status ?? "all"}
           onChange={(value) => updateParam("status", value)}
@@ -323,7 +338,9 @@ function SessionsTable({
         ))
       ) : (
         <EmptyState
-          hasFilters={Boolean(filters.q || filters.provider || filters.status)}
+          hasFilters={Boolean(
+            filters.q || filters.provider || filters.status || filters.project,
+          )}
           onSync={onSync}
         />
       )}

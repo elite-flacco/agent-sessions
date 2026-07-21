@@ -184,6 +184,41 @@ describe("session queries", () => {
     });
   });
 
+  it("filters sessions by project repository", () => {
+    expect(
+      queries.getSessions({ project: "relay", range: "all" }).map((s) => s.id),
+    ).toHaveLength(1);
+    expect(
+      queries.getSessions({ project: "ai-compass", range: "all" })[0].provider,
+    ).toBe("pi");
+    expect(queries.getSessions({ project: "all", range: "all" })).toHaveLength(
+      4,
+    );
+  });
+
+  it("groups sessions without a repository under the unknown project key", () => {
+    const unknown = queries.getSessions({
+      project: "(unknown)",
+      range: "all",
+    });
+    expect(unknown.map((s) => s.title)).toEqual(["Stale runner"]);
+  });
+
+  it("lists only git-backed project options with session counts", () => {
+    const options = queries.getProjectOptions();
+    const keys = options.map((option) => option.key);
+    // "relay" (branch main) and "beacon" (feature/beacon) are Git-backed.
+    expect(keys).toEqual(expect.arrayContaining(["relay", "beacon"]));
+    // "ai-compass" has no branch or Git workdir, and null-repo sessions are
+    // tasks — neither belongs in the repository filter.
+    expect(keys).not.toContain("ai-compass");
+    expect(keys).not.toContain("(unknown)");
+    expect(options.find((option) => option.key === "relay")).toMatchObject({
+      label: "relay",
+      sessionCount: 1,
+    });
+  });
+
   it("derives incomplete status for stale running sessions at query time", () => {
     const running = queries.getSessions({ status: "running", range: "all" });
     expect(running.map((session) => session.title)).toEqual(["Fresh runner"]);

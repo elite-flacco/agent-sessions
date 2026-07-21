@@ -475,7 +475,7 @@
     margin-top: 0.9rem;
   }
   .session-filter-row {
-    grid-template-columns: minmax(14rem, 1fr) 8.5rem 9.5rem 7rem 8.5rem;
+    grid-template-columns: minmax(11rem, 1fr) 8.5rem 9.5rem 9rem 7rem 8.5rem;
   }
   .search-control,
   .filter-select {
