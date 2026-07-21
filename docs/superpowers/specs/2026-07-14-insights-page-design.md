@@ -33,7 +33,7 @@ The single most actionable card. **Cache hit rate** is defined as:
 hitRate = cache_read_tokens / (cache_read_tokens + input_tokens)
 ```
 
-This directly answers "of the tokens the model read this session, what fraction were served from cache (cheap) vs processed fresh (expensive)." `cache_write_tokens` is intentionally excluded from the hit rate — cache writes are an *investment* (pay now to populate the cache for future reads), not a hit or miss. Writes are still tracked and priced (at the cache-write rate) in the $-saved figure below.
+This directly answers "of the tokens the model read this session, what fraction were served from cache (cheap) vs processed fresh (expensive)." `cache_write_tokens` is intentionally excluded from the hit rate — cache writes are an _investment_ (pay now to populate the cache for future reads), not a hit or miss. Writes are still tracked and priced (at the cache-write rate) in the $-saved figure below.
 
 Contents:
 
@@ -58,13 +58,13 @@ Contents:
 
 All data comes from existing tables; **no schema changes, no new collection.**
 
-| Card | Source | Existing query |
-|---|---|---|
-| Cache hit rate | `session_model_usage` (per session/model token splits) | New aggregation in `queries.ts` |
-| $ saved by caching | `session_model_usage` + `pricing.ts` rates | New derivation in `queries.ts` |
-| Hit-rate trend | `session_model_usage`, grouped by day | New aggregation |
-| Pareto share, cost outliers | `sessions` + read-time cost + runtime | New aggregation |
-| Cost trend | `getUsageSummary().daily` | **Reuse** existing (do not recompute) |
+| Card                        | Source                                                 | Existing query                        |
+| --------------------------- | ------------------------------------------------------ | ------------------------------------- |
+| Cache hit rate              | `session_model_usage` (per session/model token splits) | New aggregation in `queries.ts`       |
+| $ saved by caching          | `session_model_usage` + `pricing.ts` rates             | New derivation in `queries.ts`        |
+| Hit-rate trend              | `session_model_usage`, grouped by day                  | New aggregation                       |
+| Pareto share, cost outliers | `sessions` + read-time cost + runtime                  | New aggregation                       |
+| Cost trend                  | `getUsageSummary().daily`                              | **Reuse** existing (do not recompute) |
 
 ### New query: `getInsights()`
 
@@ -74,20 +74,20 @@ A single server-side query in `src/lib/queries.ts` returning both cards' data, f
 type Insights = {
   cache: {
     week: {
-      hitRate: number | null;          // weighted, 0..1; null if no tokens / unpriced
-      hitRateDeltaPts: number | null;  // vs prior 7d
-      savedUsd: number | null;         // cache savings; null if any row unpriced
-      savedSharePct: number | null;    // saved / gross cost
+      hitRate: number | null; // weighted, 0..1; null if no tokens / unpriced
+      hitRateDeltaPts: number | null; // vs prior 7d
+      savedUsd: number | null; // cache savings; null if any row unpriced
+      savedSharePct: number | null; // saved / gross cost
       byModel: { model: string; hitRate: number; tokens: number }[];
     };
-    trend: { day: string; hitRate: number | null }[];   // 30d daily
-    signal: InsightSignal | null;      // hit-rate drop warning
+    trend: { day: string; hitRate: number | null }[]; // 30d daily
+    signal: InsightSignal | null; // hit-rate drop warning
   };
   cost: {
     week: { totalUsd: number | null; paretoSharePct: number | null };
-    outliers: { id, title, model, costUsd, runtimeMs, usdPerMin }[]; // top 5 by cost
-    trend: { day: string; costUsd: number | null }[];  // reuse getUsageSummary daily
-    signal: InsightSignal | null;      // concentration warning
+    outliers: { id; title; model; costUsd; runtimeMs; usdPerMin }[]; // top 5 by cost
+    trend: { day: string; costUsd: number | null }[]; // reuse getUsageSummary daily
+    signal: InsightSignal | null; // concentration warning
   };
 };
 

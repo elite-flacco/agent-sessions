@@ -21,9 +21,11 @@
 ### Task 1: Status + reason types
 
 **Files:**
+
 - Modify: `src/lib/types.ts`
 
 **Interfaces:**
+
 - Produces: `sessionStatuses` incl. `"failed"`; `statusReasons`/`StatusReason`; `NormalizedSession.statusReason?: StatusReason`.
 
 - [ ] **Step 1:** Add `"failed"` to `sessionStatuses` (after `"needs_attention"`).
@@ -46,6 +48,7 @@
 ### Task 2: DB column `status_reason`
 
 **Files:**
+
 - Modify: `src/db/schema.ts`, `src/db/client.ts`
 - Generate: `drizzle/*`
 
@@ -60,9 +63,11 @@
 ### Task 3: Adapter plumbing for `{status, reason}`
 
 **Files:**
+
 - Modify: `src/collector/adapters/shared.ts`, `src/collector/utils.ts`
 
 **Interfaces:**
+
 - Produces: `TerminalStatus = { status: "completed"|"interrupted"|"needs_attention"|"failed"; reason?: StatusReason }`; `JsonlStrategy.terminalStatus(rows) => TerminalStatus | undefined`; `staleStatus(updatedAt, terminal?: TerminalStatus)` returns `{ status: SessionStatus; reason?: StatusReason }`.
 
 - [ ] **Step 1:** In `utils.ts` change `staleStatus` to accept an optional `{ status; reason? }` terminal and return `{ status, reason? }`. `failed` and `needs_attention`/`interrupted` are terminal; only absent-terminal derives running/incomplete from `updatedAt`.
@@ -74,10 +79,12 @@
 ### Task 4: Zcode reason classification
 
 **Files:**
+
 - Modify: `src/collector/adapters/zcode.ts`, `src/collector/index.ts`
 - Test: `src/collector/adapters/adapters.test.ts`, `src/collector/collector.test.ts`
 
 **Interfaces:**
+
 - Consumes: `TerminalStatus` (Task 3).
 - Produces: `zcodeStoredStatus(messages, updatedAt) => { status; reason? }`.
 
@@ -96,14 +103,20 @@
 ### Task 5: Labels + `statusDisplay`
 
 **Files:**
+
 - Modify: `src/lib/labels.ts`
 - Test: `src/lib/labels.test.ts` (create if absent)
 
 - [ ] **Step 1 (test):** `statusDisplay("failed","usage_limit") === "Failed · Usage limit"`; `statusDisplay("needs_attention") === "Awaiting input"`.
 - [ ] **Step 2:** Set `needs_attention: "Awaiting input"`, add `failed: "Failed"`. Add `statusReasonLabels: Record<StatusReason,string>` (Usage limit / Insufficient balance / Network error / Model error / Execution failed). Add:
   ```ts
-  export function statusDisplay(status: SessionStatus, reason?: StatusReason | null): string {
-    return reason ? `${statusLabels[status]} · ${statusReasonLabels[reason]}` : statusLabels[status];
+  export function statusDisplay(
+    status: SessionStatus,
+    reason?: StatusReason | null,
+  ): string {
+    return reason
+      ? `${statusLabels[status]} · ${statusReasonLabels[reason]}`
+      : statusLabels[status];
   }
   ```
 - [ ] **Step 3:** Run test → PASS. `npx tsc --noEmit`.
@@ -113,6 +126,7 @@
 ### Task 6: Read boundary
 
 **Files:**
+
 - Modify: `src/lib/queries.ts`
 - Test: `src/lib/queries.test.ts`
 
@@ -127,6 +141,7 @@
 ### Task 7: UI
 
 **Files:**
+
 - Modify: `src/components/dashboard.tsx`, `src/components/session-detail.tsx`, `src/components/overview-view.tsx`, `src/app/globals.css`
 
 - [ ] **Step 1:** Replace `statusLabels[session.status]` renders with `statusDisplay(session.status, session.statusReason)` in all three components (import `statusDisplay`).
@@ -139,6 +154,7 @@
 ### Task 8: Docs
 
 **Files:**
+
 - Modify: `AGENTS.md`, `README.md`
 
 - [ ] **Step 1:** `AGENTS.md`: rewrite the status-contract sentences — explicit failures → `failed` + reason; unresolved Zcode `AskUserQuestion` → `needs_attention` (awaiting input); abort/cancel → `interrupted`.

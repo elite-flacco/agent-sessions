@@ -15,7 +15,7 @@
 - **No schema changes, no new collection.** Both cards derive from existing `session_model_usage` (columns `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reported_cost_usd`) joined to `sessions` (`started_at`, `ended_at`, `updated_at`, `title`, `model`, `status`).
 - **No new charting dependency.** Reuse the quantized `meter-fill-0..10` and `spark-fill-0..10` CSS ramps already in `src/app/globals.css`.
 - **Styling rules (AGENTS.md):** semantic tokens + component classes only. No raw Tailwind palette colors, no arbitrary values, no inline styles, no `dark:` variants.
-- **Pricing-trust rule:** any dollar figure that depends on a complete price set reads `null` / "unavailable" when any contributing usage row is unpriced. Cache *hit rate* is token-only and always computable; *$ saved by caching*, *cost totals*, and *cost outliers* can be null.
+- **Pricing-trust rule:** any dollar figure that depends on a complete price set reads `null` / "unavailable" when any contributing usage row is unpriced. Cache _hit rate_ is token-only and always computable; _$ saved by caching_, _cost totals_, and _cost outliers_ can be null.
 - **Cache hit rate definition:** `cache_read_tokens / (cache_read_tokens + input_tokens)`. `cache_write_tokens` excluded (an investment, not a hit/miss).
 - **Windows:** "this week" = trailing 7 calendar days; "prior week" = the 7 days before; "trend" = trailing 30 days daily. Match existing Overview/Usage framing.
 - **Cost per runtime** = `costUsd / max(runtimeMinutes, 1)`; `runtimeMs` = `(julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000` (same expression used in `getOverviewPatterns`).
@@ -26,11 +26,13 @@
 ## File Structure
 
 **Create:**
+
 - `src/app/insights/page.tsx` — server component; fetches `getInsights()` + `getCollectorHealth()`, renders shell.
 - `src/components/insights-view.tsx` — client component; renders the two-card grid + 15s auto-refresh.
 - `src/lib/insights.test.ts` — unit tests for `getInsights()` math, signals, pricing-trust, edge cases.
 
 **Modify:**
+
 - `src/lib/queries.ts` — add the `Insights` / `InsightSignal` interfaces and `getInsights()` function.
 - `src/components/sidebar.tsx` — add the `/insights` `NavLink`.
 - `src/app/globals.css` — add `.insights-grid`, `.insight-card`, and `.insight-signal` (warning/info) component classes.
@@ -38,6 +40,7 @@
 - `AGENTS.md` — document the new page + `getInsights()` read boundary.
 
 **Responsibilities:**
+
 - `getInsights()` owns all aggregation and signal derivation; it is the only server-side read boundary for this feature and imports the SQLite client (so client components may import **types only**).
 - `InsightsView` is purely presentational — it receives the fully-derived `Insights` object and renders it. No recomputation in the component.
 
@@ -48,10 +51,12 @@
 This task adds the `Insights` types and the cache-effectiveness half of `getInsights()`, with the cost half stubbed to a safe empty value. It is independently testable: the cache math (hit rate, $ saved, signals) has the most surface area, so it gets its own test cycle before the cost half is layered on.
 
 **Files:**
+
 - Modify: `src/lib/queries.ts` (append after `getOverviewPatterns`, ~line 1003)
 - Test: `src/lib/insights.test.ts` (create)
 
 **Interfaces:**
+
 - Consumes: `usageCostUsd`, `findPricing`, `normalizeModel` from `./pricing`; `sqlite` from `@/db/client`; `DAY_MS` and `USAGE_JOIN` / `UsageJoinRow` (already defined in `queries.ts`).
 - Produces: `Insights`, `InsightSignal`, `getInsights()` — exact shapes below. Task 2's UI consumes `Insights`; Task 3's cost half fills in the `cost` fields this task stubs.
 
@@ -109,7 +114,8 @@ beforeAll(async () => {
   queries = await import("./queries");
 
   const now = new Date();
-  const iso = (offsetMs: number) => new Date(now.getTime() - offsetMs).toISOString();
+  const iso = (offsetMs: number) =>
+    new Date(now.getTime() - offsetMs).toISOString();
   const insertSession = sqlite.prepare(`INSERT INTO sessions
     (external_id, provider, title, model, status, started_at, updated_at, ended_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -119,17 +125,53 @@ beforeAll(async () => {
 
   // Session 1: this week, 75% cache hit (cache_read 300 / (300 + 100 input)).
   // Priced via pricing table (gpt-5.5) so $-saved is computed.
-  insertSession.run("s1", "codex", "Cache-friendly run", "gpt-5.5", "completed", iso(0), iso(0), iso(0));
+  insertSession.run(
+    "s1",
+    "codex",
+    "Cache-friendly run",
+    "gpt-5.5",
+    "completed",
+    iso(0),
+    iso(0),
+    iso(0),
+  );
   insertUsage.run(1, "gpt-5.5", 100, 50, 300, 0, null);
   // Session 2: this week, priced, 0% cache hit (no cache reads).
-  insertSession.run("s2", "codex", "Cold run", "gpt-5.5", "completed", iso(0), iso(0), iso(0));
+  insertSession.run(
+    "s2",
+    "codex",
+    "Cold run",
+    "gpt-5.5",
+    "completed",
+    iso(0),
+    iso(0),
+    iso(0),
+  );
   insertUsage.run(2, "gpt-5.5", 400, 50, 0, 0, null);
   // Session 3: prior week, high cache hit — establishes a baseline the delta measures against.
   // 9 days ago = outside this-week window, inside prior-week window.
-  insertSession.run("s3", "codex", "Prior good cache", "gpt-5.5", "completed", iso(9 * 24 * 60 * 60_000), iso(9 * 24 * 60 * 60_000), iso(9 * 24 * 60 * 60_000));
+  insertSession.run(
+    "s3",
+    "codex",
+    "Prior good cache",
+    "gpt-5.5",
+    "completed",
+    iso(9 * 24 * 60 * 60_000),
+    iso(9 * 24 * 60 * 60_000),
+    iso(9 * 24 * 60 * 60_000),
+  );
   insertUsage.run(3, "gpt-5.5", 10, 0, 990, 0, null);
   // Session 4: this week, unpriced model — forces $-saved to null but still counts toward hit rate.
-  insertSession.run("s4", "codex", "Unpriced run", "mystery-model", "completed", iso(0), iso(0), iso(0));
+  insertSession.run(
+    "s4",
+    "codex",
+    "Unpriced run",
+    "mystery-model",
+    "completed",
+    iso(0),
+    iso(0),
+    iso(0),
+  );
   insertUsage.run(4, "mystery-model", 100, 0, 100, 0, null);
 });
 
@@ -180,7 +222,11 @@ describe("getInsights — cache effectiveness", () => {
     const { cache } = queries.getInsights();
     expect(cache.trend).toHaveLength(30);
     expect(cache.trend[0]).toHaveProperty("day");
-    expect(cache.trend.every((d) => typeof d.hitRate === "number" || d.hitRate === null)).toBe(true);
+    expect(
+      cache.trend.every(
+        (d) => typeof d.hitRate === "number" || d.hitRate === null,
+      ),
+    ).toBe(true);
   });
 });
 ```
@@ -281,7 +327,8 @@ function aggregateCache(rows: UsageJoinRow[]) {
     byModel.set(key, model);
   }
   const hitRate = read + input > 0 ? read / (read + input) : null;
-  const savedUsd = priced && counterfactual > grossCost ? counterfactual - grossCost : null;
+  const savedUsd =
+    priced && counterfactual > grossCost ? counterfactual - grossCost : null;
   const savedSharePct =
     savedUsd !== null && counterfactual > 0
       ? (savedUsd / counterfactual) * 100
@@ -406,10 +453,12 @@ git commit -m "✨ feat(insights): add getInsights cache-effectiveness aggregati
 Layer in the cost half: week total + Pareto share, top-5 cost outliers with $/min, cost trend (reused from `getUsageSummary().daily`), and the Pareto concentration signal. Replaces the stubs from Task 1.
 
 **Files:**
+
 - Modify: `src/lib/queries.ts` (the `getInsights()` return's `cost:` block)
 - Test: `src/lib/insights.test.ts` (append a `describe("getInsights — cost outliers")` block)
 
 **Interfaces:**
+
 - Consumes: `rowCost`, `USAGE_JOIN`, `UsageJoinRow`, `getUsageSummary` (for the reused daily trend). The session runtime SQL uses the same `julianday(...)` expression as `getOverviewPatterns`.
 - Produces: the filled-in `cost` half of `Insights` (final shape; no further changes).
 
@@ -432,9 +481,27 @@ describe("getInsights — cost outliers", () => {
     const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
       (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    insertSession.run("s5", "codex", "Big spend", "gpt-5.5", "completed", iso(0), iso(0), iso(0));
+    insertSession.run(
+      "s5",
+      "codex",
+      "Big spend",
+      "gpt-5.5",
+      "completed",
+      iso(0),
+      iso(0),
+      iso(0),
+    );
     insertUsage.run(5, "gpt-5.5", 2_000_000, 200_000, 0, 0, 1.0); // reported $1.00
-    insertSession.run("s6", "codex", "Small spend", "gpt-5.5", "completed", iso(0), iso(0), iso(0));
+    insertSession.run(
+      "s6",
+      "codex",
+      "Small spend",
+      "gpt-5.5",
+      "completed",
+      iso(0),
+      iso(0),
+      iso(0),
+    );
     insertUsage.run(6, "gpt-5.5", 20_000, 0, 0, 0, 0.01); // reported $0.01
   });
 
@@ -468,88 +535,86 @@ Expected: FAIL — cost-outlier tests fail (outliers list is empty, stubs return
 In `src/lib/queries.ts`, replace the stubbed `cost:` return block inside `getInsights()`. First, add a new query near the top of `getInsights()` (after `trendRows` is prepared) to fetch per-session cost + runtime for the week:
 
 ```ts
-  // --- cost outliers: per-session cost + runtime over the week window ---
-  interface CostRow {
-    id: number;
-    title: string;
-    model: string | null;
-    provider: AgentProvider;
-    startedAt: string;
-    runtimeMs: number;
-  }
-  const costSessionRows = sqlite
-    .prepare(
-      `SELECT s.id, s.title, s.model, s.provider, s.started_at startedAt,
+// --- cost outliers: per-session cost + runtime over the week window ---
+interface CostRow {
+  id: number;
+  title: string;
+  model: string | null;
+  provider: AgentProvider;
+  startedAt: string;
+  runtimeMs: number;
+}
+const costSessionRows = sqlite
+  .prepare(
+    `SELECT s.id, s.title, s.model, s.provider, s.started_at startedAt,
         CAST((julianday(COALESCE(s.ended_at, s.updated_at)) - julianday(s.started_at)) * 86400000 AS INTEGER) AS runtimeMs
        FROM sessions s WHERE s.started_at >= ?`,
-    )
-    .all(weekStart) as CostRow[];
+  )
+  .all(weekStart) as CostRow[];
 ```
 
 Then, after the cache section and before the `return`, compute the cost half. Replace the stubbed `cost:` block of the return statement with this implementation (and add the supporting computation just above the `return`):
 
 ```ts
-  // Per-session usage cost over the week, keyed by session id. A session's
-  // cost is the sum of its priced usage rows; unpriced rows contribute nothing
-  // to that session's cost. runtimeMs comes from costSessionRows.
-  const sessionCost = new Map<number, number>();
-  let weekTotalUsd: number | null = 0;
-  let anyUnpriced = false;
-  for (const row of weekRows) {
-    const cost = rowCost(row);
-    if (cost === undefined) {
-      anyUnpriced = true;
-      continue;
-    }
-    weekTotalUsd += cost; // accumulate the priced grand total
-    sessionCost.set(row.sessionId, (sessionCost.get(row.sessionId) ?? 0) + cost);
+// Per-session usage cost over the week, keyed by session id. A session's
+// cost is the sum of its priced usage rows; unpriced rows contribute nothing
+// to that session's cost. runtimeMs comes from costSessionRows.
+const sessionCost = new Map<number, number>();
+let weekTotalUsd: number | null = 0;
+let anyUnpriced = false;
+for (const row of weekRows) {
+  const cost = rowCost(row);
+  if (cost === undefined) {
+    anyUnpriced = true;
+    continue;
   }
-  if (anyUnpriced) weekTotalUsd = null; // trust rule: null when any row unpriced
+  weekTotalUsd += cost; // accumulate the priced grand total
+  sessionCost.set(row.sessionId, (sessionCost.get(row.sessionId) ?? 0) + cost);
+}
+if (anyUnpriced) weekTotalUsd = null; // trust rule: null when any row unpriced
 
-  // Outliers: top 5 by session cost. usdPerMin excludes zero/negative runtime.
-  const runtimeById = new Map(
-    costSessionRows.map((r) => [r.id, { row: r, runtimeMs: r.runtimeMs }]),
-  );
-  const outliers = [...sessionCost.entries()]
-    .map(([id, costUsd]) => {
-      const meta = runtimeById.get(id);
-      const runtimeMs = meta?.runtimeMs ?? 0;
-      const minutes = Math.max(runtimeMs / 60_000, 1);
-      return {
-        id,
-        title: meta?.row.title ?? "Untitled",
-        model: meta?.row.model ?? null,
-        costUsd,
-        runtimeMs,
-        usdPerMin: costUsd / minutes,
-      };
-    })
-    .sort((a, b) => b.costUsd - a.costUsd)
-    .slice(0, 5);
+// Outliers: top 5 by session cost. usdPerMin excludes zero/negative runtime.
+const runtimeById = new Map(
+  costSessionRows.map((r) => [r.id, { row: r, runtimeMs: r.runtimeMs }]),
+);
+const outliers = [...sessionCost.entries()]
+  .map(([id, costUsd]) => {
+    const meta = runtimeById.get(id);
+    const runtimeMs = meta?.runtimeMs ?? 0;
+    const minutes = Math.max(runtimeMs / 60_000, 1);
+    return {
+      id,
+      title: meta?.row.title ?? "Untitled",
+      model: meta?.row.model ?? null,
+      costUsd,
+      runtimeMs,
+      usdPerMin: costUsd / minutes,
+    };
+  })
+  .sort((a, b) => b.costUsd - a.costUsd)
+  .slice(0, 5);
 
-  // Pareto: share of week cost held by the top 3 sessions. Null when the
-  // week total is unpriced (trust rule) or there is no priced spend.
-  const top3Cost = outliers
-    .slice(0, 3)
-    .reduce((sum, o) => sum + o.costUsd, 0);
-  let paretoSharePct: number | null = null;
-  if (weekTotalUsd !== null && weekTotalUsd > 0) {
-    paretoSharePct = (top3Cost / weekTotalUsd) * 100;
-  }
-  const costSignal: InsightSignal | null =
-    paretoSharePct !== null && paretoSharePct >= 50
-      ? {
-          tone: "warning",
-          text: `Three sessions drove ${Math.round(paretoSharePct)}% of this week's cost — inspect them for loops or retries.`,
-        }
-      : null;
+// Pareto: share of week cost held by the top 3 sessions. Null when the
+// week total is unpriced (trust rule) or there is no priced spend.
+const top3Cost = outliers.slice(0, 3).reduce((sum, o) => sum + o.costUsd, 0);
+let paretoSharePct: number | null = null;
+if (weekTotalUsd !== null && weekTotalUsd > 0) {
+  paretoSharePct = (top3Cost / weekTotalUsd) * 100;
+}
+const costSignal: InsightSignal | null =
+  paretoSharePct !== null && paretoSharePct >= 50
+    ? {
+        tone: "warning",
+        text: `Three sessions drove ${Math.round(paretoSharePct)}% of this week's cost — inspect them for loops or retries.`,
+      }
+    : null;
 
-  // Cost trend reuses the existing getUsageSummary daily series rather than
-  // recomputing it (keeps a single source of truth for daily cost).
-  const costTrend = getUsageSummary().daily.map((d) => ({
-    day: d.date,
-    costUsd: d.costUsd,
-  }));
+// Cost trend reuses the existing getUsageSummary daily series rather than
+// recomputing it (keeps a single source of truth for daily cost).
+const costTrend = getUsageSummary().daily.map((d) => ({
+  day: d.date,
+  costUsd: d.costUsd,
+}));
 ```
 
 Then update the `return` statement's `cost:` block to use these values:
@@ -587,9 +652,11 @@ git commit -m "✨ feat(insights): add cost-outlier aggregation to getInsights"
 Add the layout + signal styling as reusable component classes. This is separated from the component task so the component can reference stable class names, and so visual style can be reviewed/tuned independently.
 
 **Files:**
+
 - Modify: `src/app/globals.css` (append within the existing `@layer components` block, near the `.overview-grid` rules ~line 1108)
 
 **Interfaces:**
+
 - Produces CSS classes: `.insights-grid`, `.insight-card`, `.insight-signal`, `.insight-signal.is-warning`, `.insight-signal.is-info`, `.insight-delta`, `.insight-delta.is-up`, `.insight-delta.is-down`. Task 4's component uses exactly these class names.
 
 - [ ] **Step 1: Add the CSS classes**
@@ -597,68 +664,68 @@ Add the layout + signal styling as reusable component classes. This is separated
 In `src/app/globals.css`, inside the existing `@layer components` block, add immediately after the `.overview-grid` ruleset (after line ~1113):
 
 ```css
-  .insights-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 26rem));
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-  }
-  .insight-card {
-    display: grid;
-    gap: 0.7rem;
-    align-content: start;
-    padding: 1rem 1.1rem;
-  }
-  .insight-card-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .insight-card-head h3 {
-    font-size: var(--text-sm);
-  }
-  .insight-card-head .mono {
-    font-size: var(--text-xs);
-  }
-  .insight-headline {
-    font-size: var(--text-xl);
-    letter-spacing: -0.03em;
-  }
-  .insight-sub {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
-  .insight-delta {
-    font-size: var(--text-xs);
-    color: var(--muted-foreground);
-  }
-  .insight-delta.is-up {
-    color: var(--success);
-  }
-  .insight-delta.is-down {
-    color: var(--destructive);
-  }
-  .insight-signal {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.4rem;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--border);
-    border-radius: 0.4rem;
-    font-size: var(--text-xs);
-  }
-  .insight-signal.is-warning {
-    border-color: var(--destructive);
-    color: var(--destructive);
-  }
-  .insight-signal.is-info {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .insight-signal > span {
-    color: var(--foreground);
-  }
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 26rem));
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+.insight-card {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  padding: 1rem 1.1rem;
+}
+.insight-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.insight-card-head h3 {
+  font-size: var(--text-sm);
+}
+.insight-card-head .mono {
+  font-size: var(--text-xs);
+}
+.insight-headline {
+  font-size: var(--text-xl);
+  letter-spacing: -0.03em;
+}
+.insight-sub {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.insight-delta {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+.insight-delta.is-up {
+  color: var(--success);
+}
+.insight-delta.is-down {
+  color: var(--destructive);
+}
+.insight-signal {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  font-size: var(--text-xs);
+}
+.insight-signal.is-warning {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+.insight-signal.is-info {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.insight-signal > span {
+  color: var(--foreground);
+}
 ```
 
 - [ ] **Step 2: Verify the build picks up the CSS**
@@ -680,11 +747,13 @@ git commit -m "🎨 style(insights): add insight-card and signal component class
 Wire the page end-to-end: server route, the two-card client view, and the sidebar nav link. After this task the feature is visually complete and live at `/insights`.
 
 **Files:**
+
 - Create: `src/app/insights/page.tsx`
 - Create: `src/components/insights-view.tsx`
 - Modify: `src/components/sidebar.tsx` (add `/insights` `NavLink`)
 
 **Interfaces:**
+
 - Consumes: `Insights`, `InsightSignal` types from `./queries` (type-only import in the client component); `formatCostUsd`, `formatTokens` from `@/lib/format`; `PRICING_RETRIEVED_AT` from `@/lib/pricing`.
 - Produces: a routable `/insights` page and a sidebar entry that highlights on `/insights`.
 
@@ -751,9 +820,10 @@ export function InsightsView({ insights }: InsightsViewProps) {
         <div>
           <h1>Insights</h1>
           <p>
-            Actionable efficiency signals from your coding-agent usage. API-equivalent
-            cost estimates from public per-token rates (pricing recorded{" "}
-            {PRICING_RETRIEVED_AT}); cache hit rate is token-only and always available.
+            Actionable efficiency signals from your coding-agent usage.
+            API-equivalent cost estimates from public per-token rates (pricing
+            recorded {PRICING_RETRIEVED_AT}); cache hit rate is token-only and
+            always available.
           </p>
         </div>
       </header>
@@ -801,10 +871,7 @@ function CacheCard({ insights }: { insights: Insights }) {
     ...cache.week.byModel.map((m) => m.tokens),
     0,
   );
-  const maxTrend = Math.max(
-    ...cache.trend.map((d) => d.hitRate ?? 0),
-    0,
-  );
+  const maxTrend = Math.max(...cache.trend.map((d) => d.hitRate ?? 0), 0);
 
   return (
     <section className="card insight-card" aria-label="Cache effectiveness">
@@ -932,12 +999,12 @@ function CostCard({ insights }: { insights: Insights }) {
 In `src/components/sidebar.tsx`, add `Sparkles` to the `lucide-react` import (if not already present) and insert a new `NavLink` after the Usage link (after the `label="Usage & cost"` `NavLink`, before the `/agents` `NavLink`):
 
 ```tsx
-        <NavLink
-          href="/insights"
-          active={pathname === "/insights"}
-          icon={<Sparkles size={15} />}
-          label="Insights"
-        />
+<NavLink
+  href="/insights"
+  active={pathname === "/insights"}
+  icon={<Sparkles size={15} />}
+  label="Insights"
+/>
 ```
 
 The import line becomes:
@@ -974,6 +1041,7 @@ git commit -m "✨ feat(insights): add /insights page with cache + cost cards"
 Per the plan DoD, review and update `README.md` for user-facing behavior and `AGENTS.md` for architecture/convention changes. Also re-read the spec's "Open question" and confirm the runtime handling matches what shipped.
 
 **Files:**
+
 - Modify: `README.md` (routes table + any usage notes)
 - Modify: `AGENTS.md` (Pages section: add `/insights`; read boundary note for `getInsights`)
 
@@ -982,7 +1050,7 @@ Per the plan DoD, review and update `README.md` for user-facing behavior and `AG
 In `README.md`, add a row for `/insights` in the routes table (after the `/usage` row, ~line 37). Match the existing table's column structure and prose density:
 
 ```markdown
-| `/insights`      | Insights — actionable efficiency signals: a cache-effectiveness card (weighted cache hit rate, week-over-week delta, estimated dollars saved by caching, hit rate by model, 30-day trend) and a cost-outlier card (Pareto share of spend, the most expensive sessions with $/min, a concentration warning). All derived from already-collected usage; cache hit rate is always available, dollar figures follow the pricing-trust rule. |
+| `/insights` | Insights — actionable efficiency signals: a cache-effectiveness card (weighted cache hit rate, week-over-week delta, estimated dollars saved by caching, hit rate by model, 30-day trend) and a cost-outlier card (Pareto share of spend, the most expensive sessions with $/min, a concentration warning). All derived from already-collected usage; cache hit rate is always available, dollar figures follow the pricing-trust rule. |
 ```
 
 - [ ] **Step 2: Update the AGENTS.md Pages section**
@@ -995,7 +1063,7 @@ Also, in the `## Relay architecture` section, add `getInsights()` to the bullet 
 
 - [ ] **Step 3: Confirm the spec open question is resolved**
 
-Re-read the spec's "Open question" (sessions with null/zero runtime in the $/min sort). Confirm Task 2's implementation excludes them from the *sort metric* (via `Math.max(runtimeMs / 60_000, 1)` flooring to 1 minute) while still listing them by raw cost. No doc change needed — note the resolution in the commit message.
+Re-read the spec's "Open question" (sessions with null/zero runtime in the $/min sort). Confirm Task 2's implementation excludes them from the _sort metric_ (via `Math.max(runtimeMs / 60_000, 1)` flooring to 1 minute) while still listing them by raw cost. No doc change needed — note the resolution in the commit message.
 
 - [ ] **Step 4: Run the full verification one final time**
 

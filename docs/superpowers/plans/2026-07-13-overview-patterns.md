@@ -23,25 +23,27 @@
 
 ## File Structure
 
-| File | Responsibility | Action |
-| --- | --- | --- |
-| `src/lib/queries.ts` | Add `OverviewPatterns` interface + `getOverviewPatterns()` server query (heatmap grid, length histogram, week cost) | Modify |
-| `src/lib/queries.test.ts` | Add tests for `getOverviewPatterns()` covering heatmap counts, length buckets, cost null-on-unpriced | Modify |
-| `src/app/globals.css` | Add `--heat-*` tokens in `:root` and `heat-fill-0`…`heat-fill-10` + `.heatmap`/`.heat-cell` component classes | Modify |
+| File                               | Responsibility                                                                                                                                | Action |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `src/lib/queries.ts`               | Add `OverviewPatterns` interface + `getOverviewPatterns()` server query (heatmap grid, length histogram, week cost)                           | Modify |
+| `src/lib/queries.test.ts`          | Add tests for `getOverviewPatterns()` covering heatmap counts, length buckets, cost null-on-unpriced                                          | Modify |
+| `src/app/globals.css`              | Add `--heat-*` tokens in `:root` and `heat-fill-0`…`heat-fill-10` + `.heatmap`/`.heat-cell` component classes                                 | Modify |
 | `src/components/overview-view.tsx` | Swap column order; remove "Agents this week" + "Last 14 days"; add three sub-components (`ActivityHeatmap`, `SessionLength`, `CostAtAGlance`) | Modify |
-| `src/app/page.tsx` | Call `getOverviewPatterns()` and pass to `<OverviewView>` | Modify |
-| `README.md` | Update `/` route description to mention pattern views | Modify |
-| `AGENTS.md` | Update Pages entry for `/` to mention patterns section | Modify |
+| `src/app/page.tsx`                 | Call `getOverviewPatterns()` and pass to `<OverviewView>`                                                                                     | Modify |
+| `README.md`                        | Update `/` route description to mention pattern views                                                                                         | Modify |
+| `AGENTS.md`                        | Update Pages entry for `/` to mention patterns section                                                                                        | Modify |
 
 ---
 
 ### Task 1: Heatmap + length + cost query (with tests)
 
 **Files:**
+
 - Modify: `src/lib/queries.ts` (append new interface + function at end of file)
 - Modify: `src/lib/queries.test.ts` (add new `describe` block)
 
 **Interfaces:**
+
 - Consumes: `sqlite` (from `@/db/client`), `usageCostUsd` + `normalizeModel` (from `./pricing`), `UNKNOWN_PROJECT_KEY` (from `./types`) — all already imported in `queries.ts`.
 - Produces: `OverviewPatterns` interface and `getOverviewPatterns()` function, used by Task 2 (page) and Task 4 (view).
 
@@ -172,24 +174,17 @@ export function getOverviewPatterns(): OverviewPatterns {
        WHERE started_at >= ? AND started_at <= ?`,
     )
     .all(lengthStart, new Date().toISOString()) as { runtimeMs: number }[];
-  const runtimes = lengthRows
-    .map((row) => row.runtimeMs)
-    .sort((a, b) => a - b);
+  const runtimes = lengthRows.map((row) => row.runtimeMs).sort((a, b) => a - b);
   const buckets = LENGTH_BUCKETS.map((bucket) => ({
     label: bucket.label,
-    count: runtimes.filter(
-      (ms) => ms >= bucket.min && ms < bucket.max,
-    ).length,
+    count: runtimes.filter((ms) => ms >= bucket.min && ms < bucket.max).length,
   }));
   const medianMs =
-    runtimes.length > 0
-      ? runtimes[Math.floor(runtimes.length / 2)]
-      : null;
+    runtimes.length > 0 ? runtimes[Math.floor(runtimes.length / 2)] : null;
   const longestMs = runtimes.length > 0 ? runtimes.at(-1)! : null;
-  const longRuntimeMs = runtimes.filter((ms) => ms >= 30 * 60_000).reduce(
-    (sum, ms) => sum + ms,
-    0,
-  );
+  const longRuntimeMs = runtimes
+    .filter((ms) => ms >= 30 * 60_000)
+    .reduce((sum, ms) => sum + ms, 0);
   const totalRuntimeMs = runtimes.reduce((sum, ms) => sum + ms, 0);
   const longTailShare =
     totalRuntimeMs > 0 ? longRuntimeMs / totalRuntimeMs : null;
@@ -265,9 +260,11 @@ git commit -m "✨ feat: add overview patterns query (heatmap, length, week cost
 ### Task 2: Thread patterns into the Overview page
 
 **Files:**
+
 - Modify: `src/app/page.tsx`
 
 **Interfaces:**
+
 - Consumes: `getOverviewPatterns` (produced by Task 1).
 - Produces: a `patterns` prop on `<OverviewView>` (consumed by Task 4).
 
@@ -319,9 +316,11 @@ git commit -m "✨ feat: thread overview patterns into the page server component
 ### Task 3: Heatmap CSS tokens and component classes
 
 **Files:**
+
 - Modify: `src/app/globals.css` — add tokens to `:root` (after line 73, before the closing `}`) and add component classes inside the existing `@layer components` block (after the `spark-fill-10` rule, around line 1288).
 
 **Interfaces:**
+
 - Consumes: the existing `--accent` token and the `level()` helper convention (0–10 quantization).
 - Produces: `.heatmap`, `.heatmap-row`, `.heat-cell`, `.heat-day-label`, `.heat-hour-label`, `.heat-legend`, and `heat-fill-0`…`heat-fill-10` classes, consumed by Task 4.
 
@@ -330,11 +329,11 @@ git commit -m "✨ feat: thread overview patterns into the page server component
 In `src/app/globals.css`, inside the `:root { … }` block, add these five tokens immediately **after** the `--badge-5-foreground` line (line 63) and before `--text-xs`:
 
 ```css
-  --heat-0: var(--muted);
-  --heat-1: color-mix(in srgb, var(--accent) 22%, var(--muted));
-  --heat-2: color-mix(in srgb, var(--accent) 40%, var(--muted));
-  --heat-3: color-mix(in srgb, var(--accent) 60%, var(--muted));
-  --heat-4: color-mix(in srgb, var(--accent) 85%, var(--muted));
+--heat-0: var(--muted);
+--heat-1: color-mix(in srgb, var(--accent) 22%, var(--muted));
+--heat-2: color-mix(in srgb, var(--accent) 40%, var(--muted));
+--heat-3: color-mix(in srgb, var(--accent) 60%, var(--muted));
+--heat-4: color-mix(in srgb, var(--accent) 85%, var(--muted));
 ```
 
 - [ ] **Step 2: Add heatmap component classes inside `@layer components`**
@@ -342,80 +341,80 @@ In `src/app/globals.css`, inside the `:root { … }` block, add these five token
 Inside the existing `@layer components` block, immediately **after** the `.spark-fill-10 { … }` rule (around line 1288), add:
 
 ```css
-  .heatmap {
-    display: grid;
-    grid-template-columns: 1.6rem repeat(24, minmax(0, 1fr));
-    gap: 0.15rem;
-  }
-  .heat-hour-label {
-    color: var(--muted-foreground);
-    font-size: 0.55rem;
-    text-align: center;
-  }
-  .heat-day-label {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-    padding-right: 0.3rem;
-  }
-  .heat-cell {
-    aspect-ratio: 1;
-    border-radius: 0.15rem;
-    background: var(--heat-0);
-  }
-  .heatmap-legend {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    margin-top: 0.5rem;
-    color: var(--muted-foreground);
-    font-size: 0.55rem;
-  }
-  .heatmap-legend-cells {
-    display: flex;
-    gap: 0.15rem;
-  }
-  .heatmap-legend-cells span {
-    width: 0.6rem;
-    height: 0.6rem;
-    border-radius: 0.15rem;
-  }
-  .heat-fill-0 {
-    background: var(--heat-0);
-  }
-  .heat-fill-1 {
-    background: var(--heat-1);
-  }
-  .heat-fill-2 {
-    background: var(--heat-1);
-  }
-  .heat-fill-3 {
-    background: var(--heat-2);
-  }
-  .heat-fill-4 {
-    background: var(--heat-2);
-  }
-  .heat-fill-5 {
-    background: var(--heat-3);
-  }
-  .heat-fill-6 {
-    background: var(--heat-3);
-  }
-  .heat-fill-7 {
-    background: var(--heat-4);
-  }
-  .heat-fill-8 {
-    background: var(--heat-4);
-  }
-  .heat-fill-9 {
-    background: var(--heat-4);
-  }
-  .heat-fill-10 {
-    background: var(--accent);
-  }
+.heatmap {
+  display: grid;
+  grid-template-columns: 1.6rem repeat(24, minmax(0, 1fr));
+  gap: 0.15rem;
+}
+.heat-hour-label {
+  color: var(--muted-foreground);
+  font-size: 0.55rem;
+  text-align: center;
+}
+.heat-day-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  padding-right: 0.3rem;
+}
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 0.15rem;
+  background: var(--heat-0);
+}
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.55rem;
+}
+.heatmap-legend-cells {
+  display: flex;
+  gap: 0.15rem;
+}
+.heatmap-legend-cells span {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 0.15rem;
+}
+.heat-fill-0 {
+  background: var(--heat-0);
+}
+.heat-fill-1 {
+  background: var(--heat-1);
+}
+.heat-fill-2 {
+  background: var(--heat-1);
+}
+.heat-fill-3 {
+  background: var(--heat-2);
+}
+.heat-fill-4 {
+  background: var(--heat-2);
+}
+.heat-fill-5 {
+  background: var(--heat-3);
+}
+.heat-fill-6 {
+  background: var(--heat-3);
+}
+.heat-fill-7 {
+  background: var(--heat-4);
+}
+.heat-fill-8 {
+  background: var(--heat-4);
+}
+.heat-fill-9 {
+  background: var(--heat-4);
+}
+.heat-fill-10 {
+  background: var(--accent);
+}
 ```
 
 Note: the `heat-fill-N` classes map the 0–10 quantization onto the 5-step `--heat-*` ramp (two levels per step, full accent at 10). This parallels how `spark-fill-N` quantizes the same accent.
@@ -437,9 +436,11 @@ git commit -m "🎨 style: add heatmap tokens and component classes"
 ### Task 4: Render the three pattern views and swap columns
 
 **Files:**
+
 - Modify: `src/components/overview-view.tsx`
 
 **Interfaces:**
+
 - Consumes: `OverviewPatterns` type (from `@/lib/queries`, types-only import), `patterns` prop (from Task 2), `heat-fill-N` / meter / spark classes (from Task 3), `formatCostUsd` + `formatTokens` + `runtime` (from `@/lib/format`).
 - Produces: the final rendered Overview with patterns on the left.
 
@@ -458,7 +459,13 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect } from "react";
-import { elapsed, formatCostUsd, formatTokens, relativeTime, runtime } from "@/lib/format";
+import {
+  elapsed,
+  formatCostUsd,
+  formatTokens,
+  relativeTime,
+  runtime,
+} from "@/lib/format";
 import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import type {
   OverviewData,
@@ -495,77 +502,73 @@ export function OverviewView({
 Replace the entire `<div className="overview-grid">…</div>` block (the two columns) with the swapped layout shown below. Keep the `<section>`, `<header>`, and `<div className="summary-grid">` blocks above it unchanged. The new grid puts patterns on the left and operational on the right:
 
 ```tsx
-      <div className="overview-grid">
-        <div className="overview-column">
-          <ActivityHeatmap cells={patterns.heatmap} />
-          <SessionLength length={patterns.length} />
-          <CostAtAGlance cost={patterns.costWeek} />
-        </div>
+<div className="overview-grid">
+  <div className="overview-column">
+    <ActivityHeatmap cells={patterns.heatmap} />
+    <SessionLength length={patterns.length} />
+    <CostAtAGlance cost={patterns.costWeek} />
+  </div>
 
-        <div className="overview-column">
-          <section className="card overview-card" aria-label="Running now">
-            <div className="overview-card-head">
-              <h3>Running now</h3>
-              <Link href="/sessions?status=running">View all</Link>
-            </div>
-            {running.length ? (
-              running.map((session) => (
-                <SessionLine key={session.id} session={session} />
-              ))
-            ) : (
-              <p className="overview-empty">
-                No sessions are currently active.
-              </p>
-            )}
-          </section>
-          <section className="card overview-card" aria-label="Needs attention">
-            <div className="overview-card-head">
-              <h3>
-                <AlertTriangle size={14} className="inline-icon" /> Needs
-                attention
-              </h3>
-              <Link href="/sessions?status=interrupted">View all</Link>
-            </div>
-            {attention.length ? (
-              attention.map((session) => (
-                <SessionLine key={session.id} session={session} />
-              ))
-            ) : (
-              <p className="overview-empty">
-                Nothing needs attention in the last day.
-              </p>
-            )}
-          </section>
-          <section className="card overview-card" aria-label="Recent projects">
-            <div className="overview-card-head">
-              <h3>
-                <FolderKanban size={14} className="inline-icon" /> Recent
-                projects
-              </h3>
-              <Link href="/projects">View all</Link>
-            </div>
-            {recentProjects.map((project) => (
-              <Link
-                key={project.key}
-                className="project-session-row"
-                href={`/projects?selected=${encodeURIComponent(project.key)}`}
-              >
-                <span aria-hidden>
-                  <LayoutDashboard size={13} />
-                </span>
-                <div>
-                  <strong>{project.repository ?? "Unknown workspace"}</strong>
-                  <p>
-                    {project.sessionCount} sessions ·{" "}
-                    {runtime(project.totalRuntimeMs)}
-                  </p>
-                </div>
-                <time>{relativeTime(project.lastActivityAt)}</time>
-              </Link>
-            ))}
-          </section>
-        </div>
+  <div className="overview-column">
+    <section className="card overview-card" aria-label="Running now">
+      <div className="overview-card-head">
+        <h3>Running now</h3>
+        <Link href="/sessions?status=running">View all</Link>
       </div>
+      {running.length ? (
+        running.map((session) => (
+          <SessionLine key={session.id} session={session} />
+        ))
+      ) : (
+        <p className="overview-empty">No sessions are currently active.</p>
+      )}
+    </section>
+    <section className="card overview-card" aria-label="Needs attention">
+      <div className="overview-card-head">
+        <h3>
+          <AlertTriangle size={14} className="inline-icon" /> Needs attention
+        </h3>
+        <Link href="/sessions?status=interrupted">View all</Link>
+      </div>
+      {attention.length ? (
+        attention.map((session) => (
+          <SessionLine key={session.id} session={session} />
+        ))
+      ) : (
+        <p className="overview-empty">
+          Nothing needs attention in the last day.
+        </p>
+      )}
+    </section>
+    <section className="card overview-card" aria-label="Recent projects">
+      <div className="overview-card-head">
+        <h3>
+          <FolderKanban size={14} className="inline-icon" /> Recent projects
+        </h3>
+        <Link href="/projects">View all</Link>
+      </div>
+      {recentProjects.map((project) => (
+        <Link
+          key={project.key}
+          className="project-session-row"
+          href={`/projects?selected=${encodeURIComponent(project.key)}`}
+        >
+          <span aria-hidden>
+            <LayoutDashboard size={13} />
+          </span>
+          <div>
+            <strong>{project.repository ?? "Unknown workspace"}</strong>
+            <p>
+              {project.sessionCount} sessions ·{" "}
+              {runtime(project.totalRuntimeMs)}
+            </p>
+          </div>
+          <time>{relativeTime(project.lastActivityAt)}</time>
+        </Link>
+      ))}
+    </section>
+  </div>
+</div>
 ```
 
 This removes the "Agents this week" and "Last 14 days" sections (per spec: the heatmap absorbs the daily strip, and `/usage` covers provider distribution). The `maxProvider`, `maxDaily`, and the now-unused `level` calls at the top of the component are addressed in Step 3.
@@ -575,11 +578,11 @@ This removes the "Agents this week" and "Last 14 days" sections (per spec: the h
 The original component computes `maxProvider` and `maxDaily` (for the removed sections). Remove these two lines from the `OverviewView` function body, above the `return`:
 
 ```typescript
-  const maxProvider = Math.max(
-    1,
-    ...overview.providerCounts.map((entry) => entry.count),
-  );
-  const maxDaily = Math.max(1, ...overview.daily.map((entry) => entry.count));
+const maxProvider = Math.max(
+  1,
+  ...overview.providerCounts.map((entry) => entry.count),
+);
+const maxDaily = Math.max(1, ...overview.daily.map((entry) => entry.count));
 ```
 
 The top-level `level()` helper function (line 27–30) **stays** — it is reused by the new sub-components below.
@@ -589,11 +592,7 @@ The top-level `level()` helper function (line 27–30) **stays** — it is reuse
 Append these after the existing `SessionLine` function at the end of `src/components/overview-view.tsx`:
 
 ```tsx
-function ActivityHeatmap({
-  cells,
-}: {
-  cells: OverviewPatterns["heatmap"];
-}) {
+function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
   const maxCount = Math.max(1, ...cells.map((cell) => cell.count));
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   // cells[] is in day-major order (dayOfWeek*24 + hour) from the query, so
@@ -654,21 +653,18 @@ function ActivityHeatmap({
   );
 }
 
-function SessionLength({
-  length,
-}: {
-  length: OverviewPatterns["length"];
-}) {
-  const maxBucket = Math.max(1, ...length.buckets.map((bucket) => bucket.count));
+function SessionLength({ length }: { length: OverviewPatterns["length"] }) {
+  const maxBucket = Math.max(
+    1,
+    ...length.buckets.map((bucket) => bucket.count),
+  );
   return (
     <section className="card overview-card" aria-label="Session length">
       <div className="overview-card-head">
         <h3>
           <Clock3 size={14} className="inline-icon" /> Session length
         </h3>
-        <span>
-          last 7 days · {length.sessionCount} sessions
-        </span>
+        <span>last 7 days · {length.sessionCount} sessions</span>
       </div>
       <div className="hist-list">
         {length.buckets.map((bucket) => (
@@ -693,10 +689,8 @@ function SessionLength({
             <>
               {" · "}
               sessions over 30 min hold{" "}
-              <strong>
-                {Math.round(length.longTailShare * 100)}%
-              </strong>{" "}
-              of runtime
+              <strong>{Math.round(length.longTailShare * 100)}%</strong> of
+              runtime
             </>
           )}
         </p>
@@ -705,15 +699,8 @@ function SessionLength({
   );
 }
 
-function CostAtAGlance({
-  cost,
-}: {
-  cost: OverviewPatterns["costWeek"];
-}) {
-  const maxModel = Math.max(
-    1,
-    ...cost.topModels.map((model) => model.costUsd),
-  );
+function CostAtAGlance({ cost }: { cost: OverviewPatterns["costWeek"] }) {
+  const maxModel = Math.max(1, ...cost.topModels.map((model) => model.costUsd));
   return (
     <section className="card overview-card" aria-label="Cost this week">
       <div className="overview-card-head">
@@ -754,60 +741,60 @@ function CostAtAGlance({
 The heatmap classes were added in Task 3, but `.hist-list`, `.hist-row`, `.hist-label`, `.hist-footnote`, `.cost-total`, `.cost-row`, and `.cost-label` are new. Add them inside `@layer components` in `src/app/globals.css`, immediately after the `.heatmap-legend-cells span { … }` rule added in Task 3:
 
 ```css
-  .hist-list {
-    display: grid;
-    gap: 0.5rem;
-  }
-  .hist-row {
-    display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1fr) 3.5rem;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .hist-label {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
-  .hist-footnote {
-    margin-top: 0.5rem;
-    border-top: 1px solid var(--border);
-    padding-top: 0.5rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
-  .hist-footnote strong {
-    color: var(--foreground);
-    font-weight: 600;
-  }
-  .cost-total {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    margin-bottom: 0.6rem;
-  }
-  .cost-total strong {
-    font-size: var(--text-2xl);
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  .cost-row {
-    display: grid;
-    grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 3.5rem;
-    align-items: center;
-    gap: 0.6rem;
-    padding-block: 0.35rem;
-  }
-  .cost-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-xs);
-  }
-  .cost-row .mono {
-    text-align: right;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
+.hist-list {
+  display: grid;
+  gap: 0.5rem;
+}
+.hist-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+.hist-label {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.hist-footnote {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.hist-footnote strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.cost-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.cost-total strong {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.cost-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding-block: 0.35rem;
+}
+.cost-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+}
+.cost-row .mono {
+  text-align: right;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
 ```
 
 - [ ] **Step 6: Run `npm run verify`**
@@ -829,10 +816,12 @@ git commit -m "✨ feat: render overview patterns (heatmap, length, cost) and sw
 ### Task 5: Update README and AGENTS.md
 
 **Files:**
+
 - Modify: `README.md` (the `/` row in the "Pages" table)
 - Modify: `AGENTS.md` (the Pages line for `/`)
 
 **Interfaces:**
+
 - Consumes: the shipped feature from Tasks 1–4.
 - Produces: accurate docs.
 
@@ -841,7 +830,7 @@ git commit -m "✨ feat: render overview patterns (heatmap, length, cost) and sw
 In `README.md`, replace the `/` row in the "Pages" table. Change the cell content from the current description to:
 
 ```markdown
-| `/`         | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (activity heatmap by day/hour, session-length histogram, week cost-at-a-glance). Cards link into filtered views.                                                                                                                                                                        |
+| `/` | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (activity heatmap by day/hour, session-length histogram, week cost-at-a-glance). Cards link into filtered views. |
 ```
 
 - [ ] **Step 2: Update the AGENTS.md `/` page entry**
@@ -875,6 +864,7 @@ git commit -m "📝 docs: document overview patterns in README and AGENTS.md"
 ## Self-Review Notes
 
 **Spec coverage:**
+
 - Heatmap → Task 1 (query) + Task 3 (CSS) + Task 4 (component). ✓
 - Length histogram → Task 1 + Task 4. ✓
 - Cost-at-a-glance → Task 1 + Task 4. ✓

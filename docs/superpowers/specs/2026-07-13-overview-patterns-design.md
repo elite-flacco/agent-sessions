@@ -2,14 +2,14 @@
 
 **Date:** 2026-07-13
 **Status:** Approved (layout, pending written-spec review)
-**Scope:** Rebuild the Overview tab's two-column grid to surface usage *patterns* — when you're active, how long sessions take, and where cost/tokens concentrate — without duplicating the `/usage` page.
+**Scope:** Rebuild the Overview tab's two-column grid to surface usage _patterns_ — when you're active, how long sessions take, and where cost/tokens concentrate — without duplicating the `/usage` page.
 
 ## Motivation
 
 The Overview tab (`src/app/page.tsx` → `overview-view.tsx`) currently shows six sections: four metric cards plus a two-column grid of Running now / Needs attention / Agents this week / Last 14 days / Recent projects. It answers "what's happening" but not **"what are my patterns."** Three insights are missing and the data for all three already lives in the schema:
 
 1. **When am I active?** — timestamps exist (`started_at`) but only a flat 14-day count strip visualizes recency, not rhythm.
-2. **How long do sessions take?** — runtime is computed for projects and weekly totals but never *distributed*; there's no sense of typical-vs-outlier sessions.
+2. **How long do sessions take?** — runtime is computed for projects and weekly totals but never _distributed_; there's no sense of typical-vs-outlier sessions.
 3. **Where does cost go?** — `session_model_usage` + `pricing.ts` drive the entire `/usage` page, but Overview carries zero cost signal.
 
 The goal is to add these three views to Overview in a way that reads as one cohesive "patterns" story rather than three more scattered cards.
@@ -32,17 +32,17 @@ The two-column `.overview-grid` is reorganized. The metric cards at the top stay
 5. Needs attention
 6. Recent projects
 
-**Removed from Overview:** "Agents this week" (the provider distribution meters). This data is already on `/usage` (by agent) and the metric cards cover session volume. Removing it prevents the left column from running long while the new patterns views are added. *(If the provider breakdown proves useful at-a-glance, it can return as a compact element inside the cost card — but YAGNI for v1.)*
+**Removed from Overview:** "Agents this week" (the provider distribution meters). This data is already on `/usage` (by agent) and the metric cards cover session volume. Removing it prevents the left column from running long while the new patterns views are added. _(If the provider breakdown proves useful at-a-glance, it can return as a compact element inside the cost card — but YAGNI for v1.)_
 
 ## Data sources
 
 All data comes from existing tables; no schema changes.
 
-| View | Source rows | Aggregation |
-| --- | --- | --- |
-| Heatmap | `sessions.started_at` | Group by `dayofweek` × `hour`, count, over trailing 30 days |
-| Length histogram | `sessions.started_at`, `ended_at`/`updated_at` | Bucket the existing runtime expression (`julianday(coalesce(ended_at,updated_at)) - julianday(started_at)`), over trailing 7 days |
-| Cost card | `session_model_usage` joined to `sessions`, priced via `pricing.ts` | Reuse the `getUsageSummary` cost derivation for the week window + top-3 models |
+| View             | Source rows                                                         | Aggregation                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Heatmap          | `sessions.started_at`                                               | Group by `dayofweek` × `hour`, count, over trailing 30 days                                                                       |
+| Length histogram | `sessions.started_at`, `ended_at`/`updated_at`                      | Bucket the existing runtime expression (`julianday(coalesce(ended_at,updated_at)) - julianday(started_at)`), over trailing 7 days |
+| Cost card        | `session_model_usage` joined to `sessions`, priced via `pricing.ts` | Reuse the `getUsageSummary` cost derivation for the week window + top-3 models                                                    |
 
 ## New query layer (`src/lib/queries.ts`)
 
@@ -60,7 +60,7 @@ export interface OverviewPatterns {
     sessionCount: number;
   };
   costWeek: {
-    costUsd: number | null;   // null when any usage is unpriced — same rule as /usage
+    costUsd: number | null; // null when any usage is unpriced — same rule as /usage
     tokens: number;
     topModels: { model: string; costUsd: number }[]; // up to 3
   };
@@ -93,6 +93,7 @@ The heatmap's shades are expressed as **semantic tokens**:
 ## Open question (to resolve in the plan)
 
 **Where does the new query live?** Two options, to be settled during implementation planning:
+
 - (a) Extend `getOverview()` to also return `heatmap`/`length`/`costWeek`. Pro: one call site. Con: the function grows and the cost query duplicates logic from `getUsageSummary`.
 - (b) Add a sibling `getOverviewPatterns()`. Pro: focused; can reuse `getUsageSummary`'s week window. Con: a second DB round-trip from `page.tsx`.
 
