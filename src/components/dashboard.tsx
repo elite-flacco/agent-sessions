@@ -415,7 +415,9 @@ function SessionRow({
           {relativeTime(session.startedAt)}
         </span>
         <span className="mono session-secondary">
-          {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
+          {session.status === "failed"
+            ? "—"
+            : elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
         </span>
         <span className="mono session-secondary">
           {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}

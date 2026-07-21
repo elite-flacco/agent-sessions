@@ -193,12 +193,23 @@ function SessionLine({
       <div>
         <strong>{session.title}</strong>
         <p>
-          {providerLabels[session.provider]}
-          {hideStatus
-            ? ""
-            : ` · ${statusDisplay(session.status, session.statusReason)}`}{" "}
-          · {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)} ·{" "}
-          {session.repository ?? "Unknown workspace"}
+          {[
+            providerLabels[session.provider],
+            hideStatus
+              ? null
+              : statusDisplay(session.status, session.statusReason),
+            // A failed session's duration is a misleading wall-clock span
+            // (idle throttling included), so omit it for failures.
+            session.status === "failed"
+              ? null
+              : elapsed(
+                  session.startedAt,
+                  session.endedAt ?? session.updatedAt,
+                ),
+            session.repository ?? "Unknown workspace",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
       <time title={absoluteTime(session.updatedAt)}>
