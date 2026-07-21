@@ -354,6 +354,42 @@ type InventoryItem =
   | { kind: "group"; summary: SkillGroupSummary; members: AgentCapability[] };
 
 /**
+ * Partition capabilities by kind, ordered Skills → Plugins → MCPs via
+ * kindSortOrder. Callers have already filtered/sorted; this only buckets.
+ */
+function partitionByKind(
+  capabilities: AgentCapability[],
+): { kind: CapabilityKind; capabilities: AgentCapability[] }[] {
+  const byKind = new Map<CapabilityKind, AgentCapability[]>();
+  for (const capability of capabilities) {
+    const list = byKind.get(capability.kind) ?? [];
+    list.push(capability);
+    byKind.set(capability.kind, list);
+  }
+  return [...byKind.entries()]
+    .sort(([left], [right]) => kindSortOrder[left] - kindSortOrder[right])
+    .map(([kind, members]) => ({ kind, capabilities: members }));
+}
+
+/**
+ * Partition capabilities by origin, ordered via originSortOrder so the source
+ * groups read in the same order used elsewhere in the view.
+ */
+function partitionByOrigin(
+  capabilities: AgentCapability[],
+): { origin: AgentCapability["origin"]; capabilities: AgentCapability[] }[] {
+  const byOrigin = new Map<AgentCapability["origin"], AgentCapability[]>();
+  for (const capability of capabilities) {
+    const list = byOrigin.get(capability.origin) ?? [];
+    list.push(capability);
+    byOrigin.set(capability.origin, list);
+  }
+  return [...byOrigin.entries()]
+    .sort(([left], [right]) => originSortOrder[left] - originSortOrder[right])
+    .map(([origin, members]) => ({ origin, capabilities: members }));
+}
+
+/**
  * Walk the sorted capability list and emit render items, collapsing runs of
  * two or more consecutive same-key skills into a single group item. Runs of
  * fewer than two (including all non-skill capabilities) emit one row item
@@ -673,7 +709,6 @@ function ProviderInventory({
   const capabilities = inventory.capabilities
     .filter((capability) => matchesCapability(capability, filters))
     .sort(compareInventoryCapabilities);
-  const items = buildInventoryItems(capabilities).sort(compareInventoryItems);
   // Names that appear on more than one visible capability (across groups and
   // flat rows alike). For those rows we surface a shortened sourcePath so the
   // user can tell duplicate installs apart and clean them up.
@@ -719,24 +754,16 @@ function ProviderInventory({
           ))}
         </div>
       ) : null}
-      {items.length > 0 ? (
+      {capabilities.length > 0 ? (
         <div className="agent-capability-list">
-          {items.map((item) =>
-            item.kind === "row" ? (
-              <CapabilityRow
-                key={`row:${item.capability.id}`}
-                capability={item.capability}
-                duplicateNames={duplicateNames}
-              />
-            ) : (
-              <CapabilityGroup
-                key={`group:${item.summary.key}`}
-                summary={item.summary}
-                members={item.members}
-                duplicateNames={duplicateNames}
-              />
-            ),
-          )}
+          {partitionByKind(capabilities).map((bucket) => (
+            <KindBucket
+              key={bucket.kind}
+              kind={bucket.kind}
+              capabilities={bucket.capabilities}
+              duplicateNames={duplicateNames}
+            />
+          ))}
         </div>
       ) : null}
       {instructionVisible && inventory.instructionFile ? (
@@ -754,6 +781,81 @@ function ProviderInventory({
   );
 }
 
+function KindBucket({
+  kind,
+  capabilities,
+  duplicateNames,
+}: {
+  kind: CapabilityKind;
+  capabilities: AgentCapability[];
+  duplicateNames: Set<string>;
+}) {
+  const KindIcon = kindIcons[kind];
+  return (
+    <details className="agent-kind-bucket" open>
+      <summary>
+        <span className="agent-kind-bucket-primary">
+          <KindIcon aria-hidden="true" size={14} />
+          <strong>{kindLabels[kind]}</strong>
+        </span>
+        <span>{countLabel(capabilities.length, "item")}</span>
+      </summary>
+      <div className="agent-kind-bucket-body">
+        {partitionByOrigin(capabilities).map((group) => (
+          <SourceGroup
+            key={group.origin}
+            origin={group.origin}
+            capabilities={group.capabilities}
+            duplicateNames={duplicateNames}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function SourceGroup({
+  origin,
+  capabilities,
+  duplicateNames,
+}: {
+  origin: AgentCapability["origin"];
+  capabilities: AgentCapability[];
+  duplicateNames: Set<string>;
+}) {
+  const items = buildInventoryItems(capabilities).sort(compareInventoryItems);
+  return (
+    <details className="agent-source-group">
+      <summary>
+        <span className="agent-source-group-primary">
+          <span className={`badge ${originBadges[origin]} agent-origin-tag`}>
+            {originLabels[origin]}
+          </span>
+        </span>
+        <span>{countLabel(capabilities.length, "item")}</span>
+      </summary>
+      <div className="agent-source-group-body">
+        {items.map((item) =>
+          item.kind === "row" ? (
+            <CapabilityRow
+              key={`row:${item.capability.id}`}
+              capability={item.capability}
+              duplicateNames={duplicateNames}
+            />
+          ) : (
+            <CapabilityGroup
+              key={`group:${item.summary.key}`}
+              summary={item.summary}
+              members={item.members}
+              duplicateNames={duplicateNames}
+            />
+          ),
+        )}
+      </div>
+    </details>
+  );
+}
+
 function CapabilityRow({
   capability,
   duplicateNames,
@@ -761,7 +863,6 @@ function CapabilityRow({
   capability: AgentCapability;
   duplicateNames?: Set<string>;
 }) {
-  const KindIcon = kindIcons[capability.kind];
   // When the same capability name appears more than once in the visible
   // inventory, the source line alone can't tell the rows apart (e.g. two
   // ai-sdk installs both reclassified to skills.sh/vercel/ai). Surface the
@@ -784,15 +885,6 @@ function CapabilityRow({
           </code>
         ) : null}
       </div>
-      <span className={`agent-kind-label ${kindMarkers[capability.kind]}`}>
-        <KindIcon aria-hidden="true" size={12} />
-        {capabilityKindLabels[capability.kind]}
-      </span>
-      <span
-        className={`badge ${originBadges[capability.origin]} agent-origin-tag`}
-      >
-        {originLabels[capability.origin]}
-      </span>
     </div>
   );
 }
@@ -816,11 +908,6 @@ function CapabilityGroup({
           <strong>{summary.name}</strong>
         </span>
         <span>{countLabel(summary.memberCount, "skill")}</span>
-        <span
-          className={`badge ${originBadges[summary.origin]} agent-origin-tag`}
-        >
-          {originLabels[summary.origin]}
-        </span>
       </summary>
       <div className="agent-capability-group-members">
         {members.map((capability) => (

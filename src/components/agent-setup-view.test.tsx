@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AgentCapability, AgentInventory } from "@/lib/agent-inventory";
 import { AgentSetupView, parseAgentSetupFilters } from "./agent-setup-view";
+
+// The file mixes render() (DOM-mounting) and renderToStaticMarkup() (string)
+// tests; without cleanup, DOM nodes from one render() test leak into the
+// next and break global `screen` queries in later tests.
+afterEach(() => {
+  cleanup();
+});
 
 function skill(
   provider: AgentInventory["provider"],
@@ -133,6 +140,90 @@ describe("parseAgentSetupFilters", () => {
 });
 
 describe("AgentSetupView", () => {
+  test("inventory nests kind → source → repo and hoists badges off rows", () => {
+    const nested: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [
+          skill("codex", "brainstorming", {
+            origin: "skills_sh",
+            sourceRepository: "superpowers",
+          }),
+          skill("codex", "writing-plans", {
+            origin: "skills_sh",
+            sourceRepository: "superpowers",
+          }),
+        ],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={nested}
+        filters={{ view: "inventory", provider: "codex" }}
+      />,
+    );
+
+    // One kind bucket, open by default.
+    const buckets = container.querySelectorAll(".agent-kind-bucket");
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0]!.hasAttribute("open")).toBe(true);
+
+    // One source group, collapsed by default.
+    const sources = container.querySelectorAll(".agent-source-group");
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.hasAttribute("open")).toBe(false);
+
+    // Type badge lives on the bucket, never on a row.
+    expect(container.querySelectorAll(".agent-kind-label")).toHaveLength(0);
+
+    // Origin badge appears once, on the source header.
+    expect(
+      container.querySelectorAll(".agent-source-group .agent-origin-tag"),
+    ).toHaveLength(1);
+
+    // Full three-level nesting for the 2-skill repo run.
+    expect(
+      container.querySelectorAll(
+        ".agent-kind-bucket .agent-source-group .agent-capability-group .agent-capability-row",
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("inventory renders singletons flat under their source group", () => {
+    const flat: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [skill("codex", "my-skill", { origin: "personal" })],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={flat}
+        filters={{ view: "inventory", provider: "codex" }}
+      />,
+    );
+
+    // No repo/plugin sub-group is forced for a lone skill.
+    expect(container.querySelectorAll(".agent-capability-group")).toHaveLength(
+      0,
+    );
+    // The row sits directly in the source group body.
+    expect(
+      container.querySelectorAll(
+        ".agent-source-group-body > .agent-capability-row",
+      ),
+    ).toHaveLength(1);
+    // Row carries neither badge.
+    expect(container.querySelectorAll(".agent-kind-label")).toHaveLength(0);
+    expect(
+      container.querySelectorAll(".agent-capability-row .agent-origin-tag"),
+    ).toHaveLength(0);
+  });
+
   test("opens the primary Compare tab in Needs attention mode", () => {
     const html = renderToStaticMarkup(
       <AgentSetupView
