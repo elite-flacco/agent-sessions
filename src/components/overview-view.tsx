@@ -197,8 +197,7 @@ function SessionLine({
           {hideStatus
             ? ""
             : ` · ${statusDisplay(session.status, session.statusReason)}`}{" "}
-          ·{" "}
-          {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)} ·{" "}
+          · {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)} ·{" "}
           {session.repository ?? "Unknown workspace"}
         </p>
       </div>

@@ -60,10 +60,7 @@
       "indexes": {
         "events_session_external_idx": {
           "name": "events_session_external_idx",
-          "columns": [
-            "session_id",
-            "external_id"
-          ],
+          "columns": ["session_id", "external_id"],
           "isUnique": true
         }
       },
@@ -72,12 +69,8 @@
           "name": "activity_events_session_id_sessions_id_fk",
           "tableFrom": "activity_events",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -291,10 +284,7 @@
       "indexes": {
         "usage_session_model_idx": {
           "name": "usage_session_model_idx",
-          "columns": [
-            "session_id",
-            "model"
-          ],
+          "columns": ["session_id", "model"],
           "isUnique": true
         }
       },
@@ -303,12 +293,8 @@
           "name": "session_model_usage_session_id_sessions_id_fk",
           "tableFrom": "session_model_usage",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -508,32 +494,22 @@
       "indexes": {
         "sessions_provider_external_idx": {
           "name": "sessions_provider_external_idx",
-          "columns": [
-            "provider",
-            "external_id"
-          ],
+          "columns": ["provider", "external_id"],
           "isUnique": true
         },
         "sessions_started_idx": {
           "name": "sessions_started_idx",
-          "columns": [
-            "started_at"
-          ],
+          "columns": ["started_at"],
           "isUnique": false
         },
         "sessions_status_idx": {
           "name": "sessions_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "sessions_parent_idx": {
           "name": "sessions_parent_idx",
-          "columns": [
-            "provider",
-            "parent_external_id"
-          ],
+          "columns": ["provider", "parent_external_id"],
           "isUnique": false
         }
       },
