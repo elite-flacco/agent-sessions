@@ -17,6 +17,7 @@ import {
   absoluteTime,
   elapsed,
   formatCostUsd,
+  hasMeaningfulDuration,
   relativeTime,
   runtime,
 } from "@/lib/format";
@@ -415,9 +416,9 @@ function SessionRow({
           {relativeTime(session.startedAt)}
         </span>
         <span className="mono session-secondary">
-          {session.status === "failed"
-            ? "—"
-            : elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
+          {hasMeaningfulDuration(session.status)
+            ? elapsed(session.startedAt, session.endedAt ?? session.updatedAt)
+            : "—"}
         </span>
         <span className="mono session-secondary">
           {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}

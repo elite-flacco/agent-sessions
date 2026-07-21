@@ -16,6 +16,7 @@ import {
   elapsed,
   formatCostUsd,
   formatTokens,
+  hasMeaningfulDuration,
   relativeTime,
   runtime,
 } from "@/lib/format";
@@ -198,14 +199,11 @@ function SessionLine({
             hideStatus
               ? null
               : statusDisplay(session.status, session.statusReason),
-            // A failed session's duration is a misleading wall-clock span
-            // (idle throttling included), so omit it for failures.
-            session.status === "failed"
-              ? null
-              : elapsed(
-                  session.startedAt,
-                  session.endedAt ?? session.updatedAt,
-                ),
+            // Only completed/running (and awaiting-input) durations reflect
+            // real work; failed/interrupted/incomplete spans are omitted.
+            hasMeaningfulDuration(session.status)
+              ? elapsed(session.startedAt, session.endedAt ?? session.updatedAt)
+              : null,
             session.repository ?? "Unknown workspace",
           ]
             .filter(Boolean)

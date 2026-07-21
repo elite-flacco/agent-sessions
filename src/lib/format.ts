@@ -1,3 +1,5 @@
+import type { SessionStatus } from "./types";
+
 export function elapsed(start: string, end?: string | null): string {
   const milliseconds = Math.max(
     0,
@@ -7,6 +9,19 @@ export function elapsed(start: string, end?: string | null): string {
   return minutes < 60
     ? `${minutes}m`
     : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// Statuses whose start→end span is not meaningful work time: failures inflate
+// it with idle throttling, and interrupted/incomplete sessions never ran to a
+// real end. Only completed/running (and awaiting-input) durations are shown.
+const DURATIONLESS_STATUSES = new Set<SessionStatus>([
+  "failed",
+  "interrupted",
+  "incomplete",
+]);
+
+export function hasMeaningfulDuration(status: SessionStatus): boolean {
+  return !DURATIONLESS_STATUSES.has(status);
 }
 
 export function relativeTime(value: string): string {
