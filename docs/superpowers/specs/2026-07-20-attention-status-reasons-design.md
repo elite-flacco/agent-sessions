@@ -94,7 +94,7 @@ path for main sessions.
 
 - **`shared.ts`** — `JsonlStrategy.terminalStatus` returns
   `{ status: "completed" | "interrupted" | "needs_attention" | "failed";
-  reason?: StatusReason } | undefined`. `parseJsonl` sets both
+reason?: StatusReason } | undefined`. `parseJsonl` sets both
   `session.status` (via `staleStatus`) and `session.statusReason`.
 - **`utils.ts`** — `staleStatus` accepts the terminal status value; a small
   helper keeps the `{status, reason}` split so callers thread `reason` onto
