@@ -2420,9 +2420,6 @@
     .agent-filter-row .search-control {
       grid-column: auto;
     }
-    .agent-capability-group > summary {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
     .agent-provider-heading {
       align-items: flex-start;
       flex-direction: column;

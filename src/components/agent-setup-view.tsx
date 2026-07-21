@@ -320,13 +320,12 @@ interface SkillGroupSummary {
   kind: "plugin" | "skills_sh";
   name: string;
   memberCount: number;
-  origin: "marketplace" | "skills_sh";
 }
 
 /**
  * Build the summary that `CapabilityGroup` renders in its <summary>. Members
- * must share a group key (caller's responsibility). Name, origin, and kind
- * are derived from the first member.
+ * must share a group key (caller's responsibility). Name and kind are derived
+ * from the first member.
  */
 function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
   const first = members[0]!;
@@ -337,7 +336,6 @@ function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
       kind: "plugin",
       name: first.sourcePlugin,
       memberCount: members.length,
-      origin: "marketplace",
     };
   }
   return {
@@ -345,7 +343,6 @@ function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
     kind: "skills_sh",
     name: first.sourceRepository!,
     memberCount: members.length,
-    origin: "skills_sh",
   };
 }
 
