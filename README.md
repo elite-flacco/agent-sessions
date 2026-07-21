@@ -99,7 +99,12 @@ the plugin's state, so individually disabled plugin skills read as Disabled
 too. Disabled
 capabilities appear only in the Compare view (where they distinguish a
 deliberate disable from a missing install); the Inventory list and summary
-counts show what is in effect.
+counts show what is in effect. The Inventory list nests capabilities as a
+collapsible Kind bucket (Skills, Plugins, MCPs — open by default, stating the
+type once) containing collapsible Source groups (by origin — Personal,
+Marketplace, skills.sh, Built-in — collapsed by default, stating the
+provenance once), with the existing repo/plugin skill grouping nested beneath;
+the Compare view remains a flat table.
 
 The page allowlists display fields: capability name and type, enabled or
 installed status, packaging, provenance, source repository, and safe local
