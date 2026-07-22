@@ -412,6 +412,7 @@ function reconcileZcodeMetadata(): void {
           : undefined,
       updatedAt,
       usage: [],
+      capabilityUsage: [],
       events: [
         {
           externalId: "started",

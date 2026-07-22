@@ -48,6 +48,24 @@ export interface ModelUsage {
   reportedCostUsd?: number;
 }
 
+export type CapabilityUsageKind = "skill" | "mcp";
+
+export interface CapabilityUsage {
+  externalId: string;
+  kind: CapabilityUsageKind;
+  name: string;
+  occurredAt: string;
+}
+
+export interface CapabilityLookup {
+  skillFiles: ReadonlyMap<string, string>;
+  mcpNames: ReadonlyMap<string, string>;
+}
+
+export interface AdapterParseContext {
+  capabilities?: CapabilityLookup;
+}
+
 export const costSources = ["reported", "estimated", "unavailable"] as const;
 export type CostSource = (typeof costSources)[number];
 
@@ -74,6 +92,7 @@ export interface NormalizedSession {
   deletions?: number;
   model?: string;
   usage: ModelUsage[];
+  capabilityUsage: CapabilityUsage[];
   events: ActivityEvent[];
 }
 
@@ -93,5 +112,5 @@ export interface ParseResult {
 export interface ProviderAdapter {
   provider: AgentProvider;
   discover(): Promise<string[]>;
-  parse(filePath: string): Promise<ParseResult>;
+  parse(filePath: string, context?: AdapterParseContext): Promise<ParseResult>;
 }

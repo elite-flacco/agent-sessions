@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   ActivityEvent,
   AgentProvider,
+  CapabilityUsage,
   ModelUsage,
   NormalizedSession,
   ParseResult,
@@ -33,6 +34,7 @@ export interface JsonlStrategy {
   terminalStatus(rows: Record<string, unknown>[]): TerminalStatus | undefined;
   events(rows: Record<string, unknown>[]): ActivityEvent[];
   usage?(rows: Record<string, unknown>[]): ModelUsage[];
+  capabilityUsage?(rows: Record<string, unknown>[]): CapabilityUsage[];
 }
 
 export function tokenCount(value: unknown): number {
@@ -176,6 +178,7 @@ export async function parseJsonl(
           entry.cacheWriteTokens >
           0 || entry.reportedCostUsd !== undefined,
     );
+    const capabilityUsage = strategy.capabilityUsage?.(rows) ?? [];
     const terminalStatus = strategy.terminalStatus(rows);
     const derived = staleStatus(updatedAt, terminalStatus);
     const hierarchy = strategy.hierarchy?.(rows) ?? {};
@@ -196,6 +199,7 @@ export async function parseJsonl(
       updatedAt,
       model: dominantModel(usage),
       usage,
+      capabilityUsage,
       events: events.length
         ? events
         : [
