@@ -895,13 +895,20 @@ function CapabilityRow({
     duplicateNames?.has(capability.name) && !!capability.sourcePath;
   // Inside a repo/plugin sub-group the header already names the source, so a
   // per-row source line just repeats it. For standalone rows the source line
-  // is the row's only locator — but only when there's a real repository or
-  // plugin to name. A bare sourcePath on a personal/built-in skill is just
-  // ~/.<provider>/skills/<name>, which the row title already conveys, so it
-  // adds noise without information.
-  const sourceLine = withinGroup
+  // is the row's only locator — but only when it carries information the name
+  // does not. Plugin/MCP rows are published as "<name>@<marketplace>" with
+  // sourceRepository === "<marketplace>", so the repository line just repeats
+  // the @-suffix; skills.sh rows keep their line because the repository
+  // (e.g. "vercel/ai") is a real locator the skill name doesn't convey.
+  const repository = capability.sourceRepository;
+  const nameSuffix = capability.name.includes("@")
+    ? capability.name.slice(capability.name.lastIndexOf("@") + 1)
+    : undefined;
+  const redundantRepository =
+    withinGroup || (nameSuffix !== undefined && repository === nameSuffix);
+  const sourceLine = redundantRepository
     ? undefined
-    : (capability.sourceRepository ?? capability.sourcePlugin);
+    : (repository ?? capability.sourcePlugin);
 
   return (
     <div className="agent-capability-row">
