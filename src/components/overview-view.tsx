@@ -152,7 +152,7 @@ export function OverviewView({
               <Link
                 key={project.key}
                 className="project-session-row recent-project-row"
-                href="/sessions?view=projects"
+                href={`/sessions?project=${encodeURIComponent(project.key)}`}
               >
                 <span className="project-list-marker" aria-hidden />
                 <div>
