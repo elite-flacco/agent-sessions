@@ -27,6 +27,38 @@ export interface AgentCapability {
   contentFingerprint?: string;
 }
 
+export type ScheduledTaskStatus = "active" | "paused" | "disabled" | "unknown";
+
+export type ScheduledTaskInstructionFormat =
+  "toml_prompt" | "skill_md" | "script";
+
+/**
+ * A scheduled/recurring task discovered from a provider's native storage
+ * (Codex automations TOML, Claude scheduled-tasks dirs, Zcode
+ * workflow_definition rows). Allowlist exception: the instruction body is
+ * surfaced verbatim because that prose is the task's purpose and the user
+ * authored it — see AGENTS.md for the documented tradeoff.
+ */
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  description?: string;
+  provider: AgentProvider;
+  scheduleRaw?: string;
+  scheduleHuman?: string;
+  scheduleMissing: boolean;
+  status: ScheduledTaskStatus;
+  model?: string;
+  targetProject?: string;
+  workingDirectories?: string[];
+  instructionBody?: string;
+  instructionFormat: ScheduledTaskInstructionFormat;
+  sourcePath: string;
+  createdAt?: number;
+  updatedAt?: number;
+  warnings: InventoryWarning[];
+}
+
 export interface InstructionFile {
   filename: string;
   sourcePath: string;
@@ -44,6 +76,12 @@ export interface AgentInventory {
   provider: AgentProvider;
   scope: "global";
   capabilities: AgentCapability[];
+  /**
+   * Per-provider scheduled/recurring tasks. Optional because not every
+   * construction site (e.g. test fixtures) needs to populate it; readers
+   * always set it at runtime. Consumers should coalesce: `inventory.scheduledTasks ?? []`.
+   */
+  scheduledTasks?: ScheduledTask[];
   instructionFile?: InstructionFile;
   warnings: InventoryWarning[];
 }

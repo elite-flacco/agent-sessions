@@ -24,12 +24,13 @@ import {
   type ComparisonDuplicate,
   type ComparisonRow,
   type InventoryWarning,
+  type ScheduledTask,
 } from "@/lib/agent-inventory";
 import { providerBadges, providerLabels } from "@/lib/labels";
 import { shortenHomePath } from "@/lib/format";
 import { agentProviders, type AgentProvider } from "@/lib/types";
 
-export type AgentSetupViewMode = "inventory" | "compare";
+export type AgentSetupViewMode = "inventory" | "compare" | "tasks";
 type AgentSetupKind = CapabilityKind | "instruction";
 
 export interface AgentSetupFilters {
@@ -174,7 +175,12 @@ export function parseAgentSetupFilters(
   const kind = first(params.kind);
   const status = first(params.status);
   return {
-    view: first(params.view) === "compare" ? "compare" : "inventory",
+    view:
+      first(params.view) === "compare"
+        ? "compare"
+        : first(params.view) === "tasks"
+          ? "tasks"
+          : "inventory",
     comparisonMode:
       first(params.comparison) === "attention" ? "attention" : undefined,
     q: first(params.q)?.trim() || undefined,
@@ -200,6 +206,7 @@ function setupHref(
   const next = { ...filters, ...changes };
   const params = new URLSearchParams();
   if (next.view === "compare") params.set("view", "compare");
+  else if (next.view === "tasks") params.set("view", "tasks");
   if (next.comparisonMode === "attention") {
     params.set("comparison", "attention");
   }
@@ -473,12 +480,29 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
         >
           Compare
         </Link>
+        <Link
+          href={setupHref(filters, {
+            view: "tasks",
+            comparisonMode: undefined,
+            discrepanciesOnly: undefined,
+          })}
+          className={
+            filters.view === "tasks"
+              ? "workspace-tab tab-active"
+              : "workspace-tab"
+          }
+          aria-current={filters.view === "tasks" ? "page" : undefined}
+        >
+          Scheduled tasks
+        </Link>
       </nav>
 
       <FilterForm filters={filters} />
 
       {filters.view === "compare" ? (
         <ComparisonView inventories={inventories} filters={filters} />
+      ) : filters.view === "tasks" ? (
+        <ScheduledTasksView inventories={inventories} />
       ) : (
         <InventoryView inventories={inventories} filters={filters} />
       )}
@@ -543,6 +567,26 @@ function ProviderSummary({
 }
 
 function FilterForm({ filters }: { filters: AgentSetupFilters }) {
+  if (filters.view === "tasks") {
+    // Tasks have no kind/status/provider filter dimensions; only preserve the
+    // view param so form submission (e.g. a search) doesn't revert to inventory.
+    return (
+      <AgentFilterForm>
+        <input type="hidden" name="view" value="tasks" />
+        <label className="search-control">
+          <span className="sr-only">Search scheduled tasks</span>
+          <Search size={14} />
+          <input
+            className="input"
+            type="search"
+            name="q"
+            defaultValue={filters.q}
+            placeholder="Search scheduled tasks"
+          />
+        </label>
+      </AgentFilterForm>
+    );
+  }
   return (
     <AgentFilterForm>
       {filters.view === "compare" ? (
@@ -1423,5 +1467,130 @@ function UniformComparisonCell({ row }: { row: ComparisonRow }) {
         <span className="agent-compare-source">{visibleSource}</span>
       ) : null}
     </td>
+  );
+}
+
+const scheduledStatusLabels: Record<ScheduledTask["status"], string> = {
+  active: "Active",
+  paused: "Paused",
+  disabled: "Disabled",
+  unknown: "Unknown",
+};
+
+const scheduledStatusBadges: Record<ScheduledTask["status"], string> = {
+  active: "badge-1",
+  paused: "badge-4",
+  disabled: "badge-4",
+  unknown: "badge-5",
+};
+
+const scheduledSourceLabels: Record<AgentProvider, string> = {
+  codex: "Read from ~/.codex/automations/",
+  claude: "Read from ~/.claude/scheduled-tasks/",
+  zcode: "Read from ~/.zcode/cli/db/db.sqlite (workflow_definition)",
+  pi: "Pi does not expose scheduled tasks",
+};
+
+/**
+ * Third `/agents` tab. Renders one card per provider (always all four, even
+ * when empty) with that provider's discovered scheduled/recurring tasks. The
+ * KindRail is scoped to InventoryView so it does not render here.
+ */
+function ScheduledTasksView({
+  inventories,
+}: {
+  inventories: AgentInventory[];
+}) {
+  const total = inventories.reduce(
+    (sum, inventory) => sum + (inventory.scheduledTasks?.length ?? 0),
+    0,
+  );
+  return (
+    <div className="agent-inventory-list">
+      <p className="agent-tasks-summary">
+        {total === 0
+          ? "No scheduled tasks found across agents."
+          : `${total} scheduled ${total === 1 ? "task" : "tasks"} across agents.`}
+      </p>
+      {inventories.map((inventory) => (
+        <ProviderScheduledTasks
+          key={inventory.provider}
+          inventory={inventory}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ProviderScheduledTasks({ inventory }: { inventory: AgentInventory }) {
+  const tasks = inventory.scheduledTasks ?? [];
+  return (
+    <section className="card agent-provider-section">
+      <header className="agent-provider-heading">
+        <div>
+          <span className={`badge ${providerBadges[inventory.provider]}`}>
+            {providerLabels[inventory.provider]}
+          </span>
+          <strong>
+            {tasks.length === 0
+              ? "No scheduled tasks"
+              : `${tasks.length} scheduled ${tasks.length === 1 ? "task" : "tasks"}`}
+          </strong>
+        </div>
+        <span>{scheduledSourceLabels[inventory.provider]}</span>
+      </header>
+      {tasks.length === 0 ? (
+        <div className="empty-state agent-empty-state">
+          <p>No scheduled tasks found for this agent.</p>
+        </div>
+      ) : (
+        <div className="agent-capability-list">
+          {tasks.map((task) => (
+            <ScheduledTaskRow key={task.id} task={task} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ScheduledTaskRow({ task }: { task: ScheduledTask }) {
+  const schedule = task.scheduleHuman ?? task.scheduleRaw;
+  return (
+    <div className="agent-capability-row">
+      <div className="agent-capability-primary">
+        <strong>{task.name}</strong>
+        <span>
+          {schedule ?? "Schedule not specified"}
+          {task.scheduleMissing ? (
+            <em className="agent-tasks-hint"> (no schedule configured)</em>
+          ) : null}
+        </span>
+        {task.model ? (
+          <span>
+            <code>{task.model}</code>
+          </span>
+        ) : null}
+        {task.targetProject ? (
+          <span>
+            <code>{task.targetProject}</code>
+          </span>
+        ) : null}
+      </div>
+      <span
+        className={`badge ${scheduledStatusBadges[task.status]} agent-status-tag`}
+      >
+        {scheduledStatusLabels[task.status]}
+      </span>
+      {task.instructionBody ? (
+        <details className="agent-instruction agent-task-instruction">
+          <summary>
+            <strong>Instructions</strong>
+            <span>{task.sourcePath}</span>
+          </summary>
+          <pre>{task.instructionBody}</pre>
+        </details>
+      ) : null}
+    </div>
   );
 }

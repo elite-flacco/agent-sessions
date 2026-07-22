@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { listZcodeWorkflowDefinitions } from "@/lib/zcode-db";
 import { dedupeCapabilities } from "./normalize";
 import {
   capability,
@@ -9,15 +10,63 @@ import {
   pluginStatusWithPresence,
   readInstruction,
   readJsonSource,
+  readTextSource,
   safeAbsolutePath,
   type SkillLock,
 } from "./shared";
-import type { AgentCapability, AgentInventory } from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 
 interface ZcodeOptions {
   homeDir: string;
   personalSkillRoots: string[];
   skillLock: SkillLock;
+}
+
+async function readScriptBody(
+  scriptPath: string | undefined,
+): Promise<string | undefined> {
+  if (!scriptPath) return undefined;
+  // Local warnings list — script read failure shouldn't poison the inventory.
+  return readTextSource(scriptPath, []);
+}
+
+/**
+ * Reads scheduled-task candidates from Zcode's `workflow_definition` table
+ * via the shared `zcode-db` reader. v1 sets `scheduleMissing: true` always:
+ * the `meta_json` schedule shape is unobservable without a real row, so we
+ * don't guess. The script body (`script_path` file contents) is surfaced
+ * verbatim under the allowlist exception.
+ */
+export async function discoverZcodeScheduledTasks(): Promise<ScheduledTask[]> {
+  const definitions = listZcodeWorkflowDefinitions();
+  if (!definitions) return [];
+  const tasks: ScheduledTask[] = [];
+  for (const def of definitions) {
+    const body = await readScriptBody(def.scriptPath);
+    tasks.push({
+      id: def.id,
+      name: def.name,
+      provider: "zcode",
+      scheduleMissing: true,
+      status: def.enabled ? "active" : "disabled",
+      instructionBody: body,
+      instructionFormat: "script",
+      sourcePath: def.scriptPath ?? "",
+      createdAt: def.timeCreated,
+      updatedAt: def.timeUpdated,
+      warnings:
+        body === undefined && def.scriptPath
+          ? [
+              {
+                sourcePath: def.scriptPath,
+                code: "unreadable" as const,
+                message: "Could not read workflow script.",
+              },
+            ]
+          : [],
+    });
+  }
+  return tasks;
 }
 
 export async function discoverZcode({
@@ -133,6 +182,7 @@ export async function discoverZcode({
     provider: "zcode",
     scope: "global",
     capabilities: dedupeCapabilities(capabilities),
+    scheduledTasks: await discoverZcodeScheduledTasks(),
     instructionFile: await readInstruction(
       join(homeDir, ".zcode", "AGENTS.md"),
       warnings,

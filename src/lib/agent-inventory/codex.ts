@@ -1,12 +1,14 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { readdir } from "node:fs/promises";
 import { dedupeCapabilities } from "./normalize";
+import { humanizeSchedule } from "./schedule";
 import {
   capability,
   compareVersionDirs,
   discoverPluginMcps,
   discoverSkillRoots,
   pluginStatusWithPresence,
+  readDirectoryEntries,
   readInstruction,
   readTextSource,
   safeAbsolutePath,
@@ -18,6 +20,8 @@ import type {
   AgentCapability,
   AgentInventory,
   InventoryWarning,
+  ScheduledTask,
+  ScheduledTaskStatus,
 } from "./types";
 
 interface CodexOptions {
@@ -129,6 +133,99 @@ async function resolveCachedPluginRoot(
   return join(cacheRoot, versions[versions.length - 1]!);
 }
 
+/**
+ * Parses `key = value` lines and `key = [a, b]` arrays from a flat TOML body.
+ * Used for `automation.toml` which has no `[section]` tables — just top-level
+ * keys. Single-line values only; multi-line triple-quoted strings are not
+ * emitted by Codex automations today.
+ */
+function parseTomlValues(body: string): {
+  values: Record<string, string>;
+  arrays: Record<string, string[]>;
+} {
+  const values: Record<string, string> = {};
+  const arrays: Record<string, string[]> = {};
+  for (const line of body.split("\n")) {
+    const m = line.match(/^\s*([A-Za-z_][\w]*)\s*=\s*(.+?)\s*$/);
+    if (!m) continue;
+    const [, key, raw] = m;
+    if (raw.startsWith("[")) {
+      const inner = raw.replace(/^\[/, "").replace(/\]$/, "");
+      arrays[key] = inner
+        .split(",")
+        .map((s) => s.trim().replace(/^"|"$/g, ""))
+        .filter(Boolean);
+    } else {
+      values[key] = raw.replace(/^"|"$/g, "");
+    }
+  }
+  return { values, arrays };
+}
+
+function statusFromToml(raw: string | undefined): ScheduledTaskStatus {
+  switch ((raw ?? "").toUpperCase()) {
+    case "ACTIVE":
+      return "active";
+    case "PAUSED":
+      return "paused";
+    case "DISABLED":
+      return "disabled";
+    default:
+      return "unknown";
+  }
+}
+
+/**
+ * Reads Codex automations from `~/.codex/automations/` (one `automation.toml`
+ * per task). Each TOML file describes one scheduled task (rrule schedule,
+ * model, target, and the prompt body which is surfaced verbatim under the
+ * allowlist exception). Returns `{ tasks, warnings }` so the caller can merge
+ * per-file read warnings into the inventory-level warnings array.
+ */
+export async function discoverCodexScheduledTasks(homeDir: string): Promise<{
+  tasks: ScheduledTask[];
+  warnings: ScheduledTask["warnings"];
+}> {
+  const warnings: ScheduledTask["warnings"] = [];
+  const automationsDir = join(homeDir, ".codex", "automations");
+  const tasks: ScheduledTask[] = [];
+  for (const entry of await readDirectoryEntries(automationsDir)) {
+    const tomlPath = join(entry, "automation.toml");
+    const content = await readTextSource(tomlPath, warnings);
+    if (!content) continue;
+    const { values, arrays } = parseTomlValues(content);
+    const id = values.id ?? basename(entry);
+    const rrule = values.rrule;
+    const scheduleHuman = rrule ? humanizeSchedule(rrule) : undefined;
+    const target = values.target;
+    const projectId = target?.match(/project_id\s*=\s*"([^"]+)"/)?.[1];
+    const descriptionLine = (values.prompt ?? "")
+      .split("\n")
+      .map((s) => s.trim())
+      .find((s) => s.length > 0);
+    tasks.push({
+      id,
+      name: values.name ?? id,
+      description: descriptionLine,
+      provider: "codex",
+      scheduleRaw: rrule,
+      scheduleHuman,
+      scheduleMissing: !rrule,
+      status: statusFromToml(values.status),
+      model: values.model,
+      targetProject: projectId,
+      workingDirectories: arrays.cwds,
+      instructionBody: values.prompt,
+      instructionFormat: "toml_prompt",
+      sourcePath: tomlPath,
+      createdAt: Number.parseInt(values.created_at ?? "", 10) || undefined,
+      updatedAt: Number.parseInt(values.updated_at ?? "", 10) || undefined,
+      warnings: [],
+    });
+  }
+  return { tasks, warnings };
+}
+
 export async function discoverCodex({
   homeDir,
   personalSkillRoots,
@@ -226,12 +323,16 @@ export async function discoverCodex({
     ...pluginSkills,
   );
 
+  const { tasks: scheduledTasks, warnings: taskWarnings } =
+    await discoverCodexScheduledTasks(homeDir);
+  warnings.push(...taskWarnings);
   return {
     provider: "codex",
     scope: "global",
     capabilities: dedupeCapabilities(
       applySkillOverrides(capabilities, skillOverrides),
     ),
+    scheduledTasks,
     instructionFile: await readInstruction(
       join(homeDir, ".codex", "AGENTS.md"),
       warnings,

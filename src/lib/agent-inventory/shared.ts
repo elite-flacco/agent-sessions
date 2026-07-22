@@ -528,3 +528,38 @@ export async function pluginStatusWithPresence(
   if (!installPath || !(await isPathPresent(installPath))) return "unavailable";
   return status;
 }
+
+/**
+ * Returns absolute child paths of `dir`. Empty array (never throws) when the
+ * directory is missing or unreadable. Used by scheduled-task readers that
+ * scan per-task subdirectories.
+ */
+export async function readDirectoryEntries(dir: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.map((entry) => join(dir, entry.name));
+}
+
+/**
+ * Splits YAML frontmatter (`---\n...\n---`) from the markdown body. Returns
+ * `{ data: {}, body: content }` when no frontmatter is present. Used by the
+ * Claude scheduled-task reader to parse SKILL.md files.
+ */
+export function parseFrontmatter(content: string): {
+  data: Record<string, string>;
+  body: string;
+} {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  if (!match) return { data: {}, body: content };
+  const data: Record<string, string> = {};
+  for (const line of match[1].split("\n")) {
+    const m = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    if (!m) continue;
+    data[m[1]] = m[2].replace(/^["']|["']$/g, "").trim();
+  }
+  return { data, body: match[2] };
+}

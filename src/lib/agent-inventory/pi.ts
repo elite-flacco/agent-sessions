@@ -9,12 +9,20 @@ import {
   readJsonSource,
   type SkillLock,
 } from "./shared";
-import type { AgentCapability, AgentInventory } from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 
 interface PiOptions {
   homeDir: string;
   personalSkillRoots: string[];
   skillLock: SkillLock;
+}
+
+/**
+ * Pi has no scheduled-task concept today. Returns an empty list so the
+ * provider still renders an empty card in the Scheduled tasks tab.
+ */
+export async function discoverPiScheduledTasks(): Promise<ScheduledTask[]> {
+  return [];
 }
 
 function packageNames(value: unknown): string[] {
@@ -63,6 +71,7 @@ export async function discoverPi({
     provider: "pi",
     scope: "global",
     capabilities: dedupeCapabilities(capabilities),
+    scheduledTasks: await discoverPiScheduledTasks(),
     instructionFile: await readInstruction(
       join(agentRoot, "AGENTS.md"),
       warnings,
