@@ -33,10 +33,27 @@ const inventories: AgentInventory[] = [
         canonicalSourcePath: "/safe/source/disabled-skill",
       },
       {
+        id: "codex:skill:unavailable",
+        name: "unavailable-skill",
+        kind: "skill",
+        status: "unavailable",
+        packaging: "standalone",
+        origin: "personal",
+        canonicalSourcePath: "/safe/source/unavailable-skill",
+      },
+      {
         id: "codex:mcp:github",
         name: "github",
         kind: "mcp",
         status: "enabled",
+        packaging: "plugin",
+        origin: "marketplace",
+      },
+      {
+        id: "codex:mcp:unavailable",
+        name: "unavailable-mcp",
+        kind: "mcp",
+        status: "unavailable",
         packaging: "plugin",
         origin: "marketplace",
       },
@@ -54,7 +71,9 @@ describe("capability normalization", () => {
       "frontend-rules",
     );
     expect([...lookup.skillFiles.values()]).not.toContain("disabled-skill");
+    expect([...lookup.skillFiles.values()]).not.toContain("unavailable-skill");
     expect(lookup.mcpNames.get("github")).toBe("github");
+    expect(lookup.mcpNames.has("unavailable-mcp")).toBe(false);
   });
 
   it("accepts a native skill name without retaining other input", () => {
@@ -118,5 +137,22 @@ describe("capability normalization", () => {
         lookup,
       }),
     ).toEqual([]);
+  });
+
+  it("rejects configured skill path suffixes", () => {
+    const lookup = buildCapabilityLookups(inventories).codex;
+    for (const suffix of [":backup", ".bak", "/extra"]) {
+      expect(
+        matchedSkillReads({
+          externalId: `suffix-${suffix}`,
+          toolName: "exec_command",
+          input: {
+            cmd: `cat /safe/source/frontend-rules/SKILL.md${suffix}`,
+          },
+          occurredAt: "2026-07-22T10:00:00Z",
+          lookup,
+        }),
+      ).toEqual([]);
+    }
   });
 });

@@ -12,7 +12,8 @@ const SAFE_NAME = /^[\p{L}\p{N}][\p{L}\p{N}_.:@ -]{0,159}$/u;
 const READ_LIKE_TOOL = /^(read|exec|exec_command|bash)$/i;
 const READ_MARKER =
   /\b(cat|sed|head|tail|less|bat|rg|grep|readFile|Get-Content)\b/i;
-const PATH_BOUNDARY = /[\s"'`=:[\]{}(),;|&<>]/;
+const PATH_START_BOUNDARY = /[\s"'`=:[\]{}(),;|&<>]/;
+const PATH_END_BOUNDARY = /[\s"'`;|&<>()]/;
 
 function safeName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -141,8 +142,8 @@ function containsExactPath(value: string, path: string): boolean {
     const before = value[index - 1];
     const after = value[index + path.length];
     if (
-      (!before || PATH_BOUNDARY.test(before)) &&
-      (!after || PATH_BOUNDARY.test(after))
+      (!before || PATH_START_BOUNDARY.test(before)) &&
+      (!after || PATH_END_BOUNDARY.test(after))
     )
       return true;
     index = value.indexOf(path, index + path.length);
