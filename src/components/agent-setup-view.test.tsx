@@ -49,6 +49,22 @@ const inventories: AgentInventory[] = [
         origin: "unknown",
       },
     ],
+    scheduledTasks: [
+      {
+        id: "weekly-digest",
+        name: "Weekly digest",
+        provider: "codex",
+        scheduleRaw: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8",
+        scheduleHuman: "Mondays at 08:00",
+        scheduleMissing: false,
+        status: "active",
+        model: "gpt-5.5",
+        instructionBody: "Summarize the week.",
+        instructionFormat: "toml_prompt",
+        sourcePath: "/safe/.codex/automations/weekly-digest/automation.toml",
+        warnings: [],
+      },
+    ],
     instructionFile: {
       filename: "AGENTS.md",
       sourcePath: "/safe/.codex/AGENTS.md",
@@ -1589,5 +1605,34 @@ describe("AgentSetupView", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("Scheduled tasks view", () => {
+  test("renders third tab and per-provider cards", () => {
+    render(
+      <AgentSetupView
+        inventories={inventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    // The Scheduled tasks nav tab exists.
+    expect(screen.getByRole("link", { name: "Scheduled tasks" })).toBeDefined();
+    // The codex fixture task renders with its humanized schedule and model.
+    screen.getByText("Weekly digest");
+    screen.getByText("Mondays at 08:00");
+    screen.getByText("gpt-5.5");
+    // Pi has no scheduled tasks; its empty card renders the header source label.
+    expect(
+      screen.getByText(/Pi does not expose scheduled tasks/i),
+    ).toBeDefined();
+  });
+});
+
+describe("parseAgentSetupFilters (tasks view)", () => {
+  test("accepts view=tasks and defaults unknowns to inventory", () => {
+    expect(parseAgentSetupFilters({ view: "tasks" }).view).toBe("tasks");
+    expect(parseAgentSetupFilters({}).view).toBe("inventory");
+    expect(parseAgentSetupFilters({ view: "unknown" }).view).toBe("inventory");
   });
 });
