@@ -894,13 +894,14 @@ function CapabilityRow({
   const showPathHint =
     duplicateNames?.has(capability.name) && !!capability.sourcePath;
   // Inside a repo/plugin sub-group the header already names the source, so a
-  // per-row source line just repeats it. Show it only for standalone rows,
-  // where it is the row's only locator.
+  // per-row source line just repeats it. For standalone rows the source line
+  // is the row's only locator — but only when there's a real repository or
+  // plugin to name. A bare sourcePath on a personal/built-in skill is just
+  // ~/.<provider>/skills/<name>, which the row title already conveys, so it
+  // adds noise without information.
   const sourceLine = withinGroup
     ? undefined
-    : (capability.sourceRepository ??
-      capability.sourcePlugin ??
-      capability.sourcePath);
+    : (capability.sourceRepository ?? capability.sourcePlugin);
 
   return (
     <div className="agent-capability-row">
