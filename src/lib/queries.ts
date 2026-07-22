@@ -109,7 +109,7 @@ function nestSessions(sessions: SessionListItem[]): SessionTreeItem[] {
     else roots.push(node);
   }
   for (const node of nodes.values())
-    node.children.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    node.children.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return roots;
 }
 
@@ -171,17 +171,20 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
       title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
-    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY started_at DESC LIMIT 250`,
+    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY updated_at DESC LIMIT 250`,
     )
     .all(staleCutoff(), ...params) as SessionListItem[];
   const costs = getSessionsCostUsd(sessions.map((session) => session.id));
   for (const session of sessions)
     session.costUsd = costs.get(session.id) ?? null;
   const roots = nestSessions(sessions);
-  if (filters.sort === "duration")
+  if (filters.sort === "started")
+    roots.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  else if (filters.sort === "duration")
     roots.sort((a, b) => sessionRuntimeMs(b) - sessionRuntimeMs(a));
   else if (filters.sort === "cost")
     roots.sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1));
+  else roots.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return roots;
 }
 

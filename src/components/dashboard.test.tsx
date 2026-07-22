@@ -88,6 +88,35 @@ describe("Dashboard session rows", () => {
     expect(html).toContain('<div class="filter-row session-filter-row">');
   });
 
+  test("shows an Updated column in the sessions table", () => {
+    const html = renderToStaticMarkup(
+      <Dashboard
+        sessions={[session(1, "Recently updated session")]}
+        projects={[]}
+        projectOptions={[]}
+        summary={{
+          sessionsToday: 1,
+          activeNow: 0,
+          totalRuntimeMs: 60_000,
+          connectedAgents: 1,
+        }}
+        syncState={{ lastSyncedAt: null, errors: 0, sources: 1 }}
+        costToday={{
+          costUsd: 0,
+          tokens: 0,
+          cacheReadTokens: 0,
+          sessions: 0,
+          unpricedSessions: 0,
+        }}
+        filters={{}}
+        view="sessions"
+      />,
+    );
+
+    expect(html).toContain("<span>Updated</span>");
+    expect(html).toContain('title="Jul 15, 2026, 8:05 AM"');
+  });
+
   test("omits title action icons and hides branches for sessions without subagents", () => {
     const child = {
       ...session(3, "Child session"),

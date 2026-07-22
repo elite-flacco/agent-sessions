@@ -82,12 +82,12 @@ describe("getSessionsCostUsd", () => {
 });
 
 describe("getSessions sorting", () => {
-  it("defaults to newest first with derived costUsd attached", () => {
+  it("defaults to last updated with derived costUsd attached", () => {
     const sessions = queries.getSessions({});
     expect(sessions.map((session) => session.externalId)).toEqual([
       "cost-1",
-      "cost-3",
       "cost-2",
+      "cost-3",
     ]);
     expect(sessions[0].costUsd).toBe(1.25);
     expect(sessions[2].costUsd).toBeNull();

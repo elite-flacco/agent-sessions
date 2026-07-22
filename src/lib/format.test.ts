@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { absoluteTime, relativeTime, runtime, shortenHomePath } from "./format";
 
 describe("relativeTime", () => {
-  // Mid-afternoon local time so same-day/yesterday boundaries are stable.
+  // Mid-afternoon local time so same-day/date boundaries are stable.
   const now = new Date(2026, 6, 15, 14, 30, 0);
 
   beforeEach(() => {
@@ -29,13 +29,12 @@ describe("relativeTime", () => {
   it("shows a bare time for earlier the same day", () => {
     const value = relativeTime(new Date(2026, 6, 15, 6, 5, 0).toISOString());
     expect(value).toMatch(/6:05/);
-    expect(value).not.toMatch(/Yesterday/);
   });
 
-  it("labels the previous calendar day as Yesterday even within 24 hours", () => {
-    const value = relativeTime(new Date(2026, 6, 14, 20, 53, 0).toISOString());
-    expect(value).toMatch(/^Yesterday /);
-    expect(value).toMatch(/8:53/);
+  it("shows a date for the previous calendar day", () => {
+    expect(relativeTime(new Date(2026, 6, 14, 20, 53, 0).toISOString())).toBe(
+      "Jul 14",
+    );
   });
 
   it("shows a date for anything older", () => {

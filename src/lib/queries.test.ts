@@ -177,6 +177,39 @@ describe("session queries", () => {
     );
   });
 
+  it("sorts sessions by last update by default", () => {
+    const now = Date.now();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, 'completed', ?, ?)`);
+    insert.run(
+      "updated-first",
+      "Update order — older start, newer update",
+      new Date(now - 2 * 60 * 60_000).toISOString(),
+      new Date(now - 5 * 60_000).toISOString(),
+    );
+    insert.run(
+      "started-first",
+      "Update order — newer start, older update",
+      new Date(now - 60 * 60_000).toISOString(),
+      new Date(now - 30 * 60_000).toISOString(),
+    );
+    try {
+      expect(
+        queries
+          .getSessions({ q: "Update order", range: "all" })
+          .map((session) => session.title),
+      ).toEqual([
+        "Update order — older start, newer update",
+        "Update order — newer start, older update",
+      ]);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id IN (?, ?)")
+        .run("updated-first", "started-first");
+    }
+  });
+
   it("calculates local summary metrics", () => {
     expect(queries.getSummary()).toMatchObject({
       sessionsToday: 1,

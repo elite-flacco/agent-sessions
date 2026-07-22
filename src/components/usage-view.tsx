@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { formatCostUsd, formatTokens } from "@/lib/format";
 import { providerBadges, providerLabels } from "@/lib/labels";
+import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { UsageBucket, UsageSummary, UsageWindow } from "@/lib/queries";
 import type { AgentProvider } from "@/lib/types";
@@ -23,7 +24,10 @@ export function UsageView({ usage }: UsageViewProps) {
   const router = useRouter();
 
   useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 15_000);
+    const timer = window.setInterval(
+      () => router.refresh(),
+      DASHBOARD_REFRESH_INTERVAL_MS,
+    );
     return () => window.clearInterval(timer);
   }, [router]);
 

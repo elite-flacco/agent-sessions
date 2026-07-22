@@ -435,6 +435,35 @@ describe("provider adapters", () => {
     expect(result.sessions[0]?.status).toBe("completed");
   });
 
+  it("marks Claude rate-limit errors as usage-limit failures", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-rate-limited",
+        timestamp: "2026-07-21T23:00:00Z",
+        message: { role: "user", content: "Continue the task" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        sessionId: "claude-rate-limited",
+        timestamp: "2026-07-21T23:01:00Z",
+        error: "rate_limit",
+        message: {
+          role: "assistant",
+          stop_reason: "stop_sequence",
+          content: [],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      status: "failed",
+      statusReason: "usage_limit",
+    });
+  });
+
   it("uses Claude's agent id for sidechains and links them to the main session", async () => {
     const result = await parse(claudeAdapter, [
       {

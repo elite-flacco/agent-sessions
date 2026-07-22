@@ -28,6 +28,24 @@ describe("pricing lookup", () => {
     );
   });
 
+  it.each([
+    ["gpt-5.6-terra", 2.5, 15, 3.125],
+    ["gpt-5.6-luna", 1, 6, 1.25],
+    ["gpt-5.5-pro", 30, 180, 0],
+    ["gpt-5.4-nano", 0.2, 1.25, 0],
+    ["gpt-5.4-pro", 30, 180, 0],
+  ])(
+    "prices %s with its current standard rate",
+    (model, inputPerMTok, outputPerMTok, cacheWritePerMTok) => {
+      const pricing = findPricing(model, "2026-07-12");
+      expect(pricing).toMatchObject({
+        inputPerMTok,
+        outputPerMTok,
+        cacheWritePerMTok,
+      });
+    },
+  );
+
   it("returns undefined for unknown models and pre-launch dates", () => {
     expect(findPricing("kimi-k2.6", "2026-07-12")).toBeUndefined();
     expect(findPricing("claude-fable-5", "2020-01-01")).toBeUndefined();

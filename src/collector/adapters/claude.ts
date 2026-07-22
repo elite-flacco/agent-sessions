@@ -65,6 +65,13 @@ export const claudeAdapter: ProviderAdapter = {
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
           if (row.type === "result") return { status: "completed" };
+          if (
+            row.type === "assistant" &&
+            /usage[_\s-]?limit|rate[_\s-]?limit/i.test(
+              stringValue(row.error) ?? "",
+            )
+          )
+            return { status: "failed", reason: "usage_limit" };
           if (row.type === "user") return undefined;
           if (
             row.type === "assistant" &&

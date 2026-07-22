@@ -27,6 +27,7 @@ import {
   statusDisplay,
   statusLabels,
 } from "@/lib/labels";
+import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import type {
   ProjectOption,
   ProjectSummary,
@@ -95,7 +96,7 @@ export function Dashboard({
       !value ||
       (name !== "range" && value === "all") ||
       (name === "range" && value === "7d") ||
-      (name === "sort" && value === "started") ||
+      (name === "sort" && value === "updated") ||
       (name === "view" && value === "sessions");
     if (isDefault) params.delete(name);
     else params.set(name, value);
@@ -114,7 +115,10 @@ export function Dashboard({
   }, [query]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 15_000);
+    const timer = window.setInterval(
+      () => router.refresh(),
+      DASHBOARD_REFRESH_INTERVAL_MS,
+    );
     return () => window.clearInterval(timer);
   }, [router]);
 
@@ -250,10 +254,11 @@ export function Dashboard({
         />
         <FilterSelect
           label="Sort sessions"
-          value={filters.sort ?? "started"}
+          value={filters.sort ?? "updated"}
           onChange={(value) => updateParam("sort", value)}
           options={[
-            { value: "started", label: "Newest first" },
+            { value: "updated", label: "Last updated" },
+            { value: "started", label: "Newest started" },
             { value: "duration", label: "Longest first" },
             { value: "cost", label: "Costliest first" },
           ]}
@@ -335,6 +340,7 @@ function SessionsTable({
         <span>Agent</span>
         <span>Status</span>
         <span>Started</span>
+        <span>Updated</span>
         <span>Duration</span>
         <span>Cost</span>
       </div>
@@ -414,6 +420,12 @@ function SessionRow({
           title={absoluteTime(session.startedAt)}
         >
           {relativeTime(session.startedAt)}
+        </span>
+        <span
+          className="mono session-secondary"
+          title={absoluteTime(session.updatedAt)}
+        >
+          {relativeTime(session.updatedAt)}
         </span>
         <span className="mono session-secondary">
           {hasMeaningfulDuration(session.status)

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
+import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { Insights, InsightSignal } from "@/lib/queries";
 
@@ -21,7 +22,10 @@ export function InsightsView({ insights }: InsightsViewProps) {
   const router = useRouter();
 
   useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 15_000);
+    const timer = window.setInterval(
+      () => router.refresh(),
+      DASHBOARD_REFRESH_INTERVAL_MS,
+    );
     return () => window.clearInterval(timer);
   }, [router]);
 

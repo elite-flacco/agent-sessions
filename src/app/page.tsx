@@ -1,5 +1,7 @@
 import { OverviewView } from "@/components/overview-view";
 import { Sidebar } from "@/components/sidebar";
+import { refreshIngestedData } from "@/lib/auto-sync";
+import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import {
   getAttentionSessions,
   getCollectorHealth,
@@ -12,6 +14,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
+  await refreshIngestedData(DASHBOARD_REFRESH_INTERVAL_MS);
   const health = getCollectorHealth();
   return (
     <main className="relay-shell">
