@@ -1,4 +1,5 @@
-import type { ModelUsage, ProviderAdapter } from "@/lib/types";
+import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
+import { matchedSkillReads, mcpUsage } from "../capabilities";
 import { homePath, record, stringValue, walkJsonl } from "../utils";
 import {
   accumulateUsage,
@@ -6,13 +7,14 @@ import {
   filenameId,
   numberedEvent,
   parseJsonl,
+  timestamp,
   tokenCount,
 } from "./shared";
 
 export const piAdapter: ProviderAdapter = {
   provider: "pi",
   discover: () => walkJsonl(homePath(".pi", "agent", "sessions")),
-  parse: (filePath) =>
+  parse: (filePath, context) =>
     parseJsonl(filePath, {
       provider: "pi",
       fallbackTitle: "Pi coding session",
@@ -67,6 +69,38 @@ export const piAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
+      capabilityUsage: (rows) =>
+        rows.flatMap((row, rowIndex) => {
+          const message = record(row.message);
+          const blocks = Array.isArray(message?.content)
+            ? message.content.map(record).filter(Boolean)
+            : [];
+          return blocks.flatMap((tool, blockIndex) => {
+            if (tool?.type !== "toolCall" && tool?.type !== "tool_use")
+              return [];
+            const externalId =
+              stringValue(tool.id) ??
+              stringValue(row.uuid) ??
+              stringValue(row.id) ??
+              `${rowIndex}-${blockIndex}`;
+            const occurredAt = timestamp(row) ?? new Date(0).toISOString();
+            return [
+              mcpUsage({
+                externalId,
+                toolName: tool.name,
+                namespace: tool.namespace,
+                occurredAt,
+              }),
+              ...matchedSkillReads({
+                externalId,
+                toolName: tool.name,
+                input: tool.arguments ?? tool.input,
+                occurredAt,
+                lookup: context?.capabilities,
+              }),
+            ].filter((entry): entry is CapabilityUsage => entry !== undefined);
+          });
+        }),
       events: (rows) =>
         rows.flatMap((row, index) => {
           if (row.type === "session")

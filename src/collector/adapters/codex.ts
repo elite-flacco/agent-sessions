@@ -1,18 +1,29 @@
-import type { ProviderAdapter } from "@/lib/types";
+import type { CapabilityUsage, ProviderAdapter } from "@/lib/types";
 import { getCodexThreadTitle } from "@/lib/codex-db";
+import { matchedSkillReads, mcpUsage } from "../capabilities";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   contentText,
   filenameId,
   numberedEvent,
   parseJsonl,
+  timestamp,
   tokenCount,
 } from "./shared";
+
+function functionInput(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
 
 export const codexAdapter: ProviderAdapter = {
   provider: "codex",
   discover: () => walkJsonl(homePath(".codex", "sessions")),
-  parse: async (filePath) => {
+  parse: async (filePath, context) => {
     const result = await parseJsonl(filePath, {
       provider: "codex",
       fallbackTitle: "Codex coding session",
@@ -123,6 +134,33 @@ export const codexAdapter: ProviderAdapter = {
           },
         ];
       },
+      capabilityUsage: (rows) =>
+        rows.flatMap((row, rowIndex) => {
+          const payload = record(row.payload);
+          if (row.type !== "response_item" || payload?.type !== "function_call")
+            return [];
+          const externalId =
+            stringValue(payload.call_id) ??
+            stringValue(row.uuid) ??
+            stringValue(row.id) ??
+            `${rowIndex}-0`;
+          const occurredAt = timestamp(row) ?? new Date(0).toISOString();
+          return [
+            mcpUsage({
+              externalId,
+              toolName: payload.name,
+              namespace: payload.namespace,
+              occurredAt,
+            }),
+            ...matchedSkillReads({
+              externalId,
+              toolName: payload.name,
+              input: functionInput(payload.arguments),
+              occurredAt,
+              lookup: context?.capabilities,
+            }),
+          ].filter((entry): entry is CapabilityUsage => entry !== undefined);
+        }),
       events: (rows) =>
         rows.flatMap((row, index) => {
           const payload = record(row.payload);

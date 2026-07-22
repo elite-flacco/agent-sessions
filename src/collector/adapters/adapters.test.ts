@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ProviderAdapter } from "@/lib/types";
+import type {
+  AdapterParseContext,
+  CapabilityLookup,
+  ProviderAdapter,
+} from "@/lib/types";
 import { __resetCodexDbCache } from "@/lib/codex-db";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
@@ -52,8 +56,9 @@ async function parse(
   adapter: ProviderAdapter,
   rows: unknown[],
   partial = false,
+  context?: AdapterParseContext,
 ) {
-  return adapter.parse(await fixture(rows, partial));
+  return adapter.parse(await fixture(rows, partial), context);
 }
 
 describe("provider adapters", () => {
@@ -358,6 +363,132 @@ describe("provider adapters", () => {
     ).toBe(true);
   });
 
+  it("normalizes Claude skill and MCP calls without retaining arguments", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u-cap",
+        sessionId: "claude-capabilities",
+        timestamp: "2026-07-22T10:00:00Z",
+        message: { role: "user", content: "Inspect capability use" },
+      },
+      {
+        type: "assistant",
+        uuid: "a-skill",
+        sessionId: "claude-capabilities",
+        timestamp: "2026-07-22T10:01:00Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "skill-call",
+              name: "Skill",
+              input: { skill: "frontend-rules", args: "SECRET_ARGS" },
+            },
+            {
+              type: "tool_use",
+              id: "mcp-call",
+              name: "mcp__github__search_prs",
+              input: { query: "SECRET_QUERY" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({ kind: "skill", name: "frontend-rules" }),
+      expect.objectContaining({ kind: "mcp", name: "github" }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
+      /SECRET_ARGS|SECRET_QUERY/,
+    );
+  });
+
+  it("normalizes exact Codex skill reads and namespaced MCP calls", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+        ["/safe/source/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map([["github", "github"]]),
+    };
+    const result = await parse(
+      codexAdapter,
+      [
+        {
+          type: "session_meta",
+          timestamp: "2026-07-22T10:00:00Z",
+          payload: { id: "codex-capabilities", cwd: "/work/relay" },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:01:00Z",
+          payload: {
+            type: "function_call",
+            call_id: "read-skill",
+            name: "exec_command",
+            arguments: JSON.stringify({
+              cmd: "sed -n '1,240p' /safe/links/frontend-rules/SKILL.md",
+            }),
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:02:00Z",
+          payload: {
+            type: "function_call",
+            call_id: "github-call",
+            namespace: "mcp__codex_apps__github",
+            name: "_search_prs",
+            arguments: "SECRET_MCP_ARGUMENTS",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:03:00Z",
+          payload: {
+            type: "function_call",
+            call_id: "unmatched-read",
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "cat /tmp/SKILL.md" }),
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:04:00Z",
+          payload: {
+            type: "developer",
+            content: "Catalog: /safe/links/frontend-rules/SKILL.md",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:05:00Z",
+          payload: {
+            type: "function_call",
+            call_id: "patch-skill",
+            name: "apply_patch",
+            arguments: JSON.stringify({
+              patch: "*** Update File: /safe/links/frontend-rules/SKILL.md",
+            }),
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({ kind: "skill", name: "frontend-rules" }),
+      expect.objectContaining({ kind: "mcp", name: "github" }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_MCP_ARGUMENTS",
+    );
+  });
+
   it("prefers Claude's latest custom title over generated titles and user messages", async () => {
     const result = await parse(claudeAdapter, [
       {
@@ -573,6 +704,58 @@ describe("provider adapters", () => {
     expect(result.sessions[0]?.status).toBe("completed");
   });
 
+  it("normalizes Pi exact skill reads and namespaced MCP calls", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map(),
+    };
+    const result = await parse(
+      piAdapter,
+      [
+        {
+          type: "session",
+          id: "pi-capabilities",
+          timestamp: "2026-07-22T10:00:00Z",
+        },
+        {
+          type: "message",
+          id: "pi-call-row",
+          timestamp: "2026-07-22T10:01:00Z",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "pi-read",
+                name: "read",
+                arguments: { path: "/safe/links/frontend-rules/SKILL.md" },
+              },
+              {
+                type: "toolCall",
+                id: "pi-mcp",
+                namespace: "mcp__codex_apps__github",
+                name: "_search_prs",
+                arguments: { query: "SECRET_PI_QUERY" },
+              },
+            ],
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({ kind: "skill", name: "frontend-rules" }),
+      expect.objectContaining({ kind: "mcp", name: "github" }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_PI_QUERY",
+    );
+  });
+
   it("normalizes Zcode model I/O without storing request or response bodies", async () => {
     const result = await parse(zcodeAdapter, [
       {
@@ -594,6 +777,48 @@ describe("provider adapters", () => {
     });
     expect(JSON.stringify(result.sessions[0])).not.toContain(
       "PRIVATE_ZCODE_RESPONSE",
+    );
+  });
+
+  it("normalizes Zcode Skill and MCP calls without retaining inputs", async () => {
+    const result = await parse(zcodeAdapter, [
+      {
+        type: "model_io",
+        sessionId: "z-capabilities",
+        turnId: "turn-capabilities",
+        startedAt: "2026-07-22T10:00:00Z",
+        completedAt: "2026-07-22T10:01:00Z",
+        request: {
+          messages: [
+            {
+              role: "assistant",
+              toolCalls: [
+                {
+                  id: "z-skill",
+                  name: "Skill",
+                  arguments: {
+                    skill: "review-code-changes",
+                    args: "SECRET_ZCODE_ARGS",
+                  },
+                },
+                {
+                  id: "z-mcp",
+                  name: "mcp__openaiDeveloperDocs__search_openai_docs",
+                  arguments: { query: "SECRET_ZCODE_QUERY" },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({ kind: "skill", name: "review-code-changes" }),
+      expect.objectContaining({ kind: "mcp", name: "openaideveloperdocs" }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
+      /SECRET_ZCODE_ARGS|SECRET_ZCODE_QUERY/,
     );
   });
 
