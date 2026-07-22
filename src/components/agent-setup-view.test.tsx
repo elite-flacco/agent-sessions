@@ -140,7 +140,7 @@ describe("parseAgentSetupFilters", () => {
 });
 
 describe("AgentSetupView", () => {
-  test("inventory nests kind → source → repo and hoists badges off rows", () => {
+  test("inventory nests rail → source → repo and hoists badges off rows", () => {
     const nested: AgentInventory[] = [
       {
         provider: "codex",
@@ -165,17 +165,15 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // One kind bucket, open by default.
-    const buckets = container.querySelectorAll(".agent-kind-bucket");
-    expect(buckets).toHaveLength(1);
-    expect(buckets[0]!.hasAttribute("open")).toBe(true);
+    // No kind bucket — the vertical rail owns kind selection.
+    expect(container.querySelectorAll(".agent-kind-bucket")).toHaveLength(0);
 
-    // One source group, collapsed by default.
+    // One source group, open by default so its repo sub-groups are visible.
     const sources = container.querySelectorAll(".agent-source-group");
     expect(sources).toHaveLength(1);
-    expect(sources[0]!.hasAttribute("open")).toBe(false);
+    expect(sources[0]!.hasAttribute("open")).toBe(true);
 
-    // Type badge lives on the bucket, never on a row.
+    // Type badge never lands on a row.
     expect(container.querySelectorAll(".agent-kind-label")).toHaveLength(0);
 
     // Origin badge appears once, on the source header.
@@ -183,10 +181,10 @@ describe("AgentSetupView", () => {
       container.querySelectorAll(".agent-source-group .agent-origin-tag"),
     ).toHaveLength(1);
 
-    // Full three-level nesting for the 2-skill repo run.
+    // Full three-level nesting under the rail content for the 2-skill run.
     expect(
       container.querySelectorAll(
-        ".agent-kind-bucket .agent-source-group .agent-capability-group .agent-capability-row",
+        ".agent-kind-rail-content .agent-source-group .agent-capability-group .agent-capability-row",
       ),
     ).toHaveLength(2);
   });
@@ -908,6 +906,9 @@ describe("AgentSetupView", () => {
   });
 
   test("inventory mode renders provider counts, provenance, warnings, and instructions", () => {
+    // Summary cards span every provider; the body shows one at a time. The
+    // default pane is the first non-empty kind (Skills), so instructions render
+    // only when the Instructions rail entry is selected.
     const html = renderToStaticMarkup(
       <AgentSetupView
         inventories={inventories}
@@ -920,15 +921,39 @@ describe("AgentSetupView", () => {
     expect(html).toContain("3 capabilities");
     expect(html).toContain("skills.sh");
     expect(html).toContain("vercel-labs/agent-browser");
-    expect(html).toContain("Could not parse global provider configuration.");
-    expect(html).toContain("# Codex instructions");
+    // The selected provider (codex, the default) shows the Instructions rail
+    // entry but not the instruction body on the default Skills pane; the zcode
+    // warning text only appears when zcode is the selected provider.
+    expect(html).toContain("Instructions");
+    expect(html).not.toContain("# Codex instructions");
+    expect(html).not.toContain(
+      "Could not parse global provider configuration.",
+    );
+
+    const codexInstructionHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "codex", kind: "instruction" }}
+      />,
+    );
+    expect(codexInstructionHtml).toContain("# Codex instructions");
+
+    const zcodeHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "zcode" }}
+      />,
+    );
+    expect(zcodeHtml).toContain(
+      "Could not parse global provider configuration.",
+    );
   });
 
   test("uses compact typography for instruction filenames", () => {
     const html = renderToStaticMarkup(
       <AgentSetupView
         inventories={inventories}
-        filters={{ view: "inventory", provider: "claude" }}
+        filters={{ view: "inventory", provider: "claude", kind: "instruction" }}
       />,
     );
 
@@ -937,7 +962,7 @@ describe("AgentSetupView", () => {
     );
   });
 
-  test("sorts inventory capabilities by type, source, then name", () => {
+  test("sorts each kind pane by source then name", () => {
     const unsortedInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -968,29 +993,46 @@ describe("AgentSetupView", () => {
       ],
       warnings: [],
     };
-    const html = renderToStaticMarkup(
+
+    // The rail shows one kind per render, so verify ordering within each kind
+    // pane separately. Plugins: built-in → personal(a, z) → unknown; skills
+    // and MCPs each have a single personal member.
+    const pluginHtml = renderToStaticMarkup(
       <AgentSetupView
         inventories={[unsortedInventory]}
-        filters={{ view: "inventory" }}
+        filters={{ view: "inventory", kind: "plugin" }}
       />,
     );
-
-    const orderedNames = [
+    const pluginOrder = [
       "plugin-built-in",
       "a-plugin-personal",
       "z-plugin-personal",
       "plugin-unknown",
-      "skill-personal",
-      "mcp-personal",
     ];
-    const positions = orderedNames.map((name) =>
-      html.indexOf(`<strong>${name}</strong>`),
+    const pluginPositions = pluginOrder.map((name) =>
+      pluginHtml.indexOf(`<strong>${name}</strong>`),
+    );
+    expect(pluginPositions.every((p) => p >= 0)).toBe(true);
+    expect(pluginPositions).toEqual(
+      [...pluginPositions].sort((left, right) => left - right),
     );
 
-    expect(positions.every((position) => position >= 0)).toBe(true);
-    expect(positions).toEqual(
-      [...positions].sort((left, right) => left - right),
+    const skillHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[unsortedInventory]}
+        filters={{ view: "inventory", kind: "skill" }}
+      />,
     );
+    expect(skillHtml).toContain("<strong>skill-personal</strong>");
+    expect(skillHtml).not.toContain("plugin-personal");
+
+    const mcpHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[unsortedInventory]}
+        filters={{ view: "inventory", kind: "mcp" }}
+      />,
+    );
+    expect(mcpHtml).toContain("<strong>mcp-personal</strong>");
   });
 
   test("renders capability types as dot labels and sources as outlined tags", () => {
@@ -1120,7 +1162,7 @@ describe("AgentSetupView", () => {
       '<span class="badge badge-3 agent-origin-tag">Marketplace</span>',
     );
     expect(html).not.toContain("agent-status-tag");
-    expect(html).toContain('<details class="agent-capability-group">');
+    expect(html).toContain('<details class="agent-capability-group" open="">');
 
     // Member rows are nested inside the group body container.
     const groupStart = html.indexOf('class="agent-capability-group"');
@@ -1188,9 +1230,9 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Two separate collapsed <details> groups, one per plugin.
+    // Two separate <details> groups, one per plugin, both open by default.
     const groupCount = (
-      html.match(/<details class="agent-capability-group">/g) ?? []
+      html.match(/<details class="agent-capability-group" open="">/g) ?? []
     ).length;
     expect(groupCount).toBe(2);
 
@@ -1420,16 +1462,28 @@ describe("AgentSetupView", () => {
       ],
       warnings: [],
     };
-    const html = renderToStaticMarkup(
+
+    // The rail renders one kind at a time; each pane lists its members flat,
+    // never collapsed into a capability group.
+    const pluginHtml = renderToStaticMarkup(
       <AgentSetupView
         inventories={[inventory]}
-        filters={{ view: "inventory" }}
+        filters={{ view: "inventory", kind: "plugin" }}
       />,
     );
+    expect(pluginHtml).not.toContain("agent-capability-group");
+    expect(pluginHtml).toContain("<strong>plugin-1</strong>");
+    expect(pluginHtml).toContain("<strong>plugin-2</strong>");
 
-    expect(html).not.toContain("agent-capability-group");
-    expect(html).toContain("<strong>plugin-1</strong>");
-    expect(html).toContain("<strong>mcp-2</strong>");
+    const mcpHtml = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[inventory]}
+        filters={{ view: "inventory", kind: "mcp" }}
+      />,
+    );
+    expect(mcpHtml).not.toContain("agent-capability-group");
+    expect(mcpHtml).toContain("<strong>mcp-1</strong>");
+    expect(mcpHtml).toContain("<strong>mcp-2</strong>");
   });
 
   test("inventory renders collapsed groups before flat rows", () => {

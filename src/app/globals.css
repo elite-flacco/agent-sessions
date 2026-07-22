@@ -1671,11 +1671,6 @@
   .agent-discrepancy-toggle input {
     accent-color: var(--accent);
   }
-  .agent-inventory-list {
-    display: grid;
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-  }
   .agent-provider-section {
     min-width: 0;
     overflow: hidden;
@@ -1762,16 +1757,70 @@
   .agent-capability-list {
     border-top: 1px solid var(--border);
   }
+  /* Inventory shows one provider at a time; the Kind rail (Skills / Plugins /
+     MCPs, plus Instructions when present) selects which pane is visible. */
+  .agent-inventory-single {
+    margin-top: 0.9rem;
+  }
+  .agent-inventory-single .agent-provider-heading {
+    border-top: 0;
+  }
+  .agent-kind-rail-layout {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+  .agent-kind-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    border-right: 1px solid var(--border);
+    padding-right: 0.4rem;
+  }
+  .agent-kind-rail-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .agent-kind-rail-item:hover {
+    background: var(--card-hover);
+    color: var(--foreground);
+  }
+  .agent-kind-rail-item.is-active {
+    background: var(--card-hover);
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  .agent-kind-rail-item svg {
+    flex: 0 0 auto;
+  }
+  .agent-kind-rail-count {
+    margin-left: auto;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .agent-kind-rail-content {
+    min-width: 0;
+  }
+  .agent-kind-empty {
+    padding: 1rem 0.5rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+  }
   .agent-capability-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 0.7rem;
-    min-height: 3.8rem;
-    padding: 0.65rem 0.9rem;
-  }
-  .agent-capability-row + .agent-capability-row {
-    border-top: 1px solid var(--border);
+    min-height: 2.3rem;
+    padding: 0.4rem 0.75rem;
   }
   .agent-capability-row:hover {
     background: var(--card-hover);
@@ -1844,12 +1893,11 @@
   }
   .agent-capability-group > summary {
     list-style: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
     align-items: center;
     gap: 0.7rem;
-    min-height: 3.8rem;
-    padding: 0.65rem 0.9rem;
+    min-height: 2.3rem;
+    padding: 0.4rem 0.75rem;
     cursor: pointer;
   }
   .agent-capability-group > summary::-webkit-details-marker {
@@ -1899,45 +1947,33 @@
     font-size: var(--text-xs);
   }
   .agent-capability-group-members {
-    border-inline-start: 0.125rem solid var(--border);
     margin-inline-start: 0.9rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 0.1rem 1.75rem;
+    align-content: start;
   }
-  .agent-capability-group-members > .agent-capability-row {
-    border-top: 1px solid var(--border);
-  }
-  .agent-capability-group-members > .agent-capability-row:first-child {
-    border-top: none;
-  }
-  .agent-kind-bucket + .agent-kind-bucket {
-    border-top: 1px solid var(--border);
-  }
-  .agent-kind-bucket > summary,
   .agent-source-group > summary {
     list-style: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
     align-items: center;
     gap: 0.7rem;
-    min-height: 3.4rem;
-    padding: 0.6rem 0.9rem;
+    min-height: 2.3rem;
+    padding: 0.4rem 0.75rem;
     cursor: pointer;
   }
-  .agent-kind-bucket > summary::-webkit-details-marker,
   .agent-source-group > summary::-webkit-details-marker {
     display: none;
   }
-  .agent-kind-bucket > summary:hover,
   .agent-source-group > summary:hover {
     background: var(--card-hover);
   }
-  .agent-kind-bucket-primary,
   .agent-source-group-primary {
     display: flex;
     align-items: center;
     gap: 0.45rem;
     min-width: 0;
   }
-  .agent-kind-bucket-primary::before,
   .agent-source-group-primary::before {
     content: "›";
     display: inline-block;
@@ -1949,18 +1985,9 @@
     transform: rotate(0deg);
     transition: transform 0.15s ease-in-out;
   }
-  .agent-kind-bucket[open] > summary .agent-kind-bucket-primary::before,
   .agent-source-group[open] > summary .agent-source-group-primary::before {
     transform: rotate(90deg);
   }
-  .agent-kind-bucket-primary svg {
-    flex: 0 0 auto;
-    color: var(--muted-foreground);
-  }
-  .agent-kind-bucket-primary strong {
-    font-size: var(--text-sm);
-  }
-  .agent-kind-bucket > summary > span:not(.agent-kind-bucket-primary),
   .agent-source-group > summary > span:not(.agent-source-group-primary) {
     color: var(--muted-foreground);
     font-size: var(--text-xs);
@@ -1969,13 +1996,15 @@
   .agent-source-group-primary .agent-origin-tag {
     font-size: var(--text-xs);
   }
-  .agent-kind-bucket-body {
-    border-inline-start: 0.125rem solid var(--border);
-    margin-inline-start: 0.9rem;
-  }
   .agent-source-group-body {
-    border-inline-start: 0.125rem solid var(--border);
     margin-inline-start: 1.6rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 0.1rem 1.75rem;
+    align-content: start;
+  }
+  .agent-source-group-body > .agent-capability-group {
+    grid-column: 1 / -1;
   }
   .status-disabled,
   .status-unavailable {

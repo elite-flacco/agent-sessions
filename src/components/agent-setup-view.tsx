@@ -215,12 +215,17 @@ function setupHref(
 function matchesCapability(
   capability: AgentCapability,
   filters: AgentSetupFilters,
+  ignoreKind = false,
 ): boolean {
   // Disabled capabilities are retained in the discovery data so the Compare
   // view can tell deliberate disables from missing installs, but the
   // Inventory list shows only what is in effect.
   if (capability.status === "disabled") return false;
-  if (filters.kind && filters.kind !== capability.kind) return false;
+  // The Inventory view selects kind with the rail, so it filters the kind
+  // itself and asks this helper to ignore filters.kind.
+  if (!ignoreKind && filters.kind && filters.kind !== capability.kind) {
+    return false;
+  }
   if (filters.status && filters.status !== capability.status) return false;
   if (!filters.q) return true;
   const query = filters.q.toLocaleLowerCase();
@@ -351,24 +356,6 @@ type InventoryItem =
   | { kind: "group"; summary: SkillGroupSummary; members: AgentCapability[] };
 
 /**
- * Partition capabilities by kind, ordered Skills → Plugins → MCPs via
- * kindSortOrder. Callers have already filtered/sorted; this only buckets.
- */
-function partitionByKind(
-  capabilities: AgentCapability[],
-): { kind: CapabilityKind; capabilities: AgentCapability[] }[] {
-  const byKind = new Map<CapabilityKind, AgentCapability[]>();
-  for (const capability of capabilities) {
-    const list = byKind.get(capability.kind) ?? [];
-    list.push(capability);
-    byKind.set(capability.kind, list);
-  }
-  return [...byKind.entries()]
-    .sort(([left], [right]) => kindSortOrder[left] - kindSortOrder[right])
-    .map(([kind, members]) => ({ kind, capabilities: members }));
-}
-
-/**
  * Partition capabilities by origin, ordered via originSortOrder so the source
  * groups read in the same order used elsewhere in the view.
  */
@@ -427,6 +414,11 @@ function buildInventoryItems(capabilities: AgentCapability[]): InventoryItem[] {
 }
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
+  // Inventory shows one provider at a time and defaults to the first when none
+  // is chosen, so the summary cards act as a single-select provider control.
+  const effectiveProvider =
+    filters.provider ??
+    (filters.view === "inventory" ? inventories[0]?.provider : undefined);
   return (
     <section className="relay-content agent-setup-page">
       <header className="page-header">
@@ -444,13 +436,8 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
           <ProviderSummary
             key={inventory.provider}
             inventory={inventory}
-            active={filters.provider === inventory.provider}
-            href={setupHref(filters, {
-              provider:
-                filters.provider === inventory.provider
-                  ? undefined
-                  : inventory.provider,
-            })}
+            active={effectiveProvider === inventory.provider}
+            href={setupHref(filters, { provider: inventory.provider })}
           />
         ))}
       </div>
@@ -575,36 +562,51 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           placeholder="Search capabilities"
         />
       </label>
-      <label className="agent-filter">
-        <span>Agent</span>
-        <select
-          className="select"
-          name="provider"
-          defaultValue={filters.provider ?? ""}
-        >
-          <option value="">All agents</option>
-          {agentProviders.map((provider) => (
-            <option key={provider} value={provider}>
-              {providerLabels[provider]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="agent-filter">
-        <span>Type</span>
-        <select
-          className="select"
-          name="kind"
-          defaultValue={filters.kind ?? ""}
-        >
-          <option value="">All types</option>
-          {Object.entries(kindLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {filters.view === "compare" ? (
+        <>
+          <label className="agent-filter">
+            <span>Agent</span>
+            <select
+              className="select"
+              name="provider"
+              defaultValue={filters.provider ?? ""}
+            >
+              <option value="">All agents</option>
+              {agentProviders.map((provider) => (
+                <option key={provider} value={provider}>
+                  {providerLabels[provider]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="agent-filter">
+            <span>Type</span>
+            <select
+              className="select"
+              name="kind"
+              defaultValue={filters.kind ?? ""}
+            >
+              <option value="">All types</option>
+              {Object.entries(kindLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      ) : (
+        <>
+          {/* Inventory selects provider (cards) and kind (rail); preserve both
+              so a Status change or search keeps the current view. */}
+          {filters.provider ? (
+            <input type="hidden" name="provider" value={filters.provider} />
+          ) : null}
+          {filters.kind ? (
+            <input type="hidden" name="kind" value={filters.kind} />
+          ) : null}
+        </>
+      )}
       <label className="agent-filter">
         <span>Status</span>
         <select
@@ -639,6 +641,15 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
   );
 }
 
+// The Inventory view shows one provider at a time; kind is chosen from a
+// vertical rail rather than stacked buckets. Instructions ride along as a
+// fourth rail entry when the provider ships an instruction file.
+const RAIL_KINDS: Exclude<AgentSetupKind, "instruction">[] = [
+  "skill",
+  "plugin",
+  "mcp",
+];
+
 function InventoryView({
   inventories,
   filters,
@@ -646,38 +657,167 @@ function InventoryView({
   inventories: AgentInventory[];
   filters: AgentSetupFilters;
 }) {
-  const visible = inventories.filter(
-    (inventory) => !filters.provider || inventory.provider === filters.provider,
-  );
-  const matchCount = visible.reduce(
-    (total, inventory) =>
-      total +
-      inventory.capabilities.filter((capability) =>
-        matchesCapability(capability, filters),
-      ).length +
-      (showsInstruction(inventory, filters) ? 1 : 0),
-    0,
-  );
+  const inventory =
+    inventories.find((entry) => entry.provider === filters.provider) ??
+    inventories[0];
 
-  if (matchCount === 0) {
+  if (!inventory) {
     return (
       <div className="card empty-state agent-empty-state">
-        <h3>No capabilities match these filters.</h3>
-        <p>Adjust the search, agent, type, or status selection.</p>
+        <h3>No agents found.</h3>
       </div>
     );
   }
 
+  // Status + search filtered, but NOT kind — the rail owns kind selection.
+  const matched = inventory.capabilities
+    .filter((capability) => matchesCapability(capability, filters, true))
+    .sort(compareInventoryCapabilities);
+
+  const duplicateNames = new Set<string>();
+  const nameCounts = new Map<string, number>();
+  for (const capability of matched) {
+    nameCounts.set(capability.name, (nameCounts.get(capability.name) ?? 0) + 1);
+  }
+  for (const [name, count] of nameCounts) {
+    if (count > 1) duplicateNames.add(name);
+  }
+
+  const kindCounts = Object.fromEntries(
+    RAIL_KINDS.map((kind) => [
+      kind,
+      matched.filter((capability) => capability.kind === kind).length,
+    ]),
+  ) as Record<(typeof RAIL_KINDS)[number], number>;
+  const instructionVisible = showsInstruction(inventory, filters);
+
+  if (matched.length === 0 && !instructionVisible) {
+    return (
+      <div className="card empty-state agent-empty-state">
+        <h3>No capabilities match these filters.</h3>
+        <p>Adjust the search or status selection.</p>
+      </div>
+    );
+  }
+
+  // Default to the first populated kind so the rail never opens on an empty
+  // pane; honour an explicit rail selection (including "instruction").
+  const requested = filters.kind;
+  const selectedKind: AgentSetupKind =
+    requested === "instruction" && instructionVisible
+      ? "instruction"
+      : requested && requested !== "instruction" && kindCounts[requested]
+        ? requested
+        : (RAIL_KINDS.find((kind) => kindCounts[kind] > 0) ??
+          (instructionVisible ? "instruction" : "skill"));
+
+  const selected =
+    selectedKind === "instruction"
+      ? []
+      : matched.filter((capability) => capability.kind === selectedKind);
+
   return (
-    <div className="agent-inventory-list">
-      {visible.map((inventory) => (
-        <ProviderInventory
-          key={inventory.provider}
-          inventory={inventory}
-          filters={filters}
-        />
-      ))}
+    <div className="agent-inventory-single">
+      <header className="agent-provider-heading">
+        <div>
+          <span className={`badge ${providerBadges[inventory.provider]}`}>
+            {providerLabels[inventory.provider]}
+          </span>
+          <strong>{matched.length} shown</strong>
+        </div>
+        <span>Global configuration</span>
+      </header>
+      {inventory.warnings.length > 0 ? (
+        <div className="agent-warning-list">
+          {inventory.warnings.map((warning) => (
+            <div
+              key={`${warning.sourcePath}:${warning.code}`}
+              className="notice"
+            >
+              <AlertTriangle size={14} />
+              <span>{warning.message}</span>
+              <code>{warning.sourcePath}</code>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="agent-kind-rail-layout">
+        <nav className="agent-kind-rail" aria-label="Capability kind">
+          {RAIL_KINDS.map((kind) => (
+            <KindRailItem
+              key={kind}
+              kind={kind}
+              count={kindCounts[kind]}
+              active={selectedKind === kind}
+              href={setupHref(filters, { kind })}
+            />
+          ))}
+          {instructionVisible ? (
+            <KindRailItem
+              kind="instruction"
+              count={1}
+              active={selectedKind === "instruction"}
+              href={setupHref(filters, { kind: "instruction" })}
+            />
+          ) : null}
+        </nav>
+        <div className="agent-kind-rail-content">
+          {selectedKind === "instruction" && inventory.instructionFile ? (
+            <details className="agent-instruction" open>
+              <summary>
+                <strong className="agent-instruction-title">
+                  {inventory.instructionFile.filename}
+                </strong>
+                <span>{inventory.instructionFile.sourcePath}</span>
+              </summary>
+              <pre>{inventory.instructionFile.content}</pre>
+            </details>
+          ) : selected.length > 0 ? (
+            <div className="agent-capability-list">
+              {partitionByOrigin(selected).map((group) => (
+                <SourceGroup
+                  key={group.origin}
+                  origin={group.origin}
+                  capabilities={group.capabilities}
+                  duplicateNames={duplicateNames}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="agent-kind-empty">
+              No {kindLabels[selectedKind].toLowerCase()} for this agent.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function KindRailItem({
+  kind,
+  count,
+  active,
+  href,
+}: {
+  kind: AgentSetupKind;
+  count: number;
+  active: boolean;
+  href: string;
+}) {
+  const KindIcon = kindIcons[kind];
+  return (
+    <Link
+      href={href}
+      className={
+        active ? "agent-kind-rail-item is-active" : "agent-kind-rail-item"
+      }
+      aria-current={active ? "true" : undefined}
+    >
+      <KindIcon aria-hidden="true" size={15} />
+      <span>{kindLabels[kind]}</span>
+      <span className="agent-kind-rail-count">{count}</span>
+    </Link>
   );
 }
 
@@ -696,121 +836,6 @@ function showsInstruction(
   ].some((value) => value.toLocaleLowerCase().includes(query));
 }
 
-function ProviderInventory({
-  inventory,
-  filters,
-}: {
-  inventory: AgentInventory;
-  filters: AgentSetupFilters;
-}) {
-  const capabilities = inventory.capabilities
-    .filter((capability) => matchesCapability(capability, filters))
-    .sort(compareInventoryCapabilities);
-  // Names that appear on more than one visible capability (across groups and
-  // flat rows alike). For those rows we surface a shortened sourcePath so the
-  // user can tell duplicate installs apart and clean them up.
-  const duplicateNames = new Set<string>();
-  const nameCounts = new Map<string, number>();
-  for (const capability of capabilities) {
-    nameCounts.set(capability.name, (nameCounts.get(capability.name) ?? 0) + 1);
-  }
-  for (const [name, count] of nameCounts) {
-    if (count > 1) duplicateNames.add(name);
-  }
-  const instructionVisible = showsInstruction(inventory, filters);
-  if (
-    capabilities.length === 0 &&
-    !instructionVisible &&
-    inventory.warnings.length === 0
-  ) {
-    return null;
-  }
-
-  return (
-    <section className="card agent-provider-section">
-      <header className="agent-provider-heading">
-        <div>
-          <span className={`badge ${providerBadges[inventory.provider]}`}>
-            {providerLabels[inventory.provider]}
-          </span>
-          <strong>{capabilities.length} shown</strong>
-        </div>
-        <span>Global configuration</span>
-      </header>
-      {inventory.warnings.length > 0 ? (
-        <div className="agent-warning-list">
-          {inventory.warnings.map((warning) => (
-            <div
-              key={`${warning.sourcePath}:${warning.code}`}
-              className="notice"
-            >
-              <AlertTriangle size={14} />
-              <span>{warning.message}</span>
-              <code>{warning.sourcePath}</code>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {capabilities.length > 0 ? (
-        <div className="agent-capability-list">
-          {partitionByKind(capabilities).map((bucket) => (
-            <KindBucket
-              key={bucket.kind}
-              kind={bucket.kind}
-              capabilities={bucket.capabilities}
-              duplicateNames={duplicateNames}
-            />
-          ))}
-        </div>
-      ) : null}
-      {instructionVisible && inventory.instructionFile ? (
-        <details className="agent-instruction">
-          <summary>
-            <strong className="agent-instruction-title">
-              {inventory.instructionFile.filename}
-            </strong>
-            <span>{inventory.instructionFile.sourcePath}</span>
-          </summary>
-          <pre>{inventory.instructionFile.content}</pre>
-        </details>
-      ) : null}
-    </section>
-  );
-}
-
-function KindBucket({
-  kind,
-  capabilities,
-  duplicateNames,
-}: {
-  kind: CapabilityKind;
-  capabilities: AgentCapability[];
-  duplicateNames: Set<string>;
-}) {
-  const KindIcon = kindIcons[kind];
-  return (
-    <details className="agent-kind-bucket" open>
-      <summary>
-        <span className="agent-kind-bucket-primary">
-          <KindIcon aria-hidden="true" size={14} />
-          <strong>{kindLabels[kind]}</strong>
-        </span>
-        <span>{countLabel(capabilities.length, "item")}</span>
-      </summary>
-      <div className="agent-kind-bucket-body">
-        {partitionByOrigin(capabilities).map((group) => (
-          <SourceGroup
-            key={group.origin}
-            origin={group.origin}
-            capabilities={group.capabilities}
-            duplicateNames={duplicateNames}
-          />
-        ))}
-      </div>
-    </details>
-  );
-}
-
 function SourceGroup({
   origin,
   capabilities,
@@ -822,7 +847,7 @@ function SourceGroup({
 }) {
   const items = buildInventoryItems(capabilities).sort(compareInventoryItems);
   return (
-    <details className="agent-source-group">
+    <details className="agent-source-group" open>
       <summary>
         <span className="agent-source-group-primary">
           <span className={`badge ${originBadges[origin]} agent-origin-tag`}>
@@ -856,9 +881,11 @@ function SourceGroup({
 function CapabilityRow({
   capability,
   duplicateNames,
+  withinGroup,
 }: {
   capability: AgentCapability;
   duplicateNames?: Set<string>;
+  withinGroup?: boolean;
 }) {
   // When the same capability name appears more than once in the visible
   // inventory, the source line alone can't tell the rows apart (e.g. two
@@ -866,16 +893,20 @@ function CapabilityRow({
   // shortened install path so the user can identify and clean up duplicates.
   const showPathHint =
     duplicateNames?.has(capability.name) && !!capability.sourcePath;
-  const sourceLine =
-    capability.sourceRepository ??
-    capability.sourcePlugin ??
-    capability.sourcePath;
+  // Inside a repo/plugin sub-group the header already names the source, so a
+  // per-row source line just repeats it. Show it only for standalone rows,
+  // where it is the row's only locator.
+  const sourceLine = withinGroup
+    ? undefined
+    : (capability.sourceRepository ??
+      capability.sourcePlugin ??
+      capability.sourcePath);
 
   return (
     <div className="agent-capability-row">
       <div className="agent-capability-primary">
         <strong>{capability.name}</strong>
-        <span>{sourceLine}</span>
+        {sourceLine ? <span>{sourceLine}</span> : null}
         {showPathHint ? (
           <code className="agent-capability-path-hint">
             {shortenHomePath(capability.sourcePath!)}
@@ -898,7 +929,7 @@ function CapabilityGroup({
   const GroupIcon = summary.kind === "plugin" ? Plug : WandSparkles;
 
   return (
-    <details className="agent-capability-group">
+    <details className="agent-capability-group" open>
       <summary>
         <span className="agent-capability-group-primary">
           <GroupIcon aria-hidden="true" size={14} />
@@ -912,6 +943,7 @@ function CapabilityGroup({
             key={capability.id}
             capability={capability}
             duplicateNames={duplicateNames}
+            withinGroup
           />
         ))}
       </div>
