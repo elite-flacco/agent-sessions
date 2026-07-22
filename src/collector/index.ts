@@ -3,7 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import chokidar from "chokidar";
 import type {
+  AdapterParseContext,
   AgentProvider,
+  CapabilityLookup,
   NormalizedSession,
   ProviderAdapter,
   SessionStatus,
@@ -11,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { getCodexThreadTitle } from "@/lib/codex-db";
 import { sqlite } from "@/db/client";
+import { getAgentInventories } from "@/lib/agent-inventory";
 import {
   getZcodeSessionMetadata,
   listZcodeSessionMetadata,
@@ -22,6 +25,7 @@ import { codexAdapter } from "./adapters/codex";
 import { piAdapter } from "./adapters/pi";
 import { sessionSummary } from "./adapters/shared";
 import { zcodeAdapter } from "./adapters/zcode";
+import { buildCapabilityLookups } from "./capabilities";
 import { acquireLease, releaseLease } from "./lock";
 import {
   homePath,
@@ -55,7 +59,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "10";
+const NORMALIZATION_VERSION = "11";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -125,6 +129,23 @@ function persistSession(session: NormalizedSession): void {
     const row = sqlite
       .prepare("SELECT id FROM sessions WHERE provider = ? AND external_id = ?")
       .get(session.provider, session.externalId) as { id: number };
+    sqlite
+      .prepare("DELETE FROM session_capability_usage WHERE session_id = ?")
+      .run(row.id);
+    const capabilityStatement =
+      sqlite.prepare(`INSERT INTO session_capability_usage
+      (session_id, external_id, provider, kind, capability_name, occurred_at)
+      VALUES (?, ?, ?, ?, ?, ?)`);
+    for (const capability of session.capabilityUsage) {
+      capabilityStatement.run(
+        row.id,
+        capability.externalId,
+        session.provider,
+        capability.kind,
+        capability.name,
+        capability.occurredAt,
+      );
+    }
     if (session.usage.length) {
       sqlite
         .prepare(
@@ -429,6 +450,7 @@ async function syncFile(
   adapter: ProviderAdapter,
   filePath: string,
   force = false,
+  context?: AdapterParseContext,
 ): Promise<{ imported: number; skipped: number; errors: number }> {
   const stat = await fs.stat(filePath);
   const currentFingerprint = fingerprint(stat.size, stat.mtimeMs);
@@ -438,7 +460,7 @@ async function syncFile(
   if (!force && existing?.fingerprint === currentFingerprint)
     return { imported: 0, skipped: 1, errors: 0 };
 
-  const result = await adapter.parse(filePath);
+  const result = await adapter.parse(filePath, context);
   result.sessions.forEach(persistSession);
   for (const error of result.errors)
     recordSyncError(
@@ -484,6 +506,7 @@ export interface SyncTotals {
 interface SyncOptions {
   force?: boolean;
   adapters?: ProviderAdapter[];
+  capabilityLookups?: Record<AgentProvider, CapabilityLookup>;
 }
 
 let syncInFlight: Promise<SyncTotals> | null = null;
@@ -514,16 +537,24 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
     return totals;
   }
   try {
+    const selectedAdapters = options.adapters ?? adapters;
+    const capabilityLookups =
+      options.capabilityLookups ??
+      buildCapabilityLookups(
+        options.adapters ? [] : await getAgentInventories({ kind: "global" }),
+      );
     sqlite
       .prepare("DELETE FROM sync_errors WHERE occurred_at < ?")
       .run(new Date(Date.now() - SYNC_ERROR_RETENTION_MS).toISOString());
-    for (const adapter of options.adapters ?? adapters) {
+    for (const adapter of selectedAdapters) {
       const scan = { sources: 0, imported: 0, errors: 0 };
       const paths = await adapter.discover();
       scan.sources = paths.length;
       for (const filePath of paths) {
         try {
-          const result = await syncFile(adapter, filePath, options.force);
+          const result = await syncFile(adapter, filePath, options.force, {
+            capabilities: capabilityLookups[adapter.provider],
+          });
           scan.imported += result.imported;
           scan.errors += result.errors;
           totals.skipped += result.skipped;
@@ -580,6 +611,9 @@ export async function watchSources(
     WATCH_LEASE_RENEW_MS,
   );
   renewTimer.unref?.();
+  const capabilityLookups = buildCapabilityLookups(
+    await getAgentInventories({ kind: "global" }),
+  );
   const watcher = chokidar.watch(
     roots.map((root) => root.path),
     {
@@ -591,7 +625,9 @@ export async function watchSources(
     if (!filePath.endsWith(".jsonl")) return;
     const adapter = adapterForPath(filePath, roots);
     try {
-      await syncFile(adapter, filePath);
+      await syncFile(adapter, filePath, false, {
+        capabilities: capabilityLookups[adapter.provider],
+      });
     } catch (error) {
       recordSyncError(
         adapter.provider,

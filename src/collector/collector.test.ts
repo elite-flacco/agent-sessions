@@ -60,6 +60,80 @@ function sessionCount(externalId: string): number {
 }
 
 describe("collector sync", () => {
+  it("replaces capability usage idempotently and cascades with its session", async () => {
+    const filePath = path.join(directory, "capability-usage.jsonl");
+    await fs.writeFile(filePath, "{}\n");
+    let pass = 0;
+    const adapter: ProviderAdapter = {
+      provider: "claude",
+      discover: async () => [filePath],
+      parse: async () => {
+        pass += 1;
+        return {
+          errors: [],
+          sessions: [
+            {
+              externalId: "capability-session",
+              provider: "claude",
+              title: "Capability session",
+              status: "completed",
+              startedAt: "2026-07-22T10:00:00Z",
+              endedAt: "2026-07-22T10:02:00Z",
+              updatedAt: "2026-07-22T10:02:00Z",
+              usage: [],
+              events: [],
+              capabilityUsage:
+                pass === 1
+                  ? [
+                      {
+                        externalId: "skill:1",
+                        kind: "skill",
+                        name: "frontend-rules",
+                        occurredAt: "2026-07-22T10:01:00Z",
+                      },
+                      {
+                        externalId: "mcp:1",
+                        kind: "mcp",
+                        name: "github",
+                        occurredAt: "2026-07-22T10:01:30Z",
+                      },
+                    ]
+                  : [
+                      {
+                        externalId: "mcp:1",
+                        kind: "mcp",
+                        name: "github",
+                        occurredAt: "2026-07-22T10:01:30Z",
+                      },
+                    ],
+            },
+          ],
+        };
+      },
+    };
+
+    await collector.syncAll({ adapters: [adapter], force: true });
+    await collector.syncAll({ adapters: [adapter], force: true });
+    expect(
+      (
+        sqlite
+          .prepare("SELECT COUNT(*) count FROM session_capability_usage")
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+
+    sqlite
+      .prepare("DELETE FROM sessions WHERE external_id = ?")
+      .run("capability-session");
+    expect(
+      (
+        sqlite
+          .prepare("SELECT COUNT(*) count FROM session_capability_usage")
+          .get() as { count: number }
+      ).count,
+    ).toBe(0);
+  });
+
   it("shares one run across concurrent sync requests and re-imports without duplicates", async () => {
     const filePath = path.join(directory, "concurrent.jsonl");
     await fs.writeFile(

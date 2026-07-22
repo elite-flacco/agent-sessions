@@ -43,12 +43,21 @@ if (hasSessions) {
     const hasSessionHierarchy = columns.some(
       (column) => column.name === "parent_external_id",
     );
+    const hasCapabilityUsage = Boolean(
+      sqlite
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_capability_usage'",
+        )
+        .get(),
+    );
     const migrations = readMigrationFiles({ migrationsFolder });
-    const baseline = hasSessionHierarchy
+    const baseline = hasCapabilityUsage
       ? migrations
-      : hasSourcePath
+      : hasSessionHierarchy
         ? migrations.slice(0, -1)
-        : migrations.slice(0, -2);
+        : hasSourcePath
+          ? migrations.slice(0, -2)
+          : migrations.slice(0, -3);
     const insert = sqlite.prepare(
       "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
     );

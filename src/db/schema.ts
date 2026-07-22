@@ -67,6 +67,32 @@ export const sessionModelUsage = sqliteTable(
   ],
 );
 
+export const sessionCapabilityUsage = sqliteTable(
+  "session_capability_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    provider: text("provider").notNull(),
+    kind: text("kind").notNull(),
+    capabilityName: text("capability_name").notNull(),
+    occurredAt: text("occurred_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("capability_usage_session_external_idx").on(
+      table.sessionId,
+      table.externalId,
+    ),
+    index("capability_usage_kind_name_idx").on(
+      table.kind,
+      table.capabilityName,
+    ),
+    index("capability_usage_occurred_idx").on(table.occurredAt),
+  ],
+);
+
 export const activityEvents = sqliteTable(
   "activity_events",
   {
