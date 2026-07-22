@@ -1760,7 +1760,12 @@
   /* Inventory shows one provider at a time; the Kind rail (Skills / Plugins /
      MCPs, plus Instructions when present) selects which pane is visible. */
   .agent-inventory-single {
+    min-width: 0;
     margin-top: 0.9rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--card);
   }
   .agent-inventory-single .agent-provider-heading {
     border-top: 0;
