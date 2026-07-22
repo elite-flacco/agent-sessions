@@ -1843,6 +1843,7 @@
   }
   .agent-capability-primary strong {
     font-size: var(--text-sm);
+    font-weight: 400;
   }
   .agent-capability-primary span,
   .agent-packaging {
@@ -1939,6 +1940,7 @@
   }
   .agent-capability-group-primary strong {
     font-size: var(--text-sm);
+    font-weight: 400;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
