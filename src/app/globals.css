@@ -1939,6 +1939,7 @@
     color: var(--muted-foreground);
   }
   .agent-capability-group-primary strong {
+    color: var(--foreground);
     font-size: var(--text-sm);
     font-weight: 400;
     overflow: hidden;
