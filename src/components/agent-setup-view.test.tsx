@@ -1162,7 +1162,7 @@ describe("AgentSetupView", () => {
       '<span class="badge badge-3 agent-origin-tag">Marketplace</span>',
     );
     expect(html).not.toContain("agent-status-tag");
-    expect(html).toContain('<details class="agent-capability-group" open="">');
+    expect(html).toContain('<details class="agent-capability-group">');
 
     // Member rows are nested inside the group body container.
     const groupStart = html.indexOf('class="agent-capability-group"');
@@ -1230,9 +1230,9 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Two separate <details> groups, one per plugin, both open by default.
+    // Two separate collapsed <details> groups, one per plugin.
     const groupCount = (
-      html.match(/<details class="agent-capability-group" open="">/g) ?? []
+      html.match(/<details class="agent-capability-group">/g) ?? []
     ).length;
     expect(groupCount).toBe(2);
 

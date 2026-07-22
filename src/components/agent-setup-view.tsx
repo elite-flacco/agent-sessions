@@ -929,7 +929,7 @@ function CapabilityGroup({
   const GroupIcon = summary.kind === "plugin" ? Plug : WandSparkles;
 
   return (
-    <details className="agent-capability-group" open>
+    <details className="agent-capability-group">
       <summary>
         <span className="agent-capability-group-primary">
           <GroupIcon aria-hidden="true" size={14} />
