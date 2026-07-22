@@ -1,17 +1,20 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { dedupeCapabilities } from "./normalize";
 import {
   capability,
   discoverPluginMcps,
   discoverSkillRoots,
   objectValue,
+  parseFrontmatter,
   pluginStatusWithPresence,
+  readDirectoryEntries,
   readInstruction,
   readJsonSource,
+  readTextSource,
   safeAbsolutePath,
   type SkillLock,
 } from "./shared";
-import type { AgentCapability, AgentInventory } from "./types";
+import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
 
 interface ClaudeOptions {
   homeDir: string;
@@ -33,6 +36,39 @@ function installedPlugins(value: unknown): InstalledPlugin[] {
       : objectValue(installs);
     return { id, installPath: safeAbsolutePath(install?.installPath) };
   });
+}
+
+/**
+ * Reads Claude's scheduled-task directories (`~/.claude/scheduled-tasks/<id>/`).
+ * Each task is a SKILL.md with YAML frontmatter. Claude doesn't store the
+ * schedule in-file — `scheduleMissing` is always true and the instruction body
+ * (the SKILL.md body) is surfaced verbatim under the allowlist exception.
+ */
+export async function discoverClaudeScheduledTasks(
+  homeDir: string,
+): Promise<ScheduledTask[]> {
+  const tasks: ScheduledTask[] = [];
+  const root = join(homeDir, ".claude", "scheduled-tasks");
+  for (const entry of await readDirectoryEntries(root)) {
+    const skillPath = join(entry, "SKILL.md");
+    const content = await readTextSource(skillPath, []);
+    if (!content) continue;
+    const { data, body } = parseFrontmatter(content);
+    const id = basename(entry);
+    tasks.push({
+      id,
+      name: data.name ?? id,
+      description: data.description,
+      provider: "claude",
+      scheduleMissing: true,
+      status: "active",
+      instructionBody: body,
+      instructionFormat: "skill_md",
+      sourcePath: skillPath,
+      warnings: [],
+    });
+  }
+  return tasks;
 }
 
 export async function discoverClaude({
@@ -135,6 +171,7 @@ export async function discoverClaude({
     provider: "claude",
     scope: "global",
     capabilities: dedupeCapabilities(capabilities),
+    scheduledTasks: await discoverClaudeScheduledTasks(homeDir),
     instructionFile: await readInstruction(
       join(homeDir, ".claude", "CLAUDE.md"),
       warnings,

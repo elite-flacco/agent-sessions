@@ -156,6 +156,56 @@ export function readZcodeSessionMessages(
   }
 }
 
+export interface ZcodeWorkflowDefinition {
+  id: string;
+  name: string;
+  source: string;
+  trusted: boolean;
+  enabled: boolean;
+  scriptPath?: string;
+  scriptHash: string;
+  metaJson: string;
+  scope: string;
+  timeCreated: number;
+  timeUpdated: number;
+}
+
+/**
+ * Reads scheduled-workflow definitions from Zcode's session database. Returns
+ * undefined when the database or table is unavailable so callers can degrade
+ * to an empty scheduled-task list rather than throwing.
+ */
+export function listZcodeWorkflowDefinitions():
+  ZcodeWorkflowDefinition[] | undefined {
+  const db = zcodeDb();
+  if (!db) return undefined;
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, name, source, trusted, enabled, script_path scriptPath,
+                script_hash scriptHash, meta_json metaJson, scope,
+                time_created timeCreated, time_updated timeUpdated
+         FROM workflow_definition`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: stringValue(row.id) ?? "",
+      name: stringValue(row.name) ?? "",
+      source: stringValue(row.source) ?? "",
+      trusted: Number(row.trusted) === 1,
+      enabled: Number(row.enabled) === 1,
+      scriptPath: stringValue(row.scriptPath),
+      scriptHash: stringValue(row.scriptHash) ?? "",
+      metaJson: stringValue(row.metaJson) ?? "{}",
+      scope: stringValue(row.scope) ?? "user",
+      timeCreated: typeof row.timeCreated === "number" ? row.timeCreated : 0,
+      timeUpdated: typeof row.timeUpdated === "number" ? row.timeUpdated : 0,
+    }));
+  } catch {
+    return undefined;
+  }
+}
+
 // Tests switch ZCODE_DB_PATH between isolated databases. Closing cached
 // read-only handles keeps those fixtures independent and removable.
 export function __resetZcodeDbCache(): void {
