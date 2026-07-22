@@ -1163,4 +1163,225 @@ source = "${pluginRoot}"
       ]),
     );
   });
+
+  test("discovers Codex scheduled tasks from automations TOML without leaking args", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/automations/weekly-digest/automation.toml",
+      `version = 1
+id = "weekly-digest"
+kind = "cron"
+name = "Weekly digest"
+prompt = "Summarize the week. Do not leak SECRET_TOKEN."
+status = "ACTIVE"
+rrule = "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0;BYSECOND=0"
+model = "gpt-5.5"
+execution_environment = "local"
+target = { type = "project", project_id = "local-abc123" }
+cwds = ["/Users/example/ws"]
+created_at = 1783771983978
+updated_at = 1783772547499
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.scheduledTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "weekly-digest",
+          name: "Weekly digest",
+          scheduleRaw: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
+          scheduleHuman: "Mondays at 08:00",
+          scheduleMissing: false,
+          status: "active",
+          model: "gpt-5.5",
+          targetProject: "local-abc123",
+          instructionBody: "Summarize the week. Do not leak SECRET_TOKEN.",
+          instructionFormat: "toml_prompt",
+        }),
+      ]),
+    );
+    // Per the spec's allowlist exception, the prompt body IS surfaced verbatim.
+    expect(codex?.scheduledTasks?.[0]?.instructionBody).toContain(
+      "SECRET_TOKEN",
+    );
+  });
+
+  test("maps unknown Codex automation status to unknown", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/automations/odd-job/automation.toml",
+      `version = 1
+id = "odd-job"
+kind = "cron"
+name = "Odd job"
+prompt = "do thing"
+status = "WEIRD"
+rrule = "FREQ=DAILY"
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+    expect(codex?.scheduledTasks?.[0]?.status).toBe("unknown");
+  });
+
+  test("surfaces Codex automation.toml read warnings at the inventory level", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/automations/weekly-digest/automation.toml",
+      `id = "weekly-digest"\nname = "Weekly digest"\nrrule = "FREQ=DAILY"\nprompt = "hi"\n`,
+    );
+    // automation.toml as a directory: readFile throws EISDIR (not ENOENT),
+    // so readTextSource pushes an "unreadable" warning instead of skipping silently.
+    await mkdir(
+      join(home, ".codex", "automations", "broken-task", "automation.toml"),
+      { recursive: true },
+    );
+    // A directory with no automation.toml at all: ENOENT is silent.
+    await mkdir(join(home, ".codex", "automations", "missing-task"), {
+      recursive: true,
+    });
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.scheduledTasks?.map((t) => t.id) ?? []).toEqual([
+      "weekly-digest",
+    ]);
+    expect(
+      (codex?.scheduledTasks ?? []).some((t) => t.id === "broken-task"),
+    ).toBe(false);
+    expect(
+      (codex?.scheduledTasks ?? []).some((t) => t.id === "missing-task"),
+    ).toBe(false);
+    expect(codex?.warnings).toEqual([
+      expect.objectContaining({ code: "unreadable" }),
+    ]);
+  });
+
+  test("discovers Claude scheduled tasks from scheduled-tasks SKILL.md", async () => {
+    const home = await createHome();
+    const taskDir = join(home, ".claude", "scheduled-tasks", "daily-pr-triage");
+    await mkdir(taskDir, { recursive: true });
+    await writeFile(
+      join(taskDir, "SKILL.md"),
+      "---\nname: daily-pr-triage\ndescription: Daily PR check\n---\nYou are running triage.\n",
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const claude = result.find((item) => item.provider === "claude");
+
+    expect(claude?.scheduledTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "daily-pr-triage",
+          name: "daily-pr-triage",
+          description: "Daily PR check",
+          scheduleMissing: true,
+          status: "active",
+          instructionFormat: "skill_md",
+          instructionBody: "You are running triage.\n",
+        }),
+      ]),
+    );
+    expect(claude?.scheduledTasks?.[0]?.scheduleRaw).toBeUndefined();
+    expect(claude?.scheduledTasks?.[0]?.scheduleHuman).toBeUndefined();
+  });
+
+  test("uses directory name when Claude scheduled-task frontmatter omits name", async () => {
+    const home = await createHome();
+    const taskDir = join(home, ".claude", "scheduled-tasks", "no-name-task");
+    await mkdir(taskDir, { recursive: true });
+    await writeFile(
+      join(taskDir, "SKILL.md"),
+      "---\ndescription: A task with no name field\n---\nBody only.\n",
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const claude = result.find((item) => item.provider === "claude");
+    const task = claude?.scheduledTasks?.find((t) => t.id === "no-name-task");
+    expect(task?.name).toBe("no-name-task");
+    expect(task?.description).toBe("A task with no name field");
+  });
+
+  test("discovers Zcode scheduled tasks from workflow_definition rows", async () => {
+    const dbPath = join(tmpdir(), `relay-zcode-tasks-${Date.now()}.sqlite`);
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE workflow_definition (
+        id text primary key,
+        name text not null,
+        source text not null,
+        trusted integer not null default 0,
+        enabled integer not null default 1,
+        script_path text,
+        script_hash text not null,
+        meta_json text not null,
+        time_created integer not null,
+        time_updated integer not null,
+        scope text not null default 'user'
+      );
+    `);
+    const scriptPath = join(tmpdir(), `relay-zcode-script-${Date.now()}.sh`);
+    await writeFile(scriptPath, "#!/bin/sh\necho hello\n");
+    db.prepare(
+      `INSERT INTO workflow_definition (id, name, source, enabled, script_path, script_hash, meta_json, time_created, time_updated)
+       VALUES (?, ?, 'user', 1, ?, 'hash', '{}', 1000, 2000)`,
+    ).run("wf-1", "Nightly sync", scriptPath);
+    db.close();
+
+    process.env.ZCODE_DB_PATH = dbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      const result = await getAgentInventories(
+        { kind: "global" },
+        { homeDir: await createHome() },
+      );
+      const zcode = result.find((item) => item.provider === "zcode");
+
+      expect(zcode?.scheduledTasks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "wf-1",
+            name: "Nightly sync",
+            status: "active",
+            scheduleMissing: true,
+            instructionFormat: "script",
+            instructionBody: "#!/bin/sh\necho hello\n",
+            sourcePath: scriptPath,
+            updatedAt: 2000,
+          }),
+        ]),
+      );
+    } finally {
+      __resetZcodeDbCache();
+      delete process.env.ZCODE_DB_PATH;
+      const { rm } = await import("node:fs/promises");
+      await rm(dbPath, { force: true });
+      await rm(scriptPath, { force: true });
+    }
+  });
 });
