@@ -13,7 +13,7 @@ const READ_LIKE_TOOL = /^(read|exec|exec_command|bash)$/i;
 const READ_MARKER =
   /\b(cat|sed|head|tail|less|bat|rg|grep|readFile|Get-Content)\b/i;
 const PATH_START_BOUNDARY = /[\s"'`=:[\]{}(),;|&<>]/;
-const PATH_END_BOUNDARY = /[\s"'`;|&<>()]/;
+const PATH_END_BOUNDARY = /[\s`;|&<>()]/;
 
 function safeName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -136,16 +136,57 @@ function stringLeaves(value: unknown, seen = new WeakSet<object>()): string[] {
     : Object.values(value).flatMap((item) => stringLeaves(item, seen));
 }
 
+interface QuoteState {
+  quote?: '"' | "'";
+  start?: number;
+}
+
+function quoteAt(value: string, end: number): QuoteState {
+  let state: QuoteState = {};
+  for (let index = 0; index < end; index += 1) {
+    const character = value[index];
+    if (state.quote === "'") {
+      if (character === "'") state = {};
+      continue;
+    }
+    if (state.quote === '"') {
+      if (character === "\\") index += 1;
+      else if (character === '"') state = {};
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      state = { quote: character, start: index };
+    } else if (character === "\\") {
+      index += 1;
+    }
+  }
+  return state;
+}
+
 function containsExactPath(value: string, path: string): boolean {
   let index = value.indexOf(path);
   while (index >= 0) {
-    const before = value[index - 1];
-    const after = value[index + path.length];
-    if (
-      (!before || PATH_START_BOUNDARY.test(before)) &&
-      (!after || PATH_END_BOUNDARY.test(after))
-    )
-      return true;
+    const quote = quoteAt(value, index);
+    if (quote.quote) {
+      const afterPath = index + path.length;
+      const beforeQuote = value[(quote.start ?? index) - 1];
+      const afterQuote = value[afterPath + 1];
+      if (
+        quote.start === index - 1 &&
+        value[afterPath] === quote.quote &&
+        (!beforeQuote || PATH_START_BOUNDARY.test(beforeQuote)) &&
+        (!afterQuote || PATH_END_BOUNDARY.test(afterQuote))
+      )
+        return true;
+    } else {
+      const before = value[index - 1];
+      const after = value[index + path.length];
+      if (
+        (!before || PATH_START_BOUNDARY.test(before)) &&
+        (!after || PATH_END_BOUNDARY.test(after))
+      )
+        return true;
+    }
     index = value.indexOf(path, index + path.length);
   }
   return false;

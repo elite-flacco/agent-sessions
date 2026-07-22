@@ -155,4 +155,40 @@ describe("capability normalization", () => {
       ).toEqual([]);
     }
   });
+
+  it("rejects quoted configured skill path suffixes", () => {
+    const lookup = buildCapabilityLookups(inventories).codex;
+    for (const cmd of [
+      "cat '/safe/source/frontend-rules/SKILL.md;backup'",
+      'cat "/safe/source/frontend-rules/SKILL.md)backup"',
+    ]) {
+      expect(
+        matchedSkillReads({
+          externalId: cmd,
+          toolName: "exec_command",
+          input: { cmd },
+          occurredAt: "2026-07-22T10:00:00Z",
+          lookup,
+        }),
+      ).toEqual([]);
+    }
+  });
+
+  it("matches complete quoted paths and paths followed by redirection", () => {
+    const lookup = buildCapabilityLookups(inventories).codex;
+    for (const cmd of [
+      "cat '/safe/source/frontend-rules/SKILL.md'",
+      "cat /safe/source/frontend-rules/SKILL.md>output.txt",
+    ]) {
+      expect(
+        matchedSkillReads({
+          externalId: cmd,
+          toolName: "exec_command",
+          input: { cmd },
+          occurredAt: "2026-07-22T10:00:00Z",
+          lookup,
+        }),
+      ).toHaveLength(1);
+    }
+  });
 });
