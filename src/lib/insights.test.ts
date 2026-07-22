@@ -24,7 +24,8 @@ beforeAll(async () => {
     (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
 
-  // Session 1: this week, 75% cache hit (cache_read 300 / (300 + 100 input)).
+  // Session 1: this week, 60% cache hit. Cache writes are misses, so the
+  // denominator includes 100 uncached input, 100 cache writes, and 300 reads.
   // Priced via pricing table (gpt-5.5) so $-saved is computed.
   insertSession.run(
     "s1",
@@ -36,7 +37,7 @@ beforeAll(async () => {
     iso(0),
     iso(0),
   );
-  insertUsage.run(1, "gpt-5.5", 100, 50, 300, 0, null);
+  insertUsage.run(1, "gpt-5.5", 100, 50, 300, 100, null);
   // Session 2: this week, priced, 0% cache hit (no cache reads).
   insertSession.run(
     "s2",
@@ -83,20 +84,20 @@ afterAll(async () => {
 });
 
 describe("getInsights — cache effectiveness", () => {
-  it("computes a weighted hit rate across this week's tokens", () => {
+  it("treats cache writes as misses in the weekly cache hit rate", () => {
     const { cache } = queries.getInsights();
-    // This week: s1 read=300 in=100; s2 read=0 in=400; s4 read=100 in=100.
-    // Weighted hit = (300 + 0 + 100) / (400 + 400 + 200) = 400/1000 = 0.4
-    expect(cache.week.hitRate).toBeCloseTo(0.4, 5);
+    // This week: s1 read=300, input=100, write=100; s2 read=0, input=400;
+    // s4 read=100, input=100. Hit rate = 400 / (400 + 600 + 100) = 4/11.
+    expect(cache.week.hitRate).toBeCloseTo(4 / 11, 5);
   });
 
   it("returns a by-model hit-rate breakdown", () => {
     const { cache } = queries.getInsights();
     const gpt = cache.week.byModel.find((m) => m.model === "gpt-5.5");
     expect(gpt).toBeDefined();
-    // gpt-5.5 this week (s1 read=300 in=100, s2 read=0 in=400): 300/800 -> 0.375
-    expect(gpt!.hitRate).toBeCloseTo(0.375, 5);
-    expect(gpt!.tokens).toBe(900); // input+output+cacheRead+cacheWrite across s1+s2
+    // gpt-5.5 this week: 300 reads / (100 input + 100 writes + 300 reads + 400 input).
+    expect(gpt!.hitRate).toBeCloseTo(1 / 3, 5);
+    expect(gpt!.tokens).toBe(1_000); // input+output+cacheRead+cacheWrite across s1+s2
   });
 
   it("reports $ saved as null when any this-week row is unpriced", () => {
@@ -107,9 +108,9 @@ describe("getInsights — cache effectiveness", () => {
 
   it("computes a week-over-week hit-rate delta in points", () => {
     const { cache } = queries.getInsights();
-    // Prior week: s3 read=990 in=10 -> 0.99. This week: 0.4. Delta = -59 pts.
+    // Prior week: s3 read=990 in=10 -> 0.99. This week: 4/11. Delta = -63 pts.
     expect(cache.week.hitRateDeltaPts).not.toBeNull();
-    expect(cache.week.hitRateDeltaPts!).toBeCloseTo(-59, 0);
+    expect(cache.week.hitRateDeltaPts!).toBeCloseTo(-63, 0);
   });
 
   it("fires a warning signal on a >=15pt hit-rate drop", () => {

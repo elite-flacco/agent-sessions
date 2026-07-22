@@ -1590,4 +1590,57 @@ describe("AgentSetupView", () => {
       vi.unstubAllEnvs();
     }
   });
+
+  test("inventory does not flag cross-kind name collisions as duplicates", () => {
+    // "github" exists as both a plugin and an MCP — two capabilities sharing a
+    // name, but unique within each kind's pane. The path hint must fire only
+    // for same-pane collisions, so neither pane should show it.
+    vi.stubEnv("HOME", "/Users/example");
+    try {
+      const inventory: AgentInventory = {
+        provider: "codex",
+        scope: "global",
+        capabilities: [
+          skill("codex", "github", {
+            kind: "plugin",
+            status: "enabled",
+            origin: "marketplace",
+            sourcePlugin: "github@openai-curated",
+            sourceRepository: "openai-curated",
+            sourcePath: "/Users/example/.codex/plugins/cache/github",
+          }),
+          skill("codex", "github", {
+            id: "codex:mcp:github",
+            kind: "mcp",
+            status: "enabled",
+            origin: "marketplace",
+            sourcePlugin: "github@openai-curated",
+            sourceRepository: "openai-curated",
+            sourcePath: "/Users/example/.codex/plugins/cache/github/mcp",
+          }),
+        ],
+        warnings: [],
+      };
+
+      const pluginHtml = renderToStaticMarkup(
+        <AgentSetupView
+          inventories={[inventory]}
+          filters={{ view: "inventory", kind: "plugin" }}
+        />,
+      );
+      const mcpHtml = renderToStaticMarkup(
+        <AgentSetupView
+          inventories={[inventory]}
+          filters={{ view: "inventory", kind: "mcp" }}
+        />,
+      );
+
+      expect(pluginHtml).toContain("<strong>github</strong>");
+      expect(pluginHtml).not.toContain("agent-capability-path-hint");
+      expect(mcpHtml).toContain("<strong>github</strong>");
+      expect(mcpHtml).not.toContain("agent-capability-path-hint");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

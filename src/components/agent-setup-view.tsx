@@ -674,15 +674,6 @@ function InventoryView({
     .filter((capability) => matchesCapability(capability, filters, true))
     .sort(compareInventoryCapabilities);
 
-  const duplicateNames = new Set<string>();
-  const nameCounts = new Map<string, number>();
-  for (const capability of matched) {
-    nameCounts.set(capability.name, (nameCounts.get(capability.name) ?? 0) + 1);
-  }
-  for (const [name, count] of nameCounts) {
-    if (count > 1) duplicateNames.add(name);
-  }
-
   const kindCounts = Object.fromEntries(
     RAIL_KINDS.map((kind) => [
       kind,
@@ -715,6 +706,19 @@ function InventoryView({
     selectedKind === "instruction"
       ? []
       : matched.filter((capability) => capability.kind === selectedKind);
+
+  // Duplicate-name disambiguation is scoped to the rendered pane, not the
+  // whole inventory: a name shared across kinds (e.g. the "github" plugin and
+  // the "github" MCP) is unique within each kind's pane, so only same-pane
+  // collisions get the path hint.
+  const duplicateNames = new Set<string>();
+  const nameCounts = new Map<string, number>();
+  for (const capability of selected) {
+    nameCounts.set(capability.name, (nameCounts.get(capability.name) ?? 0) + 1);
+  }
+  for (const [name, count] of nameCounts) {
+    if (count > 1) duplicateNames.add(name);
+  }
 
   return (
     <div className="agent-inventory-single">

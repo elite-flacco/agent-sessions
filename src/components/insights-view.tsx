@@ -82,7 +82,6 @@ function CacheCard({ insights }: { insights: Insights }) {
     deltaPts === null
       ? ""
       : `${deltaPts > 0 ? "▲" : "▼"} ${Math.abs(Math.round(deltaPts))} pts wk-over-wk`;
-  const maxTrend = Math.max(...cache.trend.map((d) => d.hitRate ?? 0), 0);
 
   return (
     <section className="card insight-card" aria-label="Cache effectiveness">
@@ -95,13 +94,13 @@ function CacheCard({ insights }: { insights: Insights }) {
 
       <div>
         <div className="insight-headline">{hitPct}</div>
-        <div className="insight-sub">weighted cache hit rate</div>
+        <div className="insight-sub">overall cache hit rate</div>
         {deltaLabel && (
           <div className={`insight-delta ${deltaClass}`}>{deltaLabel}</div>
         )}
       </div>
 
-      <div>
+      <div className="insight-savings">
         <strong>
           {cache.week.savedUsd === null
             ? "Unavailable"
@@ -130,25 +129,6 @@ function CacheCard({ insights }: { insights: Insights }) {
       ) : (
         <p className="overview-empty">No usage recorded yet this week.</p>
       )}
-
-      <div>
-        <div className="insight-sub">Hit rate, last 30 days</div>
-        <div
-          className="spark"
-          role="img"
-          aria-label="Daily cache hit rate, last 30 days"
-        >
-          {cache.trend.map((d) => (
-            <span
-              key={d.day}
-              className="spark-slot"
-              title={`${d.day}: ${d.hitRate === null ? "no usage" : `${Math.round(d.hitRate * 100)}%`}`}
-            >
-              <i className={`spark-fill-${level(d.hitRate ?? 0, maxTrend)}`} />
-            </span>
-          ))}
-        </div>
-      </div>
     </section>
   );
 }

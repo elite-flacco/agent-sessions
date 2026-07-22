@@ -1180,22 +1180,25 @@ export interface Insights {
 }
 
 // Aggregate cache hit-rate and $-saved over a window of usage rows.
-// hitRate = sum(cacheRead) / sum(cacheRead + input). savedUsd requires every
-// row priced: it is the gap between actual cost and the counterfactual where
-// cache_read_tokens are re-priced at the full input rate.
+// hitRate = cache reads / all input tokens: reads, uncached input, and cache
+// writes. Cache writes are misses because that content was not already cached.
+// savedUsd requires every row priced: it is the gap between actual cost and the
+// counterfactual where cache_read_tokens are re-priced at the full input rate.
 function aggregateCache(rows: UsageJoinRow[]) {
   let read = 0;
   let input = 0;
+  let writes = 0;
   let grossCost = 0; // actual cost (cache reads at cache-read rate)
   let counterfactual = 0; // if cache reads were priced as full input
   let priced = true;
   const byModel = new Map<
     string,
-    { read: number; input: number; tokens: number }
+    { read: number; input: number; writes: number; tokens: number }
   >();
   for (const row of rows) {
     read += row.cacheReadTokens;
     input += row.inputTokens;
+    writes += row.cacheWriteTokens;
     const cost = rowCost(row);
     if (cost === undefined) {
       priced = false;
@@ -1221,9 +1224,15 @@ function aggregateCache(rows: UsageJoinRow[]) {
       }
     }
     const key = normalizeModel(row.model);
-    const model = byModel.get(key) ?? { read: 0, input: 0, tokens: 0 };
+    const model = byModel.get(key) ?? {
+      read: 0,
+      input: 0,
+      writes: 0,
+      tokens: 0,
+    };
     model.read += row.cacheReadTokens;
     model.input += row.inputTokens;
+    model.writes += row.cacheWriteTokens;
     model.tokens +=
       row.inputTokens +
       row.outputTokens +
@@ -1231,7 +1240,8 @@ function aggregateCache(rows: UsageJoinRow[]) {
       row.cacheWriteTokens;
     byModel.set(key, model);
   }
-  const hitRate = read + input > 0 ? read / (read + input) : null;
+  const hitRate =
+    read + input + writes > 0 ? read / (read + input + writes) : null;
   const savedUsd =
     priced && counterfactual > grossCost ? counterfactual - grossCost : null;
   const savedSharePct =
@@ -1241,13 +1251,24 @@ function aggregateCache(rows: UsageJoinRow[]) {
   const byModelOut = [...byModel.entries()]
     .map(([model, m]) => ({
       model,
-      hitRate: m.read + m.input > 0 ? m.read / (m.read + m.input) : 0,
+      hitRate:
+        m.read + m.input + m.writes > 0
+          ? m.read / (m.read + m.input + m.writes)
+          : 0,
       tokens: m.tokens,
     }))
     .sort((a, b) => b.tokens - a.tokens);
   // NOTE: happy-path $-saved has no regression test because the shared fixture's
   // unpriced s4 forces null across the week window (pricing-trust rule).
-  return { hitRate, savedUsd, savedSharePct, byModel: byModelOut, read, input };
+  return {
+    hitRate,
+    savedUsd,
+    savedSharePct,
+    byModel: byModelOut,
+    read,
+    input,
+    writes,
+  };
 }
 
 /**
@@ -1306,12 +1327,16 @@ export function getInsights(): Insights {
       : null;
 
   // 30-day daily hit-rate trend, grouped by session start day.
-  const trendByDay = new Map<string, { read: number; input: number }>();
+  const trendByDay = new Map<
+    string,
+    { read: number; input: number; writes: number }
+  >();
   for (const row of trendRows) {
     const day = row.startedAt.slice(0, 10);
-    const entry = trendByDay.get(day) ?? { read: 0, input: 0 };
+    const entry = trendByDay.get(day) ?? { read: 0, input: 0, writes: 0 };
     entry.read += row.cacheReadTokens;
     entry.input += row.inputTokens;
+    entry.writes += row.cacheWriteTokens;
     trendByDay.set(day, entry);
   }
   const cacheTrend = Array.from({ length: INSIGHTS_TREND_DAYS }, (_, index) => {
@@ -1324,8 +1349,8 @@ export function getInsights(): Insights {
     return {
       day: date,
       hitRate:
-        entry && entry.read + entry.input > 0
-          ? entry.read / (entry.read + entry.input)
+        entry && entry.read + entry.input + entry.writes > 0
+          ? entry.read / (entry.read + entry.input + entry.writes)
           : null,
     };
   });
