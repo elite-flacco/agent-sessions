@@ -103,21 +103,32 @@ export const zcodeAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
-      capabilityUsage: (rows) =>
-        rows.flatMap((row, rowIndex) => {
+      capabilityUsage: (rows) => {
+        const seenCallIds = new Set<string>();
+        return rows.flatMap((row, rowIndex) => {
           const request = record(row.request);
           const messages = Array.isArray(request?.messages)
             ? request.messages.map(record).filter(Boolean)
             : [];
-          return messages.flatMap((message) => {
+          const requestToolCalls = messages.flatMap((message) => {
             const toolCalls = Array.isArray(message?.toolCalls)
               ? message.toolCalls.map(record).filter(Boolean)
               : [];
-            return toolCalls.flatMap((tool, blockIndex) => {
+            return toolCalls;
+          });
+          const response = record(row.response);
+          const responseToolCalls = Array.isArray(response?.toolCalls)
+            ? response.toolCalls.map(record).filter(Boolean)
+            : [];
+          return [...requestToolCalls, ...responseToolCalls].flatMap(
+            (tool, blockIndex) => {
               if (!tool) return [];
+              const callId =
+                stringValue(tool.id) ?? stringValue(tool.callId);
+              if (callId && seenCallIds.has(callId)) return [];
+              if (callId) seenCallIds.add(callId);
               const externalId =
-                stringValue(tool.id) ??
-                stringValue(tool.callId) ??
+                callId ??
                 stringValue(row.uuid) ??
                 stringValue(row.id) ??
                 `${rowIndex}-${blockIndex}`;
@@ -146,9 +157,10 @@ export const zcodeAdapter: ProviderAdapter = {
               ].filter(
                 (entry): entry is CapabilityUsage => entry !== undefined,
               );
-            });
-          });
-        }),
+            },
+          );
+        });
+      },
       events: (rows) =>
         rows.flatMap((row, index) => {
           if (row.type === "model_io")

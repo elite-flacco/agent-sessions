@@ -822,6 +822,66 @@ describe("provider adapters", () => {
     );
   });
 
+  it("normalizes Zcode capability calls found only in a model response", async () => {
+    const result = await parse(zcodeAdapter, [
+      {
+        type: "model_io",
+        sessionId: "z-response-capabilities",
+        startedAt: "2026-07-22T10:00:00Z",
+        completedAt: "2026-07-22T10:01:00Z",
+        request: { messages: [] },
+        response: {
+          toolCalls: [
+            {
+              id: "z-response-skill",
+              name: "Skill",
+              arguments: {
+                skill: "review-code-changes",
+                args: "SECRET_RESPONSE_ARGS",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({ kind: "skill", name: "review-code-changes" }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_RESPONSE_ARGS",
+    );
+  });
+
+  it("deduplicates echoed Zcode request and response calls by stable call id", async () => {
+    const echoedCall = {
+      id: "z-echoed-call",
+      name: "mcp__openaiDeveloperDocs__search_openai_docs",
+      arguments: { query: "SECRET_ECHO_QUERY" },
+    };
+    const result = await parse(zcodeAdapter, [
+      {
+        type: "model_io",
+        sessionId: "z-echoed-capability",
+        startedAt: "2026-07-22T10:00:00Z",
+        completedAt: "2026-07-22T10:01:00Z",
+        request: { messages: [{ role: "assistant", toolCalls: [echoedCall] }] },
+        response: { toolCalls: [echoedCall] },
+      },
+    ]);
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({
+        externalId: "mcp:z-echoed-call",
+        kind: "mcp",
+        name: "openaideveloperdocs",
+      }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_ECHO_QUERY",
+    );
+  });
+
   it("uses explicit Zcode cancellation and failure statuses", async () => {
     const cancelled = await parse(zcodeAdapter, [
       {
