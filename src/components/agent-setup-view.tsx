@@ -926,13 +926,10 @@ function CapabilityGroup({
   members: AgentCapability[];
   duplicateNames?: Set<string>;
 }) {
-  const GroupIcon = summary.kind === "plugin" ? Plug : WandSparkles;
-
   return (
     <details className="agent-capability-group">
       <summary>
         <span className="agent-capability-group-primary">
-          <GroupIcon aria-hidden="true" size={14} />
           <strong>{summary.name}</strong>
         </span>
         <span>{countLabel(summary.memberCount, "skill")}</span>
