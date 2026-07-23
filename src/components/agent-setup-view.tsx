@@ -1557,11 +1557,6 @@ function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
               Model: <code>{task.model}</code>
             </span>
           ) : null}
-          {task.targetProject ? (
-            <span>
-              Target: <code>{task.targetProject}</code>
-            </span>
-          ) : null}
           <span>
             Source: <code>{shortenHomePath(task.sourcePath)}</code>
           </span>
