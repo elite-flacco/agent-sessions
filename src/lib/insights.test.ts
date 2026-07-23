@@ -1,15 +1,63 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type {
+  AgentCapability,
+  AgentInventory,
+} from "@/lib/agent-inventory/types";
+import type { AgentProvider } from "@/lib/types";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const DAY_MS = 24 * 60 * 60_000;
 
 let directory = "";
 let sqlite: (typeof import("@/db/client"))["sqlite"];
 let queries: typeof import("./queries");
 
+function capability(
+  provider: AgentProvider,
+  kind: "skill" | "mcp",
+  name: string,
+  status: "enabled" | "installed" | "disabled" = "installed",
+): AgentCapability {
+  return {
+    id: `${provider}:${kind}:${name}`,
+    name,
+    kind,
+    status,
+    packaging: "standalone",
+    origin: "personal",
+  };
+}
+
+const inventories: AgentInventory[] = [
+  {
+    provider: "codex",
+    scope: "global",
+    warnings: [],
+    capabilities: [
+      capability("codex", "skill", "frontend-rules", "enabled"),
+      capability("codex", "skill", "review-code-changes"),
+      capability("codex", "skill", "never-used"),
+      capability("codex", "skill", "disabled-skill", "disabled"),
+      capability("codex", "mcp", "github", "enabled"),
+    ],
+  },
+  {
+    provider: "claude",
+    scope: "global",
+    warnings: [],
+    capabilities: [
+      capability("claude", "skill", "frontend-rules"),
+      capability("claude", "mcp", "github"),
+    ],
+  },
+];
+
 beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-insights-"));
   process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
+  process.env.ZCODE_DB_PATH = path.join(directory, "missing-zcode.db");
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
   queries = await import("./queries");
@@ -23,6 +71,10 @@ beforeAll(async () => {
   const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
     (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  const insertScan = sqlite.prepare(`INSERT INTO adapter_scans
+    (provider, last_scan_at, sources, imported, errors) VALUES (?, ?, ?, ?, ?)`);
+  insertScan.run("codex", iso(0), 1, 1, 0);
+  insertScan.run("claude", iso(0), 1, 1, 0);
 
   // Session 1: this week, 60% cache hit. Cache writes are misses, so the
   // denominator includes 100 uncached input, 100 cache writes, and 300 reads.
@@ -75,12 +127,308 @@ beforeAll(async () => {
     iso(0),
   );
   insertUsage.run(4, "mystery-model", 100, 0, 100, 0, null);
+
+  const insertCapabilitySession = sqlite.prepare(`INSERT INTO sessions
+    (external_id, provider, title, status, started_at, updated_at, ended_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  const insertCapabilityUsage =
+    sqlite.prepare(`INSERT INTO session_capability_usage
+    (session_id, external_id, provider, kind, capability_name, occurred_at)
+    VALUES (?, ?, ?, ?, ?, ?)`);
+  const insertCapability = (
+    sessionId: number,
+    externalId: string,
+    provider: AgentProvider,
+    kind: "skill" | "mcp",
+    name: string,
+    occurredAt: string,
+  ) =>
+    insertCapabilityUsage.run(
+      sessionId,
+      externalId,
+      provider,
+      kind,
+      name,
+      occurredAt,
+    );
+
+  const twoDaysAgo = iso(2 * DAY_MS);
+  const tenDaysAgo = iso(10 * DAY_MS);
+  const fortyDaysAgo = iso(40 * DAY_MS);
+  const codexRecentId = Number(
+    insertCapabilitySession.run(
+      "cap-codex-recent",
+      "codex",
+      "Recent Codex capabilities",
+      "completed",
+      twoDaysAgo,
+      twoDaysAgo,
+      twoDaysAgo,
+    ).lastInsertRowid,
+  );
+  const claudeOlderId = Number(
+    insertCapabilitySession.run(
+      "cap-claude-older",
+      "claude",
+      "Older Claude capabilities",
+      "completed",
+      tenDaysAgo,
+      tenDaysAgo,
+      tenDaysAgo,
+    ).lastInsertRowid,
+  );
+  const codexHistoricalId = Number(
+    insertCapabilitySession.run(
+      "cap-codex-historical",
+      "codex",
+      "Historical Codex capabilities",
+      "completed",
+      fortyDaysAgo,
+      fortyDaysAgo,
+      fortyDaysAgo,
+    ).lastInsertRowid,
+  );
+
+  insertCapability(
+    codexRecentId,
+    "cap-frontend-codex",
+    "codex",
+    "skill",
+    "frontend-rules",
+    twoDaysAgo,
+  );
+  insertCapability(
+    claudeOlderId,
+    "cap-frontend-claude",
+    "claude",
+    "skill",
+    " Frontend-Rules ",
+    tenDaysAgo,
+  );
+  insertCapability(
+    codexHistoricalId,
+    "cap-review-codex",
+    "codex",
+    "skill",
+    "review-code-changes",
+    fortyDaysAgo,
+  );
+  insertCapability(
+    codexRecentId,
+    "cap-github-codex-1",
+    "codex",
+    "mcp",
+    "github",
+    twoDaysAgo,
+  );
+  insertCapability(
+    codexRecentId,
+    "cap-github-codex-2",
+    "codex",
+    "mcp",
+    "github",
+    twoDaysAgo,
+  );
+  insertCapability(
+    claudeOlderId,
+    "cap-github-claude",
+    "claude",
+    "mcp",
+    "github",
+    tenDaysAgo,
+  );
+  insertCapability(
+    claudeOlderId,
+    "cap-shared-claude",
+    "claude",
+    "skill",
+    "Shared-Skill",
+    tenDaysAgo,
+  );
+  for (const name of ["rank-a", "rank-b", "rank-c", "retired-skill"]) {
+    insertCapability(
+      codexRecentId,
+      `cap-${name}`,
+      "codex",
+      "skill",
+      name,
+      twoDaysAgo,
+    );
+  }
 });
 
 afterAll(async () => {
   sqlite.close();
   delete process.env.RELAY_DATABASE_PATH;
+  delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
+});
+
+describe("getInsights — capability usage", () => {
+  it("parses supported capability ranges and defaults invalid values", () => {
+    expect(queries.parseCapabilityRange(undefined)).toBe("30d");
+    expect(queries.parseCapabilityRange("7d")).toBe("7d");
+    expect(queries.parseCapabilityRange("all")).toBe("30d");
+  });
+
+  it("ranks canonical capability usage and derives unused installations", () => {
+    const capabilities = queries.getInsights("30d", inventories).capabilities;
+
+    expect(capabilities.range).toBe("30d");
+    expect(
+      capabilities.mostUsed.filter((item) => item.kind === "skill")[0],
+    ).toMatchObject({
+      name: "frontend-rules",
+      invocations: 2,
+      sessionCount: 2,
+      providers: ["codex", "claude"],
+    });
+    expect(capabilities.unused).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "review-code-changes",
+          neverObserved: false,
+        }),
+        expect.objectContaining({ name: "never-used", neverObserved: true }),
+      ]),
+    );
+    expect(capabilities.unused.map((item) => item.name)).not.toContain(
+      "disabled-skill",
+    );
+  });
+
+  it("excludes observations older than the selected range", () => {
+    const capabilities = queries.getInsights("7d", inventories).capabilities;
+    const frontend = capabilities.mostUsed.find(
+      (item) => item.kind === "skill" && item.name === "frontend-rules",
+    );
+
+    expect(frontend).toMatchObject({
+      invocations: 1,
+      sessionCount: 1,
+      providers: ["codex"],
+    });
+  });
+
+  it("retains only the top five per kind with deterministic tie ordering", () => {
+    const skills = queries
+      .getInsights("30d", inventories)
+      .capabilities.mostUsed.filter((item) => item.kind === "skill");
+
+    expect(skills.map((item) => item.name)).toEqual([
+      "frontend-rules",
+      "rank-a",
+      "rank-b",
+      "rank-c",
+      "retired-skill",
+    ]);
+    expect(skills).toHaveLength(5);
+  });
+
+  it("ranks observed capabilities even when they are no longer installed", () => {
+    const capabilities = queries.getInsights("30d", inventories).capabilities;
+
+    expect(capabilities.mostUsed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "skill",
+          name: "retired-skill",
+          invocations: 1,
+        }),
+      ]),
+    );
+  });
+
+  it("derives unused status independently for each provider installation", () => {
+    const inventoriesWithSharedSkill = inventories.map((inventory) => ({
+      ...inventory,
+      capabilities: [
+        ...inventory.capabilities,
+        capability(inventory.provider, "skill", "shared-skill"),
+      ],
+    }));
+
+    const shared = queries
+      .getInsights("30d", inventoriesWithSharedSkill)
+      .capabilities.unused.find((item) => item.name === "shared-skill");
+
+    expect(shared).toMatchObject({
+      providers: ["codex"],
+      lastUsedAt: null,
+      neverObserved: true,
+    });
+  });
+
+  it("does not report unused capabilities for partially covered providers", () => {
+    sqlite
+      .prepare("UPDATE adapter_scans SET errors = 1 WHERE provider = 'codex'")
+      .run();
+    try {
+      const capabilities = queries.getInsights("30d", inventories).capabilities;
+
+      expect(capabilities.coverage).toContainEqual({
+        provider: "codex",
+        state: "partial",
+      });
+      expect(capabilities.unused.map((item) => item.name)).not.toContain(
+        "never-used",
+      );
+      expect(
+        capabilities.unused.map((item) => item.providers).flat(),
+      ).not.toContain("codex");
+    } finally {
+      sqlite
+        .prepare("UPDATE adapter_scans SET errors = 0 WHERE provider = 'codex'")
+        .run();
+    }
+  });
+
+  it("marks absent scans unavailable without inferring unused capabilities", () => {
+    const piInventory: AgentInventory = {
+      provider: "pi",
+      scope: "global",
+      warnings: [],
+      capabilities: [capability("pi", "skill", "pi-never-used")],
+    };
+    const capabilities = queries.getInsights("30d", [piInventory]).capabilities;
+
+    expect(capabilities.coverage).toContainEqual({
+      provider: "pi",
+      state: "unavailable",
+    });
+    expect(capabilities.unused).toEqual([]);
+  });
+
+  it("marks Zcode coverage partial when its authoritative database is missing", () => {
+    sqlite
+      .prepare(
+        `INSERT INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors)
+        VALUES ('zcode', ?, 1, 1, 0)`,
+      )
+      .run(new Date().toISOString());
+    try {
+      const zcodeInventory: AgentInventory = {
+        provider: "zcode",
+        scope: "global",
+        warnings: [],
+        capabilities: [capability("zcode", "skill", "zcode-never-used")],
+      };
+      const capabilities = queries.getInsights("30d", [
+        zcodeInventory,
+      ]).capabilities;
+
+      expect(capabilities.coverage).toContainEqual({
+        provider: "zcode",
+        state: "partial",
+      });
+      expect(capabilities.unused).toEqual([]);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+    }
+  });
 });
 
 describe("getInsights — cache effectiveness", () => {
@@ -146,28 +494,32 @@ describe("getInsights — cost outliers", () => {
     const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
       (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    insertSession.run(
-      "s5",
-      "codex",
-      "Big spend",
-      "gpt-5.5",
-      "completed",
-      iso(0),
-      iso(0),
-      iso(0),
+    const bigSpendId = Number(
+      insertSession.run(
+        "s5",
+        "codex",
+        "Big spend",
+        "gpt-5.5",
+        "completed",
+        iso(0),
+        iso(0),
+        iso(0),
+      ).lastInsertRowid,
     );
-    insertUsage.run(5, "gpt-5.5", 2_000_000, 200_000, 0, 0, 1.0); // reported $1.00
-    insertSession.run(
-      "s6",
-      "codex",
-      "Small spend",
-      "gpt-5.5",
-      "completed",
-      iso(0),
-      iso(0),
-      iso(0),
+    insertUsage.run(bigSpendId, "gpt-5.5", 2_000_000, 200_000, 0, 0, 1.0); // reported $1.00
+    const smallSpendId = Number(
+      insertSession.run(
+        "s6",
+        "codex",
+        "Small spend",
+        "gpt-5.5",
+        "completed",
+        iso(0),
+        iso(0),
+        iso(0),
+      ).lastInsertRowid,
     );
-    insertUsage.run(6, "gpt-5.5", 20_000, 0, 0, 0, 0.01); // reported $0.01
+    insertUsage.run(smallSpendId, "gpt-5.5", 20_000, 0, 0, 0, 0.01); // reported $0.01
   });
 
   it("reports null week totals when any this-week session is unpriced", () => {

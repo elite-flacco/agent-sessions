@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { sqlite } from "@/db/client";
+import { canonicalCapabilityName } from "./agent-inventory/normalize";
+import type { AgentInventory } from "./agent-inventory/types";
 import { findPricing, normalizeModel, usageCostUsd } from "./pricing";
 import {
+  agentProviders,
   UNKNOWN_PROJECT_KEY,
   TASKS_PROJECT_KEY,
   type AgentProvider,
@@ -10,6 +13,7 @@ import {
   type SessionStatus,
   type StatusReason,
 } from "./types";
+import { isZcodeDbAvailable } from "./zcode-db";
 
 export interface SessionListItem {
   id: number;
@@ -1148,7 +1152,44 @@ export type InsightSignal = {
   text: string;
 };
 
+export type CapabilityRange = "7d" | "30d";
+
+export interface CapabilityInsight {
+  kind: "skill" | "mcp";
+  name: string;
+  invocations: number;
+  sessionCount: number;
+  lastUsedAt: string;
+  providers: AgentProvider[];
+}
+
+export interface UnusedCapabilityInsight {
+  kind: "skill" | "mcp";
+  name: string;
+  providers: AgentProvider[];
+  lastUsedAt: string | null;
+  neverObserved: boolean;
+}
+
+export interface CapabilityCoverage {
+  provider: AgentProvider;
+  state: "complete" | "partial" | "unavailable";
+  message?: string;
+}
+
+export interface CapabilitiesInsight {
+  range: CapabilityRange;
+  mostUsed: CapabilityInsight[];
+  unused: UnusedCapabilityInsight[];
+  coverage: CapabilityCoverage[];
+}
+
+export function parseCapabilityRange(value: unknown): CapabilityRange {
+  return value === "7d" ? "7d" : "30d";
+}
+
 export interface Insights {
+  capabilities: CapabilitiesInsight;
   cache: {
     week: {
       hitRate: number | null;
@@ -1177,6 +1218,192 @@ export interface Insights {
     trend: { day: string; costUsd: number | null }[];
     signal: InsightSignal | null;
   };
+}
+
+interface CapabilityAggregateRow {
+  kind: "skill" | "mcp";
+  name: string;
+  invocations: number;
+  sessionCount: number;
+  lastUsedAt: string;
+  providers: string;
+}
+
+interface CapabilityHistoryRow {
+  provider: string;
+  kind: "skill" | "mcp";
+  name: string;
+  lastUsedAt: string;
+}
+
+interface AdapterScanCoverageRow {
+  provider: string;
+  sources: number;
+  errors: number;
+}
+
+const providerOrder = new Map(
+  agentProviders.map((provider, index) => [provider, index]),
+);
+
+function orderedProviders(providers: Iterable<string>): AgentProvider[] {
+  return [...new Set(providers)]
+    .filter((provider): provider is AgentProvider =>
+      agentProviders.includes(provider as AgentProvider),
+    )
+    .sort(
+      (left, right) =>
+        (providerOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (providerOrder.get(right) ?? Number.MAX_SAFE_INTEGER),
+    );
+}
+
+function capabilityHistoryKey(
+  provider: AgentProvider,
+  kind: "skill" | "mcp",
+  name: string,
+): string {
+  return `${provider}:${kind}:${canonicalCapabilityName(name)}`;
+}
+
+function capabilityInsights(
+  range: CapabilityRange,
+  inventories: AgentInventory[],
+): CapabilitiesInsight {
+  const rangeStart = new Date(
+    Date.now() - (range === "7d" ? 7 : 30) * DAY_MS,
+  ).toISOString();
+  const aggregateRows = sqlite
+    .prepare(
+      `SELECT kind, LOWER(TRIM(capability_name)) name,
+        COUNT(*) invocations,
+        COUNT(DISTINCT session_id) sessionCount,
+        MAX(occurred_at) lastUsedAt,
+        GROUP_CONCAT(DISTINCT provider) providers
+       FROM session_capability_usage
+       WHERE occurred_at >= ? AND kind IN ('skill', 'mcp')
+       GROUP BY kind, LOWER(TRIM(capability_name))`,
+    )
+    .all(rangeStart) as CapabilityAggregateRow[];
+
+  const ranked = aggregateRows
+    .map((row): CapabilityInsight => ({
+      kind: row.kind,
+      name: canonicalCapabilityName(row.name),
+      invocations: row.invocations,
+      sessionCount: row.sessionCount,
+      lastUsedAt: row.lastUsedAt,
+      providers: orderedProviders(row.providers.split(",")),
+    }))
+    .sort(
+      (left, right) =>
+        right.invocations - left.invocations ||
+        right.sessionCount - left.sessionCount ||
+        right.lastUsedAt.localeCompare(left.lastUsedAt) ||
+        left.name.localeCompare(right.name),
+    );
+  const mostUsed = (["skill", "mcp"] as const).flatMap((kind) =>
+    ranked.filter((item) => item.kind === kind).slice(0, 5),
+  );
+
+  const scanRows = sqlite
+    .prepare("SELECT provider, sources, errors FROM adapter_scans")
+    .all() as AdapterScanCoverageRow[];
+  const scans = new Map(scanRows.map((row) => [row.provider, row]));
+  const coverage: CapabilityCoverage[] = agentProviders.map((provider) => {
+    const scan = scans.get(provider);
+    if (!scan || scan.sources === 0) return { provider, state: "unavailable" };
+    if (scan.errors > 0 || (provider === "zcode" && !isZcodeDbAvailable())) {
+      return { provider, state: "partial" };
+    }
+    return { provider, state: "complete" };
+  });
+  const coverageByProvider = new Map(
+    coverage.map((item) => [item.provider, item.state]),
+  );
+
+  const historyRows = sqlite
+    .prepare(
+      `SELECT provider, kind, LOWER(TRIM(capability_name)) name,
+        MAX(occurred_at) lastUsedAt
+       FROM session_capability_usage
+       WHERE kind IN ('skill', 'mcp')
+       GROUP BY provider, kind, LOWER(TRIM(capability_name))`,
+    )
+    .all() as CapabilityHistoryRow[];
+  const history = new Map<string, string>();
+  for (const row of historyRows) {
+    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
+    history.set(
+      capabilityHistoryKey(row.provider as AgentProvider, row.kind, row.name),
+      row.lastUsedAt,
+    );
+  }
+
+  const unusedByCapability = new Map<
+    string,
+    UnusedCapabilityInsight & { providerSet: Set<AgentProvider> }
+  >();
+  const seenInstallations = new Set<string>();
+  for (const inventory of inventories) {
+    if (coverageByProvider.get(inventory.provider) !== "complete") continue;
+    for (const installed of inventory.capabilities) {
+      if (
+        (installed.kind !== "skill" && installed.kind !== "mcp") ||
+        (installed.status !== "enabled" && installed.status !== "installed")
+      ) {
+        continue;
+      }
+      const name = canonicalCapabilityName(installed.name);
+      if (!name) continue;
+      const installationKey = capabilityHistoryKey(
+        inventory.provider,
+        installed.kind,
+        name,
+      );
+      if (seenInstallations.has(installationKey)) continue;
+      seenInstallations.add(installationKey);
+      const lastUsedAt = history.get(installationKey) ?? null;
+      if (lastUsedAt !== null && lastUsedAt >= rangeStart) continue;
+
+      const groupKey = `${installed.kind}:${name}`;
+      const current = unusedByCapability.get(groupKey) ?? {
+        kind: installed.kind,
+        name,
+        providers: [],
+        providerSet: new Set<AgentProvider>(),
+        lastUsedAt: null,
+        neverObserved: true,
+      };
+      current.providerSet.add(inventory.provider);
+      if (
+        lastUsedAt !== null &&
+        (current.lastUsedAt === null || lastUsedAt > current.lastUsedAt)
+      ) {
+        current.lastUsedAt = lastUsedAt;
+      }
+      if (lastUsedAt !== null) current.neverObserved = false;
+      unusedByCapability.set(groupKey, current);
+    }
+  }
+
+  const unused = [...unusedByCapability.values()]
+    .map(({ providerSet, ...item }) => ({
+      ...item,
+      providers: orderedProviders(providerSet),
+    }))
+    .sort((left, right) => {
+      if (left.neverObserved !== right.neverObserved)
+        return left.neverObserved ? -1 : 1;
+      if (left.lastUsedAt === null && right.lastUsedAt !== null) return -1;
+      if (left.lastUsedAt !== null && right.lastUsedAt === null) return 1;
+      return (
+        (left.lastUsedAt ?? "").localeCompare(right.lastUsedAt ?? "") ||
+        left.name.localeCompare(right.name)
+      );
+    });
+
+  return { range, mostUsed, unused, coverage };
 }
 
 // Aggregate cache hit-rate and $-saved over a window of usage rows.
@@ -1277,7 +1504,10 @@ function aggregateCache(rows: UsageJoinRow[]) {
  * figures follow the pricing-trust rule (null when any row is unpriced).
  * Signals are curated and rule-based.
  */
-export function getInsights(): Insights {
+export function getInsights(
+  capabilityRange: CapabilityRange = "30d",
+  inventories: AgentInventory[] = [],
+): Insights {
   const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
   const priorWeekStart = new Date(Date.now() - 14 * DAY_MS).toISOString();
   const trendStart = new Date(
@@ -1430,6 +1660,7 @@ export function getInsights(): Insights {
   }));
 
   return {
+    capabilities: capabilityInsights(capabilityRange, inventories),
     cache: {
       week: {
         hitRate: weekCache.hitRate,
