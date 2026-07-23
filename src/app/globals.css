@@ -1663,6 +1663,7 @@
     align-items: end;
     gap: 0.55rem;
     margin-top: 0.9rem;
+    margin-bottom: 0.9rem;
   }
   .agent-filter {
     display: grid;
