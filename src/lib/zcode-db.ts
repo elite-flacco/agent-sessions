@@ -27,12 +27,22 @@ export interface ZcodeStoredMessage {
   parts: ZcodeStoredPart[];
 }
 
+export interface ZcodeToolUsage {
+  toolCallId: string;
+  toolName: string;
+  startedAt: number;
+}
+
 const zcodeDbPath = (): string =>
   process.env.ZCODE_DB_PATH
     ? path.resolve(process.env.ZCODE_DB_PATH)
     : path.join(os.homedir(), ".zcode", "cli", "db", "db.sqlite");
 
 const dbConnections = new Map<string, BetterSqlite3Database>();
+const ZCODE_SESSION_SELECT = `SELECT id, directory, title, parent_id,
+  task_type, title_source, time_created, time_updated FROM session`;
+
+export type ZcodeQueryResult<T> = { ok: true; value: T } | { ok: false };
 
 function zcodeDb(): BetterSqlite3Database | undefined {
   const dbPath = zcodeDbPath();
@@ -44,6 +54,42 @@ function zcodeDb(): BetterSqlite3Database | undefined {
     return db;
   } catch {
     return undefined;
+  }
+}
+
+export function isZcodeDbAvailable(): boolean {
+  return zcodeDb() !== undefined;
+}
+
+/**
+ * Capability coverage requires more than an open SQLite file: Relay must be
+ * able to execute the authoritative session, message, part, and tool-usage
+ * reads used during reconciliation. Preparing and running empty health queries
+ * validates the required tables and columns without reading or retaining any
+ * content.
+ */
+export function isZcodeCapabilityDbAvailable(): boolean {
+  const db = zcodeDb();
+  if (!db) return false;
+  try {
+    db.prepare(`${ZCODE_SESSION_SELECT} WHERE id = ? LIMIT 0`).all(
+      "__relay_capability_health__",
+    );
+    db.prepare(
+      `SELECT id, time_created timeCreated, data
+       FROM message WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    db.prepare(
+      `SELECT id, message_id messageId, time_created timeCreated, data
+       FROM part WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    db.prepare(
+      `SELECT tool_call_id toolCallId, tool_name toolName, started_at startedAt
+       FROM tool_usage WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -83,24 +129,44 @@ export function getZcodeSessionMetadata(
     const row = db
       .prepare("SELECT * FROM session WHERE id = ?")
       .get(sessionId) as Record<string, unknown> | undefined;
-    if (!row) return undefined;
-    return metadata(row);
+    return row ? metadata(row) : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function listZcodeSessionMetadata(): ZcodeSessionMetadata[] | undefined {
+export function getZcodeSessionMetadataResult(
+  sessionId: string,
+): ZcodeQueryResult<ZcodeSessionMetadata | undefined> {
   const db = zcodeDb();
-  if (!db) return undefined;
+  if (!db) return { ok: false };
   try {
-    return (
-      db
-        .prepare("SELECT * FROM session ORDER BY time_created, id")
-        .all() as Array<Record<string, unknown>>
-    ).map(metadata);
+    const row = db
+      .prepare(`${ZCODE_SESSION_SELECT} WHERE id = ?`)
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return { ok: true, value: row ? metadata(row) : undefined };
   } catch {
-    return undefined;
+    return { ok: false };
+  }
+}
+
+export function listZcodeSessionMetadata(): ZcodeSessionMetadata[] | undefined {
+  const result = listZcodeSessionMetadataResult();
+  return result.ok ? result.value : undefined;
+}
+
+export function listZcodeSessionMetadataResult(): ZcodeQueryResult<
+  ZcodeSessionMetadata[]
+> {
+  const db = zcodeDb();
+  if (!db) return { ok: false };
+  try {
+    const rows = db
+      .prepare(`${ZCODE_SESSION_SELECT} ORDER BY time_created, id`)
+      .all() as Array<Record<string, unknown>>;
+    return { ok: true, value: rows.map(metadata) };
+  } catch {
+    return { ok: false };
   }
 }
 
@@ -151,6 +217,31 @@ export function readZcodeSessionMessages(
       data: parseData(row.data),
       parts: partsByMessage.get(row.id) ?? [],
     }));
+  } catch {
+    return undefined;
+  }
+}
+
+export function readZcodeToolUsage(
+  sessionId: string,
+): ZcodeToolUsage[] | undefined {
+  const db = zcodeDb();
+  if (!db) return undefined;
+  try {
+    return (
+      db
+        .prepare(
+          `SELECT tool_call_id toolCallId, tool_name toolName, started_at startedAt
+           FROM tool_usage WHERE session_id = ? ORDER BY started_at, tool_call_id`,
+        )
+        .all(sessionId) as Array<Record<string, unknown>>
+    ).flatMap((row) => {
+      const toolCallId = stringValue(row.toolCallId);
+      const toolName = stringValue(row.toolName);
+      return toolCallId && toolName && typeof row.startedAt === "number"
+        ? [{ toolCallId, toolName, startedAt: row.startedAt }]
+        : [];
+    });
   } catch {
     return undefined;
   }

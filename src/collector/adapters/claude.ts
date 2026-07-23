@@ -1,4 +1,9 @@
-import type { ModelUsage, ProviderAdapter } from "@/lib/types";
+import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
+import {
+  capabilityTimestamp,
+  explicitSkillUsage,
+  mcpUsage,
+} from "../capabilities";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   accumulateUsage,
@@ -6,13 +11,14 @@ import {
   filenameId,
   numberedEvent,
   parseJsonl,
+  timestamp,
   tokenCount,
 } from "./shared";
 
 export const claudeAdapter: ProviderAdapter = {
   provider: "claude",
   discover: () => walkJsonl(homePath(".claude", "projects")),
-  parse: (filePath) =>
+  parse: (filePath, context) =>
     parseJsonl(filePath, {
       provider: "claude",
       fallbackTitle: "Claude Code session",
@@ -106,6 +112,36 @@ export const claudeAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
+      capabilityUsage: (rows) =>
+        rows.flatMap((row, rowIndex) => {
+          const message = record(row.message);
+          const blocks = Array.isArray(message?.content)
+            ? message.content.map(record).filter(Boolean)
+            : [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
+          return blocks.flatMap((tool, blockIndex) => {
+            if (tool?.type !== "tool_use") return [];
+            const externalId =
+              stringValue(tool.id) ??
+              stringValue(row.uuid) ??
+              stringValue(row.id) ??
+              `${rowIndex}-${blockIndex}`;
+            return [
+              explicitSkillUsage(
+                externalId,
+                tool.name === "Skill" ? record(tool.input)?.skill : undefined,
+                occurredAt,
+              ),
+              mcpUsage({
+                externalId,
+                toolName: tool.name,
+                occurredAt,
+                lookup: context?.capabilities,
+              }),
+            ].filter((entry): entry is CapabilityUsage => entry !== undefined);
+          });
+        }),
       events: (rows) =>
         rows.flatMap((row, index) => {
           if (row.type === "result")

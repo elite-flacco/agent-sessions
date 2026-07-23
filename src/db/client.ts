@@ -57,6 +57,18 @@ CREATE TABLE IF NOT EXISTS session_model_usage (
   reported_cost_usd REAL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS usage_session_model_idx ON session_model_usage(session_id, model);
+CREATE TABLE IF NOT EXISTS session_capability_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  external_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  capability_name TEXT NOT NULL,
+  occurred_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS capability_usage_session_external_idx ON session_capability_usage(session_id, external_id);
+CREATE INDEX IF NOT EXISTS capability_usage_kind_name_idx ON session_capability_usage(kind, capability_name);
+CREATE INDEX IF NOT EXISTS capability_usage_occurred_idx ON session_capability_usage(occurred_at);
 CREATE TABLE IF NOT EXISTS activity_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -81,7 +93,8 @@ CREATE TABLE IF NOT EXISTS adapter_scans (
   last_scan_at TEXT NOT NULL,
   sources INTEGER NOT NULL,
   imported INTEGER NOT NULL,
-  errors INTEGER NOT NULL
+  errors INTEGER NOT NULL,
+  capability_reconciliation_complete INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS collector_leases (
   name TEXT PRIMARY KEY,

@@ -1,19 +1,31 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProviderAdapter } from "@/lib/types";
+
+const getAgentInventories = vi.hoisted(() => vi.fn(async () => []));
+
+vi.mock("@/lib/agent-inventory", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/agent-inventory")>(
+    "@/lib/agent-inventory",
+  )),
+  getAgentInventories,
+}));
 
 let directory = "";
 let sqlite: (typeof import("@/db/client"))["sqlite"];
 let collector: typeof import("./index");
 let lock: typeof import("./lock");
 let claudeAdapter: ProviderAdapter;
+const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
 
 beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-collector-"));
   process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
   process.env.CODEX_STATE_DB_PATH = path.join(directory, "missing-codex.db");
+  process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
   collector = await import("./index");
@@ -25,6 +37,7 @@ afterAll(async () => {
   sqlite.close();
   delete process.env.RELAY_DATABASE_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
+  delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });
 
@@ -59,7 +72,114 @@ function sessionCount(externalId: string): number {
   ).count;
 }
 
+function createZcodeCapabilityDatabase(
+  dbPath: string,
+  completeSchema: boolean,
+): void {
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+      parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+    );
+    ${
+      completeSchema
+        ? `CREATE TABLE message (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            time_created INTEGER NOT NULL, data TEXT NOT NULL
+          );
+          CREATE TABLE part (
+            id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+            session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+            data TEXT NOT NULL
+          );
+          CREATE TABLE tool_usage (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+            started_at INTEGER NOT NULL
+          );`
+        : ""
+    }
+  `);
+  db.close();
+}
+
 describe("collector sync", () => {
+  it("replaces capability usage idempotently and cascades with its session", async () => {
+    const filePath = path.join(directory, "capability-usage.jsonl");
+    await fs.writeFile(filePath, "{}\n");
+    let pass = 0;
+    const adapter: ProviderAdapter = {
+      provider: "claude",
+      discover: async () => [filePath],
+      parse: async () => {
+        pass += 1;
+        return {
+          errors: [],
+          sessions: [
+            {
+              externalId: "capability-session",
+              provider: "claude",
+              title: "Capability session",
+              status: "completed",
+              startedAt: "2026-07-22T10:00:00Z",
+              endedAt: "2026-07-22T10:02:00Z",
+              updatedAt: "2026-07-22T10:02:00Z",
+              usage: [],
+              events: [],
+              capabilityUsage:
+                pass === 1
+                  ? [
+                      {
+                        externalId: "skill:1",
+                        kind: "skill",
+                        name: "frontend-rules",
+                        occurredAt: "2026-07-22T10:01:00Z",
+                      },
+                      {
+                        externalId: "mcp:1",
+                        kind: "mcp",
+                        name: "github",
+                        occurredAt: "2026-07-22T10:01:30Z",
+                      },
+                    ]
+                  : [
+                      {
+                        externalId: "mcp:1",
+                        kind: "mcp",
+                        name: "github",
+                        occurredAt: "2026-07-22T10:01:30Z",
+                      },
+                    ],
+            },
+          ],
+        };
+      },
+    };
+
+    await collector.syncAll({ adapters: [adapter], force: true });
+    await collector.syncAll({ adapters: [adapter], force: true });
+    expect(
+      (
+        sqlite
+          .prepare("SELECT COUNT(*) count FROM session_capability_usage")
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
+
+    sqlite
+      .prepare("DELETE FROM sessions WHERE external_id = ?")
+      .run("capability-session");
+    expect(
+      (
+        sqlite
+          .prepare("SELECT COUNT(*) count FROM session_capability_usage")
+          .get() as { count: number }
+      ).count,
+    ).toBe(0);
+  });
+
   it("shares one run across concurrent sync requests and re-imports without duplicates", async () => {
     const filePath = path.join(directory, "concurrent.jsonl");
     await fs.writeFile(
@@ -133,6 +253,199 @@ describe("collector sync", () => {
     expect(scan?.sources).toBeGreaterThanOrEqual(1);
   });
 
+  it("persists Zcode capability reconciliation success, failure, and recovery", async () => {
+    const healthyOne = path.join(directory, "zcode-capability-healthy-one.db");
+    const unhealthy = path.join(directory, "zcode-capability-unhealthy.db");
+    const healthyTwo = path.join(directory, "zcode-capability-healthy-two.db");
+    createZcodeCapabilityDatabase(healthyOne, true);
+    createZcodeCapabilityDatabase(unhealthy, false);
+    createZcodeCapabilityDatabase(healthyTwo, true);
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 0)`,
+      )
+      .run(new Date().toISOString());
+    const reconciliationState = (): number =>
+      (
+        sqlite
+          .prepare(
+            `SELECT capability_reconciliation_complete complete
+             FROM adapter_scans WHERE provider = 'zcode'`,
+          )
+          .get() as { complete: number }
+      ).complete;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+
+    try {
+      process.env.ZCODE_DB_PATH = healthyOne;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(1);
+
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at)
+          VALUES ('zcode-rollout-preserved', 'zcode', 'Preserved rollout',
+                  'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z')`,
+        )
+        .run();
+      sqlite
+        .prepare(
+          `INSERT INTO session_capability_usage
+          (session_id, external_id, provider, kind, capability_name, occurred_at)
+          SELECT id, 'skill:preserved', 'zcode', 'skill', 'frontend-rules',
+                 '2026-07-22T10:00:30Z'
+          FROM sessions WHERE external_id = 'zcode-rollout-preserved'`,
+        )
+        .run();
+
+      process.env.ZCODE_DB_PATH = unhealthy;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(0);
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE external_id = 'skill:preserved'`,
+            )
+            .get() as { count: number }
+        ).count,
+      ).toBe(1);
+
+      process.env.ZCODE_DB_PATH = healthyTwo;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(1);
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE external_id = 'skill:preserved'`,
+            )
+            .get() as { count: number }
+        ).count,
+      ).toBe(1);
+    } finally {
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+      __resetZcodeDbCache();
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id = 'zcode-rollout-preserved'",
+        )
+        .run();
+    }
+  });
+
+  it("records a per-session Zcode capability read failure without clearing rollout evidence", async () => {
+    const dbPath = path.join(directory, "zcode-capability-read-failure.db");
+    const zcodeDb = new Database(dbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+        session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage_source (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      );
+      CREATE VIEW tool_usage AS
+        SELECT id, session_id, tool_call_id, tool_name,
+          CASE WHEN session_id = 'zcode-per-session-failure'
+            THEN json_extract('not-json', '$') ELSE started_at END started_at
+        FROM tool_usage_source;
+      INSERT INTO session
+        (id, directory, title, parent_id, task_type, title_source,
+         time_created, time_updated)
+      VALUES ('zcode-per-session-failure', '/work/relay', 'Read failure',
+              NULL, 'interactive', 'generated', 1750000000000, 1750000001000);
+      INSERT INTO tool_usage_source
+        (id, session_id, tool_call_id, tool_name, started_at)
+      VALUES ('tool-1', 'zcode-per-session-failure', 'call-1',
+              'mcp__github__search_prs', 1750000000500);
+    `);
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 1)`,
+      )
+      .run(new Date().toISOString());
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, status, started_at, updated_at)
+        VALUES ('zcode-per-session-failure', 'zcode', 'Rollout title',
+                'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z')`,
+      )
+      .run();
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+        (session_id, external_id, provider, kind, capability_name, occurred_at)
+        SELECT id, 'skill:rollout-preserved', 'zcode', 'skill',
+               'frontend-rules', '2026-07-22T10:00:30Z'
+        FROM sessions WHERE external_id = 'zcode-per-session-failure'`,
+      )
+      .run();
+    process.env.ZCODE_DB_PATH = dbPath;
+    const { __resetZcodeDbCache, isZcodeCapabilityDbAvailable } =
+      await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+
+    try {
+      expect(isZcodeCapabilityDbAvailable()).toBe(true);
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT capability_reconciliation_complete complete
+             FROM adapter_scans WHERE provider = 'zcode'`,
+          )
+          .get(),
+      ).toEqual({ complete: 0 });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT capability_name name FROM session_capability_usage
+             WHERE external_id = 'skill:rollout-preserved'`,
+          )
+          .get(),
+      ).toEqual({ name: "frontend-rules" });
+    } finally {
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+      __resetZcodeDbCache();
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id = 'zcode-per-session-failure'",
+        )
+        .run();
+    }
+  });
+
   it("clears sync errors once a source parses cleanly again", async () => {
     const filePath = path.join(directory, "recovers.jsonl");
     await fs.writeFile(filePath, "not json at all");
@@ -158,7 +471,7 @@ describe("collector sync", () => {
     expect(sessionCount("recovered-1")).toBe(1);
   });
 
-  it("refreshes metadata for Zcode sessions whose JSONL source is gone", async () => {
+  it("refreshes metadata and capability usage for Zcode database-only sessions", async () => {
     const zcodeDbPath = path.join(directory, "zcode.db");
     const Database = (await import("better-sqlite3")).default;
     const zcodeDb = new Database(zcodeDbPath);
@@ -174,6 +487,14 @@ describe("collector sync", () => {
       CREATE TABLE part (
         id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
         time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL
       );
     `);
     const insertZcode = zcodeDb.prepare(
@@ -201,6 +522,54 @@ describe("collector sync", () => {
       1_750_000_000_100,
       1_750_000_000_900,
     );
+    zcodeDb
+      .prepare(
+        `INSERT INTO message (id, session_id, time_created, data)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-child-message",
+        "zcode-child",
+        1_750_000_000_500,
+        JSON.stringify({ role: "assistant", time: { completed: 1 } }),
+      );
+    zcodeDb
+      .prepare(
+        `INSERT INTO part (id, message_id, session_id, time_created, data)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-skill-part",
+        "zcode-child-message",
+        "zcode-child",
+        1_750_000_000_600,
+        JSON.stringify({
+          type: "tool",
+          tool: "Skill",
+          state: {
+            status: "completed",
+            input: {
+              skill: "systematic-debugging",
+              args: "PRIVATE_SKILL_INPUT",
+            },
+            output: "PRIVATE_SKILL_OUTPUT",
+          },
+        }),
+      );
+    zcodeDb
+      .prepare(
+        `INSERT INTO tool_usage
+         (id, session_id, tool_call_id, tool_name, status, started_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-tool-usage",
+        "zcode-child",
+        "zcode-mcp-call",
+        "mcp__plugin_openai-developers_openaiDeveloperDocs__search_openai_docs",
+        "completed",
+        1_750_000_000_700,
+      );
     zcodeDb.close();
     sqlite
       .prepare(
@@ -209,11 +578,38 @@ describe("collector sync", () => {
          VALUES (?, 'zcode', 'Zcode coding session', 'completed', ?, ?)`,
       )
       .run("zcode-orphan", "2026-07-11T10:00:00Z", "2026-07-11T10:01:00Z");
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+         (session_id, external_id, provider, kind, capability_name, occurred_at)
+         SELECT id, 'skill:rollout-only', 'zcode', 'skill', 'frontend-rules', ?
+         FROM sessions WHERE provider = 'zcode' AND external_id = ?`,
+      )
+      .run("2026-07-11T10:00:30Z", "zcode-orphan");
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    const { buildCapabilityLookups } = await import("./capabilities");
     __resetZcodeDbCache();
     try {
-      await collector.syncAll({ adapters: [] });
+      const capabilityLookups = buildCapabilityLookups([
+        {
+          provider: "zcode",
+          scope: "global",
+          warnings: [],
+          capabilities: [
+            {
+              id: "zcode:mcp:openai-developer-docs",
+              name: "openaiDeveloperDocs",
+              kind: "mcp",
+              status: "enabled",
+              packaging: "plugin",
+              origin: "marketplace",
+              sourcePlugin: "openai-developers@openai-curated-remote",
+            },
+          ],
+        },
+      ]);
+      await collector.syncAll({ adapters: [], capabilityLookups });
       expect(
         sqlite
           .prepare(
@@ -235,8 +631,52 @@ describe("collector sync", () => {
         parentExternalId: "zcode-orphan",
         sessionKind: "subagent",
       });
+      const capabilityUsage = sqlite
+        .prepare(
+          `SELECT external_id externalId, provider, kind,
+                  capability_name name, occurred_at occurredAt
+           FROM session_capability_usage
+           WHERE session_id = (
+             SELECT id FROM sessions
+             WHERE provider = 'zcode' AND external_id = ?
+           )
+           ORDER BY occurred_at, external_id`,
+        )
+        .all("zcode-child");
+      expect(capabilityUsage).toEqual([
+        {
+          externalId: "skill:zcode-skill-part",
+          provider: "zcode",
+          kind: "skill",
+          name: "systematic-debugging",
+          occurredAt: new Date(1_750_000_000_600).toISOString(),
+        },
+        {
+          externalId: "mcp:zcode-mcp-call",
+          provider: "zcode",
+          kind: "mcp",
+          name: "openaiDeveloperDocs",
+          occurredAt: new Date(1_750_000_000_700).toISOString(),
+        },
+      ]);
+      expect(JSON.stringify(capabilityUsage)).not.toMatch(
+        /PRIVATE_SKILL_INPUT|PRIVATE_SKILL_OUTPUT/,
+      );
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE session_id = (
+                 SELECT id FROM sessions
+                 WHERE provider = 'zcode' AND external_id = ?
+               )`,
+            )
+            .get("zcode-orphan") as { count: number }
+        ).count,
+      ).toBe(0);
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -319,6 +759,14 @@ describe("collector sync", () => {
         new Date(updatedAt - 1_000).toISOString(),
         new Date(updatedAt - 1_000).toISOString(),
       );
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+         (session_id, external_id, provider, kind, capability_name, occurred_at)
+         SELECT id, 'skill:rollout-only', 'zcode', 'skill', 'frontend-rules', ?
+         FROM sessions WHERE provider = 'zcode' AND external_id = ?`,
+      )
+      .run(new Date(updatedAt - 2_000).toISOString(), "zcode-waiting");
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
     __resetZcodeDbCache();
@@ -331,8 +779,23 @@ describe("collector sync", () => {
           )
           .get(),
       ).toEqual({ status: "needs_attention" });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT external_id externalId, capability_name name
+             FROM session_capability_usage
+             WHERE session_id = (
+               SELECT id FROM sessions
+               WHERE provider = 'zcode' AND external_id = ?
+             )`,
+          )
+          .get("zcode-waiting"),
+      ).toEqual({
+        externalId: "skill:rollout-only",
+        name: "frontend-rules",
+      });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -463,7 +926,7 @@ describe("collector sync", () => {
         ).toEqual({ status: item.status, statusReason: item.reason });
       }
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -549,7 +1012,7 @@ describe("collector sync", () => {
       expect(row.status).toBe("running");
       expect(row.updatedAt).toBe(new Date(dbUpdatedAt).toISOString());
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -650,7 +1113,7 @@ describe("collector sync", () => {
           .get(),
       ).toEqual({ status: "running" });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -733,7 +1196,7 @@ describe("collector sync", () => {
           .get(),
       ).toEqual({ status: "interrupted" });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -780,6 +1243,29 @@ describe("collector sync", () => {
 });
 
 describe("collector watcher", () => {
+  it("releases the watch lease and timer when inventory discovery rejects", async () => {
+    const root = path.join(directory, "failed-watcher");
+    await fs.mkdir(root, { recursive: true });
+    getAgentInventories.mockRejectedValueOnce(
+      new Error("Inventory discovery failed"),
+    );
+    vi.useFakeTimers();
+    try {
+      await expect(
+        collector.watchSources([{ path: root, provider: "claude" }]),
+      ).rejects.toThrow("Inventory discovery failed");
+      expect(lock.acquireLease("watch", 60_000, "subsequent-watcher")).toBe(
+        true,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      lock.releaseLease("watch", "subsequent-watcher");
+      lock.releaseLease("watch");
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("ingests newly created and appended session files", async () => {
     const root = path.join(directory, "watched");
     await fs.mkdir(root, { recursive: true });

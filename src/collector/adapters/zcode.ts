@@ -1,5 +1,10 @@
-import type { ModelUsage, ProviderAdapter } from "@/lib/types";
+import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
 import { __resetZcodeDbCache, getZcodeSessionMetadata } from "@/lib/zcode-db";
+import {
+  capabilityTimestamp,
+  explicitSkillUsage,
+  mcpUsage,
+} from "../capabilities";
 import {
   homePath,
   record,
@@ -15,6 +20,7 @@ import {
   numberedEvent,
   parseJsonl,
   sessionSummary,
+  timestamp,
   tokenCount,
 } from "./shared";
 
@@ -27,7 +33,7 @@ export const zcodeAdapter: ProviderAdapter = {
     const agents = await walkJsonl(homePath(".zcode", "cli", "agents"));
     return [...rollout, ...agents];
   },
-  parse: async (filePath) => {
+  parse: async (filePath, context) => {
     const result = await parseJsonl(filePath, {
       provider: "zcode",
       fallbackTitle: "Zcode coding session",
@@ -96,6 +102,58 @@ export const zcodeAdapter: ProviderAdapter = {
           });
         }
         return [...byModel.values()];
+      },
+      capabilityUsage: (rows) => {
+        const seenCallIds = new Set<string>();
+        return rows.flatMap((row, rowIndex) => {
+          const request = record(row.request);
+          const messages = Array.isArray(request?.messages)
+            ? request.messages.map(record).filter(Boolean)
+            : [];
+          const requestToolCalls = messages.flatMap((message) => {
+            const toolCalls = Array.isArray(message?.toolCalls)
+              ? message.toolCalls.map(record).filter(Boolean)
+              : [];
+            return toolCalls;
+          });
+          const response = record(row.response);
+          const responseToolCalls = Array.isArray(response?.toolCalls)
+            ? response.toolCalls.map(record).filter(Boolean)
+            : [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
+          return [...requestToolCalls, ...responseToolCalls].flatMap(
+            (tool, blockIndex) => {
+              if (!tool) return [];
+              const callId = stringValue(tool.id) ?? stringValue(tool.callId);
+              if (callId && seenCallIds.has(callId)) return [];
+              if (callId) seenCallIds.add(callId);
+              const externalId =
+                callId ??
+                stringValue(row.uuid) ??
+                stringValue(row.id) ??
+                `${rowIndex}-${blockIndex}`;
+              return [
+                explicitSkillUsage(
+                  externalId,
+                  tool.name === "Skill"
+                    ? record(tool.arguments ?? tool.input)?.skill
+                    : undefined,
+                  occurredAt,
+                ),
+                mcpUsage({
+                  externalId,
+                  toolName: tool.name,
+                  namespace: tool.namespace,
+                  occurredAt,
+                  lookup: context?.capabilities,
+                }),
+              ].filter(
+                (entry): entry is CapabilityUsage => entry !== undefined,
+              );
+            },
+          );
+        });
       },
       events: (rows) =>
         rows.flatMap((row, index) => {

@@ -1,0 +1,1 @@
+ALTER TABLE `adapter_scans` ADD `capability_reconciliation_complete` integer DEFAULT 0 NOT NULL;

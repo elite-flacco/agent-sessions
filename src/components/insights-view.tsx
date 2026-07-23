@@ -8,6 +8,7 @@ import { formatCostUsd, runtime } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { Insights, InsightSignal } from "@/lib/queries";
+import { CapabilityUsageCard } from "./capability-usage-card";
 
 interface InsightsViewProps {
   insights: Insights;
@@ -35,10 +36,10 @@ export function InsightsView({ insights }: InsightsViewProps) {
         <div>
           <h1>Insights</h1>
           <p>
-            Actionable efficiency signals from your coding-agent usage.
-            API-equivalent cost estimates from public per-token rates (pricing
-            recorded {PRICING_RETRIEVED_AT}); cache hit rate is token-only and
-            always available.
+            Observed skill and MCP activity alongside actionable cache and cost
+            signals. API-equivalent cost estimates use public per-token rates
+            (pricing recorded {PRICING_RETRIEVED_AT}); cache hit rate is
+            token-only and always available.
           </p>
         </div>
       </header>
@@ -46,6 +47,7 @@ export function InsightsView({ insights }: InsightsViewProps) {
       <div className="insights-grid">
         <CacheCard insights={insights} />
         <CostCard insights={insights} />
+        <CapabilityUsageCard capabilities={insights.capabilities} />
       </div>
     </section>
   );
