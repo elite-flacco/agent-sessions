@@ -37,12 +37,15 @@ if (hasSessions) {
     const columns = sqlite.prepare("PRAGMA table_info(sessions)").all() as {
       name: string;
     }[];
-    const hasSourcePath = columns.some(
-      (column) => column.name === "source_path",
-    );
-    const hasSessionHierarchy = columns.some(
-      (column) => column.name === "parent_external_id",
-    );
+    const columnNames = new Set(columns.map((column) => column.name));
+    const hasSourcePath = columnNames.has("source_path");
+    const hasSessionHierarchy = [
+      "parent_external_id",
+      "session_kind",
+      "agent_label",
+      "agent_depth",
+    ].every((column) => columnNames.has(column));
+    const hasStatusReason = columnNames.has("status_reason");
     const hasCapabilityUsage = Boolean(
       sqlite
         .prepare(
@@ -51,13 +54,19 @@ if (hasSessions) {
         .get(),
     );
     const migrations = readMigrationFiles({ migrationsFolder });
-    const baseline = hasCapabilityUsage
-      ? migrations
-      : hasSessionHierarchy
-        ? migrations.slice(0, -1)
-        : hasSourcePath
-          ? migrations.slice(0, -2)
-          : migrations.slice(0, -3);
+    const baseline =
+      hasCapabilityUsage &&
+      hasStatusReason &&
+      hasSessionHierarchy &&
+      hasSourcePath
+        ? migrations
+        : hasStatusReason && hasSessionHierarchy && hasSourcePath
+          ? migrations.slice(0, -1)
+          : hasSessionHierarchy && hasSourcePath
+            ? migrations.slice(0, -2)
+            : hasSourcePath
+              ? migrations.slice(0, -3)
+              : migrations.slice(0, -4);
     const insert = sqlite.prepare(
       "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
     );

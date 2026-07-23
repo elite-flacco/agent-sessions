@@ -4,6 +4,15 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProviderAdapter } from "@/lib/types";
 
+const getAgentInventories = vi.hoisted(() => vi.fn(async () => []));
+
+vi.mock("@/lib/agent-inventory", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/agent-inventory")>(
+    "@/lib/agent-inventory",
+  )),
+  getAgentInventories,
+}));
+
 let directory = "";
 let sqlite: (typeof import("@/db/client"))["sqlite"];
 let collector: typeof import("./index");
@@ -854,6 +863,29 @@ describe("collector sync", () => {
 });
 
 describe("collector watcher", () => {
+  it("releases the watch lease and timer when inventory discovery rejects", async () => {
+    const root = path.join(directory, "failed-watcher");
+    await fs.mkdir(root, { recursive: true });
+    getAgentInventories.mockRejectedValueOnce(
+      new Error("Inventory discovery failed"),
+    );
+    vi.useFakeTimers();
+    try {
+      await expect(
+        collector.watchSources([{ path: root, provider: "claude" }]),
+      ).rejects.toThrow("Inventory discovery failed");
+      expect(lock.acquireLease("watch", 60_000, "subsequent-watcher")).toBe(
+        true,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      lock.releaseLease("watch", "subsequent-watcher");
+      lock.releaseLease("watch");
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("ingests newly created and appended session files", async () => {
     const root = path.join(directory, "watched");
     await fs.mkdir(root, { recursive: true });

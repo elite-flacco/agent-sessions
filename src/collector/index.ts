@@ -611,40 +611,55 @@ export async function watchSources(
     WATCH_LEASE_RENEW_MS,
   );
   renewTimer.unref?.();
-  const capabilityLookups = buildCapabilityLookups(
-    await getAgentInventories({ kind: "global" }),
-  );
-  const watcher = chokidar.watch(
-    roots.map((root) => root.path),
-    {
-      ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
-    },
-  );
-  const syncChanged = async (filePath: string): Promise<void> => {
-    if (!filePath.endsWith(".jsonl")) return;
-    const adapter = adapterForPath(filePath, roots);
-    try {
-      await syncFile(adapter, filePath, false, {
-        capabilities: capabilityLookups[adapter.provider],
-      });
-    } catch (error) {
-      recordSyncError(
-        adapter.provider,
-        filePath,
-        "read_error",
-        error instanceof Error ? error.message : "Unknown sync error",
-      );
-    }
-  };
-  watcher.on("add", syncChanged);
-  watcher.on("change", syncChanged);
-  await new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
-  return async () => {
+  let watcher: ReturnType<typeof chokidar.watch> | undefined;
+  try {
+    const capabilityLookups = buildCapabilityLookups(
+      await getAgentInventories({ kind: "global" }),
+    );
+    const initializedWatcher = chokidar.watch(
+      roots.map((root) => root.path),
+      {
+        ignoreInitial: true,
+        awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+      },
+    );
+    watcher = initializedWatcher;
+    const syncChanged = async (filePath: string): Promise<void> => {
+      if (!filePath.endsWith(".jsonl")) return;
+      const adapter = adapterForPath(filePath, roots);
+      try {
+        await syncFile(adapter, filePath, false, {
+          capabilities: capabilityLookups[adapter.provider],
+        });
+      } catch (error) {
+        recordSyncError(
+          adapter.provider,
+          filePath,
+          "read_error",
+          error instanceof Error ? error.message : "Unknown sync error",
+        );
+      }
+    };
+    initializedWatcher.on("add", syncChanged);
+    initializedWatcher.on("change", syncChanged);
+    await new Promise<void>((resolve) =>
+      initializedWatcher.once("ready", () => resolve()),
+    );
+    return async () => {
+      clearInterval(renewTimer);
+      releaseLease("watch");
+      await initializedWatcher.close();
+    };
+  } catch (error) {
     clearInterval(renewTimer);
     releaseLease("watch");
-    await watcher.close();
-  };
+    try {
+      await watcher?.close();
+    } catch {
+      // Preserve the initialization failure after best-effort cleanup.
+    }
+    throw error;
+  }
 }
 
 function adapterForPath(
