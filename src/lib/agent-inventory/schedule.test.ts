@@ -10,7 +10,7 @@ describe("humanizeSchedule", () => {
   test("weekly single day with time", () => {
     expect(
       humanizeSchedule("FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0;BYSECOND=0"),
-    ).toBe("Mondays at 08:00");
+    ).toBe("Mondays at 8:00 AM");
   });
 
   test("weekly multiple days", () => {
@@ -18,23 +18,40 @@ describe("humanizeSchedule", () => {
       humanizeSchedule(
         "FREQ=WEEKLY;BYDAY=MO;BYDAY=WE;BYDAY=FR;BYHOUR=9;BYMINUTE=30",
       ),
-    ).toBe("Mondays, Wednesdays, Fridays at 09:30");
+    ).toBe("Mondays, Wednesdays, Fridays at 9:30 AM");
   });
 
   test("daily with time", () => {
     expect(humanizeSchedule("FREQ=DAILY;BYHOUR=0;BYMINUTE=0")).toBe(
-      "Daily at 00:00",
+      "Daily at 12:00 AM",
+    );
+  });
+
+  test("renders noon and midnight unambiguously", () => {
+    expect(humanizeSchedule("FREQ=DAILY;BYHOUR=12;BYMINUTE=0")).toBe(
+      "Daily at 12:00 PM",
+    );
+    expect(humanizeSchedule("FREQ=DAILY;BYHOUR=0;BYMINUTE=0")).toBe(
+      "Daily at 12:00 AM",
+    );
+  });
+
+  test("renders afternoon hours in 12-hour form", () => {
+    expect(humanizeSchedule("FREQ=DAILY;BYHOUR=17;BYMINUTE=45")).toBe(
+      "Daily at 5:45 PM",
     );
   });
 
   test("monthly with day-of-month and time", () => {
     expect(
       humanizeSchedule("FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=0;BYMINUTE=0"),
-    ).toBe("Monthly on day 1 at 00:00");
+    ).toBe("Monthly on day 1 at 12:00 AM");
   });
 
-  test("weekly without time defaults to 00:00", () => {
-    expect(humanizeSchedule("FREQ=WEEKLY;BYDAY=MO")).toBe("Mondays at 00:00");
+  test("weekly without time defaults to midnight", () => {
+    expect(humanizeSchedule("FREQ=WEEKLY;BYDAY=MO")).toBe(
+      "Mondays at 12:00 AM",
+    );
   });
 
   test("returns undefined for unsupported FREQ", () => {
@@ -52,7 +69,7 @@ describe("humanizeSchedule", () => {
   test("strips RRULE: prefix (RFC 5545 form)", () => {
     expect(
       humanizeSchedule("RRULE:FREQ=WEEKLY;BYHOUR=7;BYMINUTE=0;BYDAY=MO"),
-    ).toBe("Mondays at 07:00");
+    ).toBe("Mondays at 7:00 AM");
   });
 });
 

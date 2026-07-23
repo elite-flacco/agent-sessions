@@ -27,13 +27,16 @@ function parsePairs(raw: string): Map<string, string[]> {
 }
 
 function formatTime(hour: number, minute: number): string {
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const suffix = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 /**
  * Best-effort humanizer for the rrule subset Codex automations emit.
  * Returns undefined when the input isn't a supported rrule so callers can
- * fall back to the raw schedule string. Time is wall-clock local (24h).
+ * fall back to the raw schedule string. Time is wall-clock local, rendered
+ * 12-hour with an AM/PM suffix so noon and midnight stay unambiguous.
  */
 export function humanizeSchedule(raw: string): string | undefined {
   if (!raw.trim()) return undefined;

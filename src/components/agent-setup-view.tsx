@@ -175,18 +175,23 @@ export function parseAgentSetupFilters(
   const provider = first(params.provider);
   const kind = first(params.kind);
   const status = first(params.status);
+  const view =
+    first(params.view) === "compare"
+      ? "compare"
+      : first(params.view) === "tasks"
+        ? "tasks"
+        : "inventory";
+  // Compare spans every provider by design, so a provider param is meaningless
+  // there. Drop it at the boundary rather than letting it leak into the summary
+  // cards and tab links as a selection that filters nothing.
+  const scopedProvider = view === "compare" ? undefined : provider;
   return {
-    view:
-      first(params.view) === "compare"
-        ? "compare"
-        : first(params.view) === "tasks"
-          ? "tasks"
-          : "inventory",
+    view,
     comparisonMode:
       first(params.comparison) === "attention" ? "attention" : undefined,
     q: first(params.q)?.trim() || undefined,
-    provider: agentProviders.includes(provider as AgentProvider)
-      ? (provider as AgentProvider)
+    provider: agentProviders.includes(scopedProvider as AgentProvider)
+      ? (scopedProvider as AgentProvider)
       : undefined,
     kind: ["plugin", "skill", "mcp", "instruction"].includes(kind ?? "")
       ? (kind as AgentSetupKind)
@@ -445,7 +450,19 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             key={inventory.provider}
             inventory={inventory}
             active={effectiveProvider === inventory.provider}
-            href={setupHref(filters, { provider: inventory.provider })}
+            // Compare has no provider dimension, so a card there is a way into
+            // that provider's Inventory rather than a filter on the matrix.
+            href={setupHref(
+              filters,
+              filters.view === "compare"
+                ? {
+                    provider: inventory.provider,
+                    view: "inventory",
+                    comparisonMode: undefined,
+                    discrepanciesOnly: undefined,
+                  }
+                : { provider: inventory.provider },
+            )}
           />
         ))}
       </div>
@@ -608,38 +625,24 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
         />
       </label>
       {filters.view === "compare" ? (
-        <>
-          <label className="agent-filter">
-            <span>Agent</span>
-            <select
-              className="select"
-              name="provider"
-              defaultValue={filters.provider ?? ""}
-            >
-              <option value="">All agents</option>
-              {agentProviders.map((provider) => (
-                <option key={provider} value={provider}>
-                  {providerLabels[provider]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="agent-filter">
-            <span>Type</span>
-            <select
-              className="select"
-              name="kind"
-              defaultValue={filters.kind ?? ""}
-            >
-              <option value="">All types</option>
-              {Object.entries(kindLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </>
+        // Compare is a provider-by-provider matrix, so it has no Agent filter:
+        // every row already spans all providers, and narrowing to one would
+        // drop the missing-from-that-provider rows that drift analysis is for.
+        <label className="agent-filter">
+          <span>Type</span>
+          <select
+            className="select"
+            name="kind"
+            defaultValue={filters.kind ?? ""}
+          >
+            <option value="">All types</option>
+            {Object.entries(kindLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : (
         <>
           {/* Inventory selects provider (cards) and kind (rail); preserve both
@@ -725,9 +728,15 @@ function InventoryView({
       matched.filter((capability) => capability.kind === kind).length,
     ]),
   ) as Record<(typeof RAIL_KINDS)[number], number>;
-  const instructionVisible = showsInstruction(inventory, filters);
+  // The rail entry renders whenever the provider ships an instruction file, so
+  // selecting another kind never hides it. Whether the instruction *matches*
+  // the active status/search filters is a separate question, and only decides
+  // whether it can stand in as a result when nothing else does.
+  const hasInstruction = Boolean(inventory.instructionFile);
+  const instructionMatches = showsInstruction(inventory, filters);
+  const onInstruction = filters.kind === "instruction" && hasInstruction;
 
-  if (matched.length === 0 && !instructionVisible) {
+  if (matched.length === 0 && !onInstruction && !instructionMatches) {
     return (
       <div className="card empty-state agent-empty-state">
         <h3>No capabilities match these filters.</h3>
@@ -740,12 +749,12 @@ function InventoryView({
   // pane; honour an explicit rail selection (including "instruction").
   const requested = filters.kind;
   const selectedKind: AgentSetupKind =
-    requested === "instruction" && instructionVisible
+    requested === "instruction" && hasInstruction
       ? "instruction"
       : requested && requested !== "instruction" && kindCounts[requested]
         ? requested
         : (RAIL_KINDS.find((kind) => kindCounts[kind] > 0) ??
-          (instructionVisible ? "instruction" : "skill"));
+          (instructionMatches ? "instruction" : "skill"));
 
   const selected =
     selectedKind === "instruction"
@@ -801,7 +810,7 @@ function InventoryView({
               href={setupHref(filters, { kind })}
             />
           ))}
-          {instructionVisible ? (
+          {hasInstruction ? (
             <KindRailItem
               kind="instruction"
               count={1}
@@ -870,12 +879,14 @@ function KindRailItem({
   );
 }
 
+// Whether the instruction file survives the active status/search filters. Kind
+// is deliberately not consulted: the rail owns that dimension, the same way
+// `matchesCapability` ignores it for the other kinds.
 function showsInstruction(
   inventory: AgentInventory,
   filters: AgentSetupFilters,
 ): boolean {
   if (!inventory.instructionFile) return false;
-  if (filters.kind && filters.kind !== "instruction") return false;
   if (filters.status) return false;
   if (!filters.q) return true;
   const query = filters.q.toLocaleLowerCase();
@@ -1018,13 +1029,8 @@ function ComparisonView({
     rows = rows.filter((row) => row.name.toLocaleLowerCase().includes(query));
   }
   if (filters.kind) rows = rows.filter((row) => row.kind === filters.kind);
-  if (filters.provider) {
-    rows = rows.filter(
-      (row) =>
-        row.cells[filters.provider!] ||
-        row.instructionCells?.[filters.provider!],
-    );
-  }
+  // No provider narrowing here — see FilterForm: Compare always spans every
+  // provider so drift stays visible.
   if (filters.status) {
     rows = rows.filter((row) =>
       Object.values(row.cells).some(
@@ -1052,12 +1058,9 @@ function ComparisonView({
     rows = rows.filter((row) => row.isDiscrepancy);
   }
 
-  const attentionInventories = filters.provider
-    ? inventories.filter((inventory) => inventory.provider === filters.provider)
-    : inventories;
   const duplicates =
     filters.comparisonMode === "attention"
-      ? findComparisonDuplicates(attentionInventories)
+      ? findComparisonDuplicates(inventories)
       : [];
   // Warnings mean the inventory itself may be incomplete (malformed config,
   // stale artifacts) — the highest-severity condition the discovery layer can
@@ -1067,7 +1070,7 @@ function ComparisonView({
     filters.comparisonMode === "attention"
       ? [
           ...new Map(
-            attentionInventories
+            inventories
               .flatMap((inventory) => inventory.warnings)
               .map(
                 (warning) =>
@@ -1505,9 +1508,9 @@ function ScheduledTasksView({
   return (
     <div className="agent-inventory-list">
       {total === 0 ? (
-        <p className="agent-tasks-summary">
-          No scheduled tasks found across agents.
-        </p>
+        <div className="card empty-state agent-empty-state">
+          <h3>No scheduled tasks found across agents.</h3>
+        </div>
       ) : (
         <div className="agent-task-table">
           <div className="agent-task-head">
@@ -1531,13 +1534,20 @@ function ScheduledTasksView({
 
 function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
   const schedule = task.scheduleHuman ?? task.scheduleRaw;
+  const project = task.targetProjectName ?? task.targetProject;
   return (
     <details name="agent-tasks" className="agent-task-row">
       <summary className="agent-task-summary">
         <span className="agent-task-sched">
           {schedule ?? "Schedule unavailable"}
         </span>
-        <strong className="agent-task-name">{task.name}</strong>
+        {/* Name and flag share one grid cell so the badge columns stay aligned. */}
+        <span className="agent-task-title">
+          <strong className="agent-task-name">{task.name}</strong>
+          {task.warnings.some((item) => item.code === "orphaned") ? (
+            <span className="agent-task-flag">Target missing</span>
+          ) : null}
+        </span>
         <span className={`badge ${providerBadges[task.provider]}`}>
           {providerLabels[task.provider]}
         </span>
@@ -1554,10 +1564,21 @@ function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
               Model: <code>{task.model}</code>
             </span>
           ) : null}
+          {project ? (
+            <span>
+              Project: <code>{project}</code>
+            </span>
+          ) : null}
           <span>
             Source: <code>{shortenHomePath(task.sourcePath)}</code>
           </span>
         </div>
+        {task.warnings.map((item) => (
+          <div className="notice" key={`${item.code}:${item.message}`}>
+            <AlertTriangle size={14} aria-hidden="true" />
+            <span>{item.message}</span>
+          </div>
+        ))}
         {task.instructionBody ? (
           <pre className="agent-task-instruction">{task.instructionBody}</pre>
         ) : null}

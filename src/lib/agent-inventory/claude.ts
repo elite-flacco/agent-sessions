@@ -49,7 +49,9 @@ export async function discoverClaudeScheduledTasks(
 ): Promise<ScheduledTask[]> {
   const tasks: ScheduledTask[] = [];
   const root = join(homeDir, ".claude", "scheduled-tasks");
-  for (const entry of await readDirectoryEntries(root)) {
+  for (const entry of await readDirectoryEntries(root, {
+    directoriesOnly: true,
+  })) {
     const skillPath = join(entry, "SKILL.md");
     const content = await readTextSource(skillPath, []);
     if (!content) continue;

@@ -50,6 +50,12 @@ export interface ScheduledTask {
   status: ScheduledTaskStatus;
   model?: string;
   targetProject?: string;
+  /**
+   * Display name of `targetProject`, resolved from the provider's own project
+   * list. Absent when the target could not be resolved — paired with an
+   * `orphaned` warning when the project list was readable and lacked the id.
+   */
+  targetProjectName?: string;
   workingDirectories?: string[];
   instructionBody?: string;
   instructionFormat: ScheduledTaskInstructionFormat;
@@ -68,7 +74,7 @@ export interface InstructionFile {
 
 export interface InventoryWarning {
   sourcePath: string;
-  code: "unreadable" | "malformed" | "unsupported" | "stale";
+  code: "unreadable" | "malformed" | "unsupported" | "stale" | "orphaned";
   message: string;
 }
 

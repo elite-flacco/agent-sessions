@@ -2120,12 +2120,32 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .agent-task-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
   .agent-task-name {
     font-size: var(--text-sm);
     font-weight: 400;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .agent-task-flag {
+    flex: none;
+    border: 1px solid var(--warning);
+    border-radius: 0.25rem;
+    padding: 0 0.3rem;
+    color: var(--warning);
+    font-size: var(--text-xs);
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+  .agent-task-detail .notice {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
   }
   .agent-task-detail {
     padding: 0.6rem 0.75rem 0.8rem 2.45rem;

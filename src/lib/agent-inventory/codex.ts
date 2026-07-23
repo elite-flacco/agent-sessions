@@ -7,9 +7,11 @@ import {
   compareVersionDirs,
   discoverPluginMcps,
   discoverSkillRoots,
+  orphanedTargetWarning,
   pluginStatusWithPresence,
   readDirectoryEntries,
   readInstruction,
+  readJsonSource,
   readTextSource,
   safeAbsolutePath,
   staleVersionsWarning,
@@ -176,6 +178,32 @@ function statusFromToml(raw: string | undefined): ScheduledTaskStatus {
 }
 
 /**
+ * Reads the id → display-name map of Codex's local projects from
+ * `~/.codex/.codex-global-state.json`. Only ids and names are taken; nothing
+ * else in that file enters the inventory.
+ *
+ * Returns `undefined` when the state file is missing or malformed, which the
+ * caller treats as "unknown" rather than "no projects" — an unreadable state
+ * file must never make every automation look orphaned.
+ */
+async function readCodexProjectNames(
+  homeDir: string,
+): Promise<Map<string, string> | undefined> {
+  const parsed = await readJsonSource(
+    join(homeDir, ".codex", ".codex-global-state.json"),
+    [],
+  );
+  const projects = parsed?.["local-projects"];
+  if (!projects || typeof projects !== "object") return undefined;
+  const names = new Map<string, string>();
+  for (const [id, value] of Object.entries(projects)) {
+    const name = (value as { name?: unknown } | null)?.name;
+    names.set(id, typeof name === "string" && name ? name : id);
+  }
+  return names;
+}
+
+/**
  * Reads Codex automations from `~/.codex/automations/` (one `automation.toml`
  * per task). Each TOML file describes one scheduled task (rrule schedule,
  * model, target, and the prompt body which is surfaced verbatim under the
@@ -188,8 +216,11 @@ export async function discoverCodexScheduledTasks(homeDir: string): Promise<{
 }> {
   const warnings: ScheduledTask["warnings"] = [];
   const automationsDir = join(homeDir, ".codex", "automations");
+  const projectNames = await readCodexProjectNames(homeDir);
   const tasks: ScheduledTask[] = [];
-  for (const entry of await readDirectoryEntries(automationsDir)) {
+  for (const entry of await readDirectoryEntries(automationsDir, {
+    directoriesOnly: true,
+  })) {
     const tomlPath = join(entry, "automation.toml");
     const content = await readTextSource(tomlPath, warnings);
     if (!content) continue;
@@ -199,6 +230,14 @@ export async function discoverCodexScheduledTasks(homeDir: string): Promise<{
     const scheduleHuman = rrule ? humanizeSchedule(rrule) : undefined;
     const target = values.target;
     const projectId = target?.match(/project_id\s*=\s*"([^"]+)"/)?.[1];
+    const projectName = projectId ? projectNames?.get(projectId) : undefined;
+    // A target Codex no longer knows about is why its editor reports the task
+    // as nonexistent, so the row has to say so. Only judged when the project
+    // list was actually readable.
+    const taskWarnings: ScheduledTask["warnings"] =
+      projectId && projectNames && !projectName
+        ? [orphanedTargetWarning(tomlPath, projectId)]
+        : [];
     const descriptionLine = (values.prompt ?? "")
       .split("\n")
       .map((s) => s.trim())
@@ -214,13 +253,14 @@ export async function discoverCodexScheduledTasks(homeDir: string): Promise<{
       status: statusFromToml(values.status),
       model: values.model,
       targetProject: projectId,
+      targetProjectName: projectName,
       workingDirectories: arrays.cwds,
       instructionBody: values.prompt,
       instructionFormat: "toml_prompt",
       sourcePath: tomlPath,
       createdAt: Number.parseInt(values.created_at ?? "", 10) || undefined,
       updatedAt: Number.parseInt(values.updated_at ?? "", 10) || undefined,
-      warnings: [],
+      warnings: taskWarnings,
     });
   }
   return { tasks, warnings };

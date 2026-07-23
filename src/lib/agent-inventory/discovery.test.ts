@@ -1197,7 +1197,7 @@ updated_at = 1783772547499
           id: "weekly-digest",
           name: "Weekly digest",
           scheduleRaw: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
-          scheduleHuman: "Mondays at 08:00",
+          scheduleHuman: "Mondays at 8:00 AM",
           scheduleMissing: false,
           status: "active",
           model: "gpt-5.5",
@@ -1272,6 +1272,97 @@ rrule = "FREQ=DAILY"
     expect(codex?.warnings).toEqual([
       expect.objectContaining({ code: "unreadable" }),
     ]);
+  });
+
+  test("ignores non-directory entries in the Codex automations directory", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/automations/weekly-digest/automation.toml",
+      `id = "weekly-digest"\nname = "Weekly digest"\nrrule = "FREQ=DAILY"\nprompt = "hi"\n`,
+    );
+    // Codex keeps bookkeeping files alongside task directories (the run-jitter
+    // salt). Appending automation.toml to one yields ENOTDIR, which must not
+    // read as an unreadable provider config.
+    await fixture(
+      home,
+      ".codex/automations/.run-jitter-salt",
+      "7dea0077-bbb2-463f-8b62-55b3e3c3aca5",
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.scheduledTasks?.map((task) => task.id)).toEqual([
+      "weekly-digest",
+    ]);
+    expect(codex?.warnings).toEqual([]);
+  });
+
+  test("resolves Codex automation target projects and flags orphaned ones", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/.codex-global-state.json",
+      JSON.stringify({
+        "local-projects": {
+          "local-abc123": {
+            id: "local-abc123",
+            name: "personal-site",
+            rootPaths: ["/Users/example/Projects/personal-site"],
+          },
+        },
+      }),
+    );
+    await fixture(
+      home,
+      ".codex/automations/resolved/automation.toml",
+      `id = "resolved"\nname = "Resolved"\nrrule = "FREQ=DAILY"\nprompt = "hi"\ntarget = { type = "project", project_id = "local-abc123" }\n`,
+    );
+    await fixture(
+      home,
+      ".codex/automations/orphaned/automation.toml",
+      `id = "orphaned"\nname = "Orphaned"\nrrule = "FREQ=DAILY"\nprompt = "hi"\ntarget = { type = "project", project_id = "edec41f7-b017-4ae1-9666-9a9bd15e869b" }\n`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const tasks = result.find(
+      (item) => item.provider === "codex",
+    )?.scheduledTasks;
+    const resolved = tasks?.find((task) => task.id === "resolved");
+    const orphaned = tasks?.find((task) => task.id === "orphaned");
+
+    expect(resolved?.targetProject).toBe("local-abc123");
+    expect(resolved?.targetProjectName).toBe("personal-site");
+    expect(resolved?.warnings).toEqual([]);
+
+    expect(orphaned?.targetProjectName).toBeUndefined();
+    expect(orphaned?.warnings).toEqual([
+      expect.objectContaining({ code: "orphaned" }),
+    ]);
+  });
+
+  test("does not judge Codex automation targets when project state is unreadable", async () => {
+    const home = await createHome();
+    await fixture(
+      home,
+      ".codex/automations/orphaned/automation.toml",
+      `id = "orphaned"\nname = "Orphaned"\nrrule = "FREQ=DAILY"\nprompt = "hi"\ntarget = { type = "project", project_id = "edec41f7" }\n`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.scheduledTasks?.[0]?.warnings).toEqual([]);
   });
 
   test("discovers Claude scheduled tasks from scheduled-tasks SKILL.md", async () => {

@@ -119,17 +119,31 @@ describe("parseAgentSetupFilters", () => {
     expect(
       parseAgentSetupFilters({
         view: "compare",
+        // provider is intentionally dropped on compare — see the dedicated test
+        // below; compare always spans every provider.
         provider: "codex",
         kind: "skill",
         status: "enabled",
         discrepancies: "1",
       }),
-    ).toEqual({
+    ).toMatchObject({
       view: "compare",
-      provider: "codex",
+      provider: undefined,
       kind: "skill",
       status: "enabled",
       discrepanciesOnly: true,
+    });
+    expect(
+      parseAgentSetupFilters({
+        provider: "codex",
+        kind: "skill",
+        status: "enabled",
+      }),
+    ).toMatchObject({
+      view: "inventory",
+      provider: "codex",
+      kind: "skill",
+      status: "enabled",
     });
     expect(
       parseAgentSetupFilters({ provider: "other" }).provider,
@@ -963,6 +977,98 @@ describe("AgentSetupView", () => {
     expect(zcodeHtml).toContain(
       "Could not parse global provider configuration.",
     );
+  });
+
+  test("compare view has no Agent filter and always spans every provider", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+    expect(html).not.toContain('name="provider"');
+    expect(html).not.toContain("All agents</option>");
+    // The Type and Status filters remain.
+    expect(html).toContain('name="kind"');
+    expect(html).toContain('name="status"');
+  });
+
+  test("compare drops a provider param at the parse boundary", () => {
+    expect(
+      parseAgentSetupFilters({ view: "compare", provider: "pi" }).provider,
+    ).toBeUndefined();
+    // Inventory still honours it — the rail/cards there are a real selector.
+    expect(parseAgentSetupFilters({ provider: "pi" }).provider).toBe("pi");
+  });
+
+  test("compare summary cards link into that provider's inventory", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+    // No card should point back at compare with a provider attached, and none
+    // should render as the active selection.
+    expect(html).not.toContain("view=compare&amp;provider=");
+    expect(html).not.toContain("agent-summary-active");
+    expect(html).toContain('href="/agents?provider=codex"');
+  });
+
+  test("keeps the Instructions rail entry when another kind is selected", () => {
+    // The rail owns kind selection, so picking Skills/Plugins/MCPs must not
+    // remove the entry that would take you back to Instructions.
+    for (const kind of ["skill", "plugin", "mcp"] as const) {
+      const html = renderToStaticMarkup(
+        <AgentSetupView
+          inventories={inventories}
+          filters={{ view: "inventory", provider: "codex", kind }}
+        />,
+      );
+      expect(html).toContain("kind=instruction");
+      // Still only a rail link — the body stays on the selected kind.
+      expect(html).not.toContain("# Codex instructions");
+    }
+  });
+
+  test("keeps the Instructions rail entry under a status filter", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "codex", status: "enabled" }}
+      />,
+    );
+    expect(html).toContain("kind=instruction");
+  });
+
+  test("opens the instruction pane even when filters match no capabilities", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{
+          view: "inventory",
+          provider: "codex",
+          kind: "instruction",
+          q: "zzz-no-such-capability",
+        }}
+      />,
+    );
+    expect(html).toContain("# Codex instructions");
+    expect(html).not.toContain("No capabilities match these filters.");
+  });
+
+  test("still shows the empty state when nothing matches and instructions are not selected", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{
+          view: "inventory",
+          provider: "codex",
+          q: "zzz-no-such-capability",
+        }}
+      />,
+    );
+    expect(html).toContain("No capabilities match these filters.");
   });
 
   test("uses compact typography for instruction filenames", () => {
@@ -1801,6 +1907,72 @@ describe("Scheduled tasks view", () => {
     // jsdom renders <details> body content even when collapsed.
     expect(container.textContent).toContain("gpt-5.5");
     expect(container.textContent).toContain("Summarize the week.");
+  });
+
+  test("shows the resolved target project inside detail", () => {
+    const withProject: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [],
+        scheduledTasks: [
+          {
+            ...taskInventories[0].scheduledTasks![0],
+            targetProject: "local-abc123",
+            targetProjectName: "personal-site",
+          },
+        ],
+        warnings: [],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={withProject}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    expect(container.textContent).toContain("personal-site");
+    expect(document.querySelector(".agent-task-flag")).toBeNull();
+  });
+
+  test("flags a task whose target project no longer exists", () => {
+    const orphaned: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [],
+        scheduledTasks: [
+          {
+            ...taskInventories[0].scheduledTasks![0],
+            targetProject: "edec41f7",
+            warnings: [
+              {
+                sourcePath:
+                  "/safe/.codex/automations/weekly-digest/automation.toml",
+                code: "orphaned",
+                message:
+                  "Targets a project this agent no longer lists (edec41f7). The task still runs, but the agent cannot open it for editing.",
+              },
+            ],
+          },
+        ],
+        warnings: [],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={orphaned}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    // Visible without expanding the row.
+    expect(document.querySelector(".agent-task-flag")?.textContent).toBe(
+      "Target missing",
+    );
+    // The reason and the unresolved id both render in the detail.
+    expect(container.textContent).toContain(
+      "Targets a project this agent no longer lists (edec41f7)",
+    );
   });
 
   test("shows zero-state message when no tasks exist", () => {

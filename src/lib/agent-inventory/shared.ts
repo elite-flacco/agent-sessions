@@ -57,6 +57,23 @@ function warning(
   };
 }
 
+/**
+ * A scheduled task pointing at a project its provider no longer lists. The
+ * task still runs, but the provider's own editor can't resolve the target and
+ * reports the task as nonexistent, so the id is named here to make the repair
+ * obvious.
+ */
+export function orphanedTargetWarning(
+  sourcePath: string,
+  projectId: string,
+): InventoryWarning {
+  return {
+    sourcePath,
+    code: "orphaned",
+    message: `Targets a project this agent no longer lists (${projectId}). The task still runs, but the agent cannot open it for editing.`,
+  };
+}
+
 export function staleVersionsWarning(versionRoot: string): InventoryWarning {
   return {
     sourcePath: versionRoot,
@@ -533,15 +550,30 @@ export async function pluginStatusWithPresence(
  * Returns absolute child paths of `dir`. Empty array (never throws) when the
  * directory is missing or unreadable. Used by scheduled-task readers that
  * scan per-task subdirectories.
+ *
+ * `directoriesOnly` drops plain files so bookkeeping siblings of task
+ * directories (Codex writes a `.run-jitter-salt` file into
+ * `~/.codex/automations/`) don't get a task file path appended to them — the
+ * resulting ENOTDIR would otherwise surface as an unreadable-config warning.
+ * Symlinks are kept: they commonly point at task directories and resolving
+ * them here would cost a stat per entry.
  */
-export async function readDirectoryEntries(dir: string): Promise<string[]> {
+export async function readDirectoryEntries(
+  dir: string,
+  { directoriesOnly = false }: { directoriesOnly?: boolean } = {},
+): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  return entries.map((entry) => join(dir, entry.name));
+  return entries
+    .filter(
+      (entry) =>
+        !directoriesOnly || entry.isDirectory() || entry.isSymbolicLink(),
+    )
+    .map((entry) => join(dir, entry.name));
 }
 
 /**
