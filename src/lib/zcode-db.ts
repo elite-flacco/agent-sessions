@@ -63,9 +63,10 @@ export function isZcodeDbAvailable(): boolean {
 
 /**
  * Capability coverage requires more than an open SQLite file: Relay must be
- * able to execute the authoritative message, part, and tool-usage reads used
- * during reconciliation. Preparing and running empty health queries validates
- * the required tables and columns without reading or retaining any content.
+ * able to execute the authoritative session, message, part, and tool-usage
+ * reads used during reconciliation. Preparing and running empty health queries
+ * validates the required tables and columns without reading or retaining any
+ * content.
  */
 export function isZcodeCapabilityDbAvailable(): boolean {
   const db = zcodeDb();
