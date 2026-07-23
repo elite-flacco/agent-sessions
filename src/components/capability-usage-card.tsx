@@ -129,7 +129,7 @@ export function CapabilityUsageCard({
         <div>
           <h3 id="capability-insight-title">Skills &amp; MCP usage</h3>
           <p className="insight-sub">
-            Observed activity and installed capabilities with no recent use.
+            Observed capability calls across coding agents
           </p>
         </div>
         <div className="capability-range" aria-label="Capability usage range">

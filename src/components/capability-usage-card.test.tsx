@@ -65,6 +65,9 @@ describe("CapabilityUsageCard", () => {
     expect(
       screen.getByRole("heading", { name: "Skills & MCP usage" }),
     ).toBeVisible();
+    expect(
+      screen.getByText("Observed capability calls across coding agents"),
+    ).toBeVisible();
     expect(screen.getByText("frontend-rules")).toBeVisible();
     expect(screen.getByText("github")).toBeVisible();
     const neverObserved = screen.getAllByText(
