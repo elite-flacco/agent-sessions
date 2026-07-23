@@ -1535,10 +1535,7 @@ function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
     <details name="agent-tasks" className="agent-task-row">
       <summary className="agent-task-summary">
         <span className="agent-task-sched">
-          {schedule ?? "Schedule not specified"}
-          {task.scheduleMissing ? (
-            <em className="agent-tasks-hint"> (no schedule configured)</em>
-          ) : null}
+          {schedule ?? "Not scheduled"}
         </span>
         <strong className="agent-task-name">{task.name}</strong>
         <span className={`badge ${providerBadges[task.provider]}`}>
