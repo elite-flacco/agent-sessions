@@ -18,11 +18,13 @@ let sqlite: (typeof import("@/db/client"))["sqlite"];
 let collector: typeof import("./index");
 let lock: typeof import("./lock");
 let claudeAdapter: ProviderAdapter;
+const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
 
 beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-collector-"));
   process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
   process.env.CODEX_STATE_DB_PATH = path.join(directory, "missing-codex.db");
+  process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
   collector = await import("./index");
@@ -34,6 +36,7 @@ afterAll(async () => {
   sqlite.close();
   delete process.env.RELAY_DATABASE_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
+  delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });
 
@@ -241,7 +244,7 @@ describe("collector sync", () => {
     expect(sessionCount("recovered-1")).toBe(1);
   });
 
-  it("refreshes metadata for Zcode sessions whose JSONL source is gone", async () => {
+  it("refreshes metadata and capability usage for Zcode database-only sessions", async () => {
     const zcodeDbPath = path.join(directory, "zcode.db");
     const Database = (await import("better-sqlite3")).default;
     const zcodeDb = new Database(zcodeDbPath);
@@ -257,6 +260,14 @@ describe("collector sync", () => {
       CREATE TABLE part (
         id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
         time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL
       );
     `);
     const insertZcode = zcodeDb.prepare(
@@ -284,6 +295,54 @@ describe("collector sync", () => {
       1_750_000_000_100,
       1_750_000_000_900,
     );
+    zcodeDb
+      .prepare(
+        `INSERT INTO message (id, session_id, time_created, data)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-child-message",
+        "zcode-child",
+        1_750_000_000_500,
+        JSON.stringify({ role: "assistant", time: { completed: 1 } }),
+      );
+    zcodeDb
+      .prepare(
+        `INSERT INTO part (id, message_id, session_id, time_created, data)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-skill-part",
+        "zcode-child-message",
+        "zcode-child",
+        1_750_000_000_600,
+        JSON.stringify({
+          type: "tool",
+          tool: "Skill",
+          state: {
+            status: "completed",
+            input: {
+              skill: "systematic-debugging",
+              args: "PRIVATE_SKILL_INPUT",
+            },
+            output: "PRIVATE_SKILL_OUTPUT",
+          },
+        }),
+      );
+    zcodeDb
+      .prepare(
+        `INSERT INTO tool_usage
+         (id, session_id, tool_call_id, tool_name, status, started_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "zcode-tool-usage",
+        "zcode-child",
+        "zcode-mcp-call",
+        "mcp__plugin_openai-developers_openaiDeveloperDocs__search_openai_docs",
+        "completed",
+        1_750_000_000_700,
+      );
     zcodeDb.close();
     sqlite
       .prepare(
@@ -292,6 +351,14 @@ describe("collector sync", () => {
          VALUES (?, 'zcode', 'Zcode coding session', 'completed', ?, ?)`,
       )
       .run("zcode-orphan", "2026-07-11T10:00:00Z", "2026-07-11T10:01:00Z");
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+         (session_id, external_id, provider, kind, capability_name, occurred_at)
+         SELECT id, 'skill:rollout-only', 'zcode', 'skill', 'frontend-rules', ?
+         FROM sessions WHERE provider = 'zcode' AND external_id = ?`,
+      )
+      .run("2026-07-11T10:00:30Z", "zcode-orphan");
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
     __resetZcodeDbCache();
@@ -318,8 +385,52 @@ describe("collector sync", () => {
         parentExternalId: "zcode-orphan",
         sessionKind: "subagent",
       });
+      const capabilityUsage = sqlite
+        .prepare(
+          `SELECT external_id externalId, provider, kind,
+                  capability_name name, occurred_at occurredAt
+           FROM session_capability_usage
+           WHERE session_id = (
+             SELECT id FROM sessions
+             WHERE provider = 'zcode' AND external_id = ?
+           )
+           ORDER BY occurred_at, external_id`,
+        )
+        .all("zcode-child");
+      expect(capabilityUsage).toEqual([
+        {
+          externalId: "skill:zcode-skill-part",
+          provider: "zcode",
+          kind: "skill",
+          name: "systematic-debugging",
+          occurredAt: new Date(1_750_000_000_600).toISOString(),
+        },
+        {
+          externalId: "mcp:zcode-mcp-call",
+          provider: "zcode",
+          kind: "mcp",
+          name: "plugin_openai-developers_openaideveloperdocs",
+          occurredAt: new Date(1_750_000_000_700).toISOString(),
+        },
+      ]);
+      expect(JSON.stringify(capabilityUsage)).not.toMatch(
+        /PRIVATE_SKILL_INPUT|PRIVATE_SKILL_OUTPUT/,
+      );
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE session_id = (
+                 SELECT id FROM sessions
+                 WHERE provider = 'zcode' AND external_id = ?
+               )`,
+            )
+            .get("zcode-orphan") as { count: number }
+        ).count,
+      ).toBe(0);
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -402,6 +513,14 @@ describe("collector sync", () => {
         new Date(updatedAt - 1_000).toISOString(),
         new Date(updatedAt - 1_000).toISOString(),
       );
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+         (session_id, external_id, provider, kind, capability_name, occurred_at)
+         SELECT id, 'skill:rollout-only', 'zcode', 'skill', 'frontend-rules', ?
+         FROM sessions WHERE provider = 'zcode' AND external_id = ?`,
+      )
+      .run(new Date(updatedAt - 2_000).toISOString(), "zcode-waiting");
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
     __resetZcodeDbCache();
@@ -414,8 +533,23 @@ describe("collector sync", () => {
           )
           .get(),
       ).toEqual({ status: "needs_attention" });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT external_id externalId, capability_name name
+             FROM session_capability_usage
+             WHERE session_id = (
+               SELECT id FROM sessions
+               WHERE provider = 'zcode' AND external_id = ?
+             )`,
+          )
+          .get("zcode-waiting"),
+      ).toEqual({
+        externalId: "skill:rollout-only",
+        name: "frontend-rules",
+      });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -546,7 +680,7 @@ describe("collector sync", () => {
         ).toEqual({ status: item.status, statusReason: item.reason });
       }
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -632,7 +766,7 @@ describe("collector sync", () => {
       expect(row.status).toBe("running");
       expect(row.updatedAt).toBe(new Date(dbUpdatedAt).toISOString());
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -733,7 +867,7 @@ describe("collector sync", () => {
           .get(),
       ).toEqual({ status: "running" });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });
@@ -816,7 +950,7 @@ describe("collector sync", () => {
           .get(),
       ).toEqual({ status: "interrupted" });
     } finally {
-      delete process.env.ZCODE_DB_PATH;
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
       __resetZcodeDbCache();
     }
   });

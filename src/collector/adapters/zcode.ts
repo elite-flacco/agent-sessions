@@ -123,8 +123,7 @@ export const zcodeAdapter: ProviderAdapter = {
           return [...requestToolCalls, ...responseToolCalls].flatMap(
             (tool, blockIndex) => {
               if (!tool) return [];
-              const callId =
-                stringValue(tool.id) ?? stringValue(tool.callId);
+              const callId = stringValue(tool.id) ?? stringValue(tool.callId);
               if (callId && seenCallIds.has(callId)) return [];
               if (callId) seenCallIds.add(callId);
               const externalId =

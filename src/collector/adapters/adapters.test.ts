@@ -9,6 +9,7 @@ import type {
   ProviderAdapter,
 } from "@/lib/types";
 import { __resetCodexDbCache } from "@/lib/codex-db";
+import { zcodeStoredCapabilityUsage } from "../capabilities";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
 import { piAdapter } from "./pi";
@@ -819,6 +820,75 @@ describe("provider adapters", () => {
     ]);
     expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
       /SECRET_ZCODE_ARGS|SECRET_ZCODE_QUERY/,
+    );
+  });
+
+  it("normalizes authoritative Zcode database capability usage safely", () => {
+    const capabilityUsage = zcodeStoredCapabilityUsage(
+      [
+        {
+          id: "message-1",
+          timeCreated: 1_750_000_000_000,
+          data: { role: "assistant" },
+          parts: [
+            {
+              id: "skill-part",
+              timeCreated: 1_750_000_000_100,
+              data: {
+                type: "tool",
+                tool: "Skill",
+                state: {
+                  input: {
+                    skill: "systematic-debugging",
+                    args: "PRIVATE_SKILL_INPUT",
+                  },
+                  output: "PRIVATE_SKILL_OUTPUT",
+                },
+              },
+            },
+            {
+              id: "unsafe-part",
+              timeCreated: 1_750_000_000_200,
+              data: {
+                type: "text",
+                tool: "Skill",
+                state: { input: { skill: "must-not-appear" } },
+              },
+            },
+          ],
+        },
+      ],
+      [
+        {
+          toolCallId: "mcp-call",
+          toolName:
+            "mcp__plugin_openai-developers_openaiDeveloperDocs__search_openai_docs",
+          startedAt: 1_750_000_000_300,
+        },
+        {
+          toolCallId: "plain-call",
+          toolName: "read",
+          startedAt: 1_750_000_000_400,
+        },
+      ],
+    );
+
+    expect(capabilityUsage).toEqual([
+      {
+        externalId: "skill:skill-part",
+        kind: "skill",
+        name: "systematic-debugging",
+        occurredAt: new Date(1_750_000_000_100).toISOString(),
+      },
+      {
+        externalId: "mcp:mcp-call",
+        kind: "mcp",
+        name: "plugin_openai-developers_openaideveloperdocs",
+        occurredAt: new Date(1_750_000_000_300).toISOString(),
+      },
+    ]);
+    expect(JSON.stringify(capabilityUsage)).not.toMatch(
+      /PRIVATE_SKILL_INPUT|PRIVATE_SKILL_OUTPUT|must-not-appear|plain-call/,
     );
   });
 

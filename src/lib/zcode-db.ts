@@ -27,6 +27,12 @@ export interface ZcodeStoredMessage {
   parts: ZcodeStoredPart[];
 }
 
+export interface ZcodeToolUsage {
+  toolCallId: string;
+  toolName: string;
+  startedAt: number;
+}
+
 const zcodeDbPath = (): string =>
   process.env.ZCODE_DB_PATH
     ? path.resolve(process.env.ZCODE_DB_PATH)
@@ -45,6 +51,10 @@ function zcodeDb(): BetterSqlite3Database | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function isZcodeDbAvailable(): boolean {
+  return zcodeDb() !== undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -151,6 +161,31 @@ export function readZcodeSessionMessages(
       data: parseData(row.data),
       parts: partsByMessage.get(row.id) ?? [],
     }));
+  } catch {
+    return undefined;
+  }
+}
+
+export function readZcodeToolUsage(
+  sessionId: string,
+): ZcodeToolUsage[] | undefined {
+  const db = zcodeDb();
+  if (!db) return undefined;
+  try {
+    return (
+      db
+        .prepare(
+          `SELECT tool_call_id toolCallId, tool_name toolName, started_at startedAt
+           FROM tool_usage WHERE session_id = ? ORDER BY started_at, tool_call_id`,
+        )
+        .all(sessionId) as Array<Record<string, unknown>>
+    ).flatMap((row) => {
+      const toolCallId = stringValue(row.toolCallId);
+      const toolName = stringValue(row.toolName);
+      return toolCallId && toolName && typeof row.startedAt === "number"
+        ? [{ toolCallId, toolName, startedAt: row.startedAt }]
+        : [];
+    });
   } catch {
     return undefined;
   }

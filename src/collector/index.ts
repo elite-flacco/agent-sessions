@@ -6,6 +6,7 @@ import type {
   AdapterParseContext,
   AgentProvider,
   CapabilityLookup,
+  CapabilityUsage,
   NormalizedSession,
   ProviderAdapter,
   SessionStatus,
@@ -16,8 +17,10 @@ import { sqlite } from "@/db/client";
 import { getAgentInventories } from "@/lib/agent-inventory";
 import {
   getZcodeSessionMetadata,
+  isZcodeDbAvailable,
   listZcodeSessionMetadata,
   readZcodeSessionMessages,
+  readZcodeToolUsage,
   type ZcodeStoredMessage,
 } from "@/lib/zcode-db";
 import { claudeAdapter } from "./adapters/claude";
@@ -25,7 +28,10 @@ import { codexAdapter } from "./adapters/codex";
 import { piAdapter } from "./adapters/pi";
 import { sessionSummary } from "./adapters/shared";
 import { zcodeAdapter } from "./adapters/zcode";
-import { buildCapabilityLookups } from "./capabilities";
+import {
+  buildCapabilityLookups,
+  zcodeStoredCapabilityUsage,
+} from "./capabilities";
 import { acquireLease, releaseLease } from "./lock";
 import {
   homePath,
@@ -66,6 +72,29 @@ function fingerprint(size: number, modifiedAt: number): string {
     .createHash("sha1")
     .update(`${NORMALIZATION_VERSION}:${size}:${modifiedAt}`)
     .digest("hex");
+}
+
+function replaceCapabilityUsage(
+  sessionId: number,
+  provider: AgentProvider,
+  capabilityUsage: CapabilityUsage[],
+): void {
+  sqlite
+    .prepare("DELETE FROM session_capability_usage WHERE session_id = ?")
+    .run(sessionId);
+  const statement = sqlite.prepare(`INSERT INTO session_capability_usage
+    (session_id, external_id, provider, kind, capability_name, occurred_at)
+    VALUES (?, ?, ?, ?, ?, ?)`);
+  for (const capability of capabilityUsage) {
+    statement.run(
+      sessionId,
+      capability.externalId,
+      provider,
+      capability.kind,
+      capability.name,
+      capability.occurredAt,
+    );
+  }
 }
 
 function persistSession(session: NormalizedSession): void {
@@ -129,23 +158,7 @@ function persistSession(session: NormalizedSession): void {
     const row = sqlite
       .prepare("SELECT id FROM sessions WHERE provider = ? AND external_id = ?")
       .get(session.provider, session.externalId) as { id: number };
-    sqlite
-      .prepare("DELETE FROM session_capability_usage WHERE session_id = ?")
-      .run(row.id);
-    const capabilityStatement =
-      sqlite.prepare(`INSERT INTO session_capability_usage
-      (session_id, external_id, provider, kind, capability_name, occurred_at)
-      VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const capability of session.capabilityUsage) {
-      capabilityStatement.run(
-        row.id,
-        capability.externalId,
-        session.provider,
-        capability.kind,
-        capability.name,
-        capability.occurredAt,
-      );
-    }
+    replaceCapabilityUsage(row.id, session.provider, session.capabilityUsage);
     if (session.usage.length) {
       sqlite
         .prepare(
@@ -315,6 +328,7 @@ function reconcileCodexTitles(): void {
 }
 
 function reconcileZcodeMetadata(): void {
+  if (!isZcodeDbAvailable()) return;
   const sessions = sqlite
     .prepare(
       "SELECT id, external_id externalId, title, cwd, status, updated_at updatedAt FROM sessions WHERE provider = 'zcode'",
@@ -338,7 +352,9 @@ function reconcileZcodeMetadata(): void {
       const metadata = getZcodeSessionMetadata(session.externalId);
       if (!metadata) continue;
       const cwd = metadata.directory ?? session.cwd ?? undefined;
-      const messages = readZcodeSessionMessages(session.externalId) ?? [];
+      const storedMessages = readZcodeSessionMessages(session.externalId);
+      const storedTools = readZcodeToolUsage(session.externalId);
+      const messages = storedMessages ?? [];
       const updatedAt =
         metadata.timeUpdated === undefined
           ? undefined
@@ -386,6 +402,12 @@ function reconcileZcodeMetadata(): void {
         freshestUpdatedAt,
         session.id,
       );
+      if (storedMessages && storedTools)
+        replaceCapabilityUsage(
+          session.id,
+          "zcode",
+          zcodeStoredCapabilityUsage(storedMessages, storedTools),
+        );
     }
   });
   write();
@@ -402,7 +424,13 @@ function reconcileZcodeMetadata(): void {
       continue;
     const startedAt = new Date(metadata.timeCreated).toISOString();
     const updatedAt = new Date(metadata.timeUpdated).toISOString();
-    const messages = readZcodeSessionMessages(metadata.id) ?? [];
+    const storedMessages = readZcodeSessionMessages(metadata.id);
+    const storedTools = readZcodeToolUsage(metadata.id);
+    const messages = storedMessages ?? [];
+    const capabilityUsage =
+      storedMessages && storedTools
+        ? zcodeStoredCapabilityUsage(storedMessages, storedTools)
+        : [];
     const { status, reason: statusReason } = zcodeStoredStatus(
       messages,
       updatedAt,
@@ -433,7 +461,7 @@ function reconcileZcodeMetadata(): void {
           : undefined,
       updatedAt,
       usage: [],
-      capabilityUsage: [],
+      capabilityUsage,
       events: [
         {
           externalId: "started",

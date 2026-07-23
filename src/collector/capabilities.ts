@@ -1,5 +1,6 @@
 import type { AgentInventory } from "@/lib/agent-inventory";
 import { canonicalCapabilityName } from "@/lib/agent-inventory/normalize";
+import type { ZcodeStoredMessage, ZcodeToolUsage } from "@/lib/zcode-db";
 import {
   agentProviders,
   type AgentProvider,
@@ -117,6 +118,42 @@ export function mcpUsage({
   return name
     ? { externalId: `mcp:${externalId}`, kind: "mcp", name, occurredAt }
     : undefined;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+export function zcodeStoredCapabilityUsage(
+  messages: ZcodeStoredMessage[],
+  tools: ZcodeToolUsage[],
+): CapabilityUsage[] {
+  const skillUsage = messages.flatMap((message) =>
+    message.parts.flatMap((part) => {
+      const data = objectRecord(part.data);
+      const state = objectRecord(data?.state);
+      const input = objectRecord(state?.input);
+      if (data?.type !== "tool" || data.tool !== "Skill") return [];
+      const usage = explicitSkillUsage(
+        part.id,
+        input?.skill,
+        new Date(part.timeCreated).toISOString(),
+      );
+      return usage ? [usage] : [];
+    }),
+  );
+  const mcpToolUsage = tools.flatMap((tool) => {
+    if (!tool.toolName.startsWith("mcp__")) return [];
+    const usage = mcpUsage({
+      externalId: tool.toolCallId,
+      toolName: tool.toolName,
+      occurredAt: new Date(tool.startedAt).toISOString(),
+    });
+    return usage ? [usage] : [];
+  });
+  return [...skillUsage, ...mcpToolUsage];
 }
 
 interface MatchedSkillReadsInput {
