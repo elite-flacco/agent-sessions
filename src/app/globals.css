@@ -2115,6 +2115,9 @@
   .agent-task-sched {
     font-weight: 600;
     font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .agent-task-name {
     font-size: var(--text-sm);
