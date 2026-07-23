@@ -2066,7 +2066,7 @@
   }
   .agent-task-head {
     display: grid;
-    grid-template-columns: 1.2rem minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+    grid-template-columns: 1.2rem minmax(0, 1fr) minmax(0, 1.4fr) 5rem 4.5rem;
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
@@ -2086,7 +2086,7 @@
   .agent-task-summary {
     list-style: none;
     display: grid;
-    grid-template-columns: 1.2rem minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+    grid-template-columns: 1.2rem minmax(0, 1fr) minmax(0, 1.4fr) 5rem 4.5rem;
     align-items: center;
     gap: 0.5rem;
     min-height: 2.3rem;
