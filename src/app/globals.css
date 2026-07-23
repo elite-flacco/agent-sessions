@@ -2099,7 +2099,7 @@
     content: "›";
     display: inline-block;
     width: 1.2rem;
-    flex: 0 0 auto;
+    text-align: center;
     color: var(--muted-foreground);
     font-size: var(--text-lg);
     line-height: 1;
