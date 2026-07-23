@@ -276,7 +276,7 @@ describe("getInsights — capability usage", () => {
 
     expect(capabilities.range).toBe("30d");
     expect(
-      capabilities.mostUsed.filter((item) => item.kind === "skill")[0],
+      capabilities.used.filter((item) => item.kind === "skill")[0],
     ).toMatchObject({
       name: "frontend-rules",
       invocations: 2,
@@ -297,9 +297,21 @@ describe("getInsights — capability usage", () => {
     );
   });
 
+  it("counts adoption only over active installations with complete coverage", () => {
+    const capabilities = queries.getInsights("30d", inventories).capabilities;
+
+    // frontend-rules, review-code-changes, never-used, github — the disabled
+    // skill is excluded, and the two providers sharing a name count once.
+    expect(capabilities.installedCount).toBe(4);
+    expect(capabilities.installedUsedCount).toBe(2);
+    expect(capabilities.installedUsedCount).toBeLessThanOrEqual(
+      capabilities.installedCount,
+    );
+  });
+
   it("excludes observations older than the selected range", () => {
     const capabilities = queries.getInsights("7d", inventories).capabilities;
-    const frontend = capabilities.mostUsed.find(
+    const frontend = capabilities.used.find(
       (item) => item.kind === "skill" && item.name === "frontend-rules",
     );
 
@@ -310,10 +322,10 @@ describe("getInsights — capability usage", () => {
     });
   });
 
-  it("retains only the top five per kind with deterministic tie ordering", () => {
+  it("returns every observed capability per kind with deterministic tie ordering", () => {
     const skills = queries
       .getInsights("30d", inventories)
-      .capabilities.mostUsed.filter((item) => item.kind === "skill");
+      .capabilities.used.filter((item) => item.kind === "skill");
 
     expect(skills.map((item) => item.name)).toEqual([
       "frontend-rules",
@@ -321,8 +333,8 @@ describe("getInsights — capability usage", () => {
       "rank-b",
       "rank-c",
       "retired-skill",
+      "shared-skill",
     ]);
-    expect(skills).toHaveLength(5);
   });
 
   it("ranks ties by invocations, sessions, recency, then name", () => {
@@ -376,9 +388,13 @@ describe("getInsights — capability usage", () => {
 
       const skills = queries
         .getInsights("30d", inventories)
-        .capabilities.mostUsed.filter((item) => item.kind === "skill");
+        .capabilities.used.filter((item) => item.kind === "skill");
 
-      expect(skills.map((item) => item.name)).toEqual([
+      expect(
+        skills
+          .map((item) => item.name)
+          .filter((name) => name.startsWith("tie-")),
+      ).toEqual([
         "tie-invocations",
         "tie-sessions",
         "tie-newer",
@@ -393,7 +409,7 @@ describe("getInsights — capability usage", () => {
     }
   });
 
-  it("keeps only the top five MCP names when more than five are observed", () => {
+  it("ranks every observed MCP name without truncating the tail", () => {
     const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
     const sessionId = Number(
       sqlite
@@ -424,7 +440,7 @@ describe("getInsights — capability usage", () => {
 
       const mcps = queries
         .getInsights("30d", inventories)
-        .capabilities.mostUsed.filter((item) => item.kind === "mcp");
+        .capabilities.used.filter((item) => item.kind === "mcp");
 
       expect(mcps.map((item) => item.name)).toEqual([
         "mcp-rank-a",
@@ -432,8 +448,9 @@ describe("getInsights — capability usage", () => {
         "mcp-rank-c",
         "mcp-rank-d",
         "mcp-rank-e",
+        "mcp-rank-f",
+        "github",
       ]);
-      expect(mcps).toHaveLength(5);
     } finally {
       sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     }
@@ -442,7 +459,7 @@ describe("getInsights — capability usage", () => {
   it("ranks observed capabilities even when they are no longer installed", () => {
     const capabilities = queries.getInsights("30d", inventories).capabilities;
 
-    expect(capabilities.mostUsed).toEqual(
+    expect(capabilities.used).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "skill",
@@ -503,7 +520,7 @@ describe("getInsights — capability usage", () => {
         mappedInventory,
       ]).capabilities;
 
-      expect(capabilities.mostUsed).toEqual(
+      expect(capabilities.used).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: "mcp", name: "event-stream" }),
         ]),
@@ -554,6 +571,9 @@ describe("getInsights — capability usage", () => {
       state: "unavailable",
     });
     expect(capabilities.unused).toEqual([]);
+    // No trustworthy denominator, so the card falls back to a bare used count.
+    expect(capabilities.installedCount).toBe(0);
+    expect(capabilities.installedUsedCount).toBe(0);
   });
 
   it("marks Zcode coverage partial when its authoritative database is missing", () => {
@@ -815,6 +835,60 @@ describe("getInsights — cost outliers", () => {
       ).lastInsertRowid,
     );
     insertUsage.run(smallSpendId, "gpt-5.5", 20_000, 0, 0, 0, 0.01); // reported $0.01
+    // s7 delegates to s8, which delegates to s9: the roll-up must credit the
+    // whole $3.00 to the main session and list neither subagent separately.
+    const insertTree = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, parent_external_id, session_kind, agent_depth,
+       title, model, status, started_at, updated_at, ended_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const mainId = Number(
+      insertTree.run(
+        "s7",
+        "claude",
+        null,
+        "main",
+        0,
+        "Delegating main",
+        "gpt-5.5",
+        "completed",
+        iso(0),
+        iso(0),
+        iso(0),
+      ).lastInsertRowid,
+    );
+    const childId = Number(
+      insertTree.run(
+        "s8",
+        "claude",
+        "s7",
+        "subagent",
+        1,
+        "Delegating subagent",
+        "gpt-5.5",
+        "completed",
+        iso(0),
+        iso(0),
+        iso(0),
+      ).lastInsertRowid,
+    );
+    const grandchildId = Number(
+      insertTree.run(
+        "s9",
+        "claude",
+        "s8",
+        "subagent",
+        2,
+        "Leaf subagent",
+        "gpt-5.5",
+        "completed",
+        iso(0),
+        iso(0),
+        iso(0),
+      ).lastInsertRowid,
+    );
+    insertUsage.run(mainId, "gpt-5.5", 10_000, 0, 0, 0, 0.5);
+    insertUsage.run(childId, "gpt-5.5", 10_000, 0, 0, 0, 0.5);
+    insertUsage.run(grandchildId, "gpt-5.5", 10_000, 0, 0, 0, 2.0);
   });
 
   it("reports null week totals when any this-week session is unpriced", () => {
@@ -833,6 +907,19 @@ describe("getInsights — cost outliers", () => {
     expect(big).toBeDefined();
     expect(big!.costUsd).toBe(1.0);
     expect(big!.usdPerMin).toBeGreaterThanOrEqual(0);
+  });
+
+  it("rolls subagent spend into the main session and lists it once", () => {
+    const { cost } = queries.getInsights();
+    const main = cost.outliers.find((o) => o.title === "Delegating main");
+    expect(main).toBeDefined();
+    // $0.50 own + $0.50 child + $2.00 grandchild, credited to the root only.
+    expect(main!.costUsd).toBe(3.0);
+    expect(
+      cost.outliers.filter((o) => o.title.endsWith("subagent")),
+    ).toHaveLength(0);
+    // Rolled up, the delegating tree outranks the previously biggest session.
+    expect(cost.outliers[0].title).toBe("Delegating main");
   });
 
   it("exposes distinct top-5 (headline) and top-3 (signal) share fields", () => {

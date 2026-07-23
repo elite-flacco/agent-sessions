@@ -37,7 +37,10 @@ export interface SessionListItem {
   cachedTokens: number | null;
   model: string | null;
   estimatedCostUsd: number | null;
-  /** Read-time derived cost (pricing-trust rule); absent when not computed. */
+  /**
+   * Read-time derived cost (pricing-trust rule); absent when not computed.
+   * Rolled up over the session's subagent subtree — see getSessionsCostUsd.
+   */
   costUsd?: number | null;
 }
 
@@ -720,26 +723,55 @@ function rowCost(row: UsageJoinRow): number | undefined {
 }
 
 /**
- * Bulk read-time cost for a set of sessions, following the same
- * pricing-trust rule as getSessionUsage: a session maps to a dollar figure
- * only when every one of its usage rows is priced, and to null otherwise.
- * Sessions without usage rows are absent from the map.
+ * Provider-scoped descendant expansion over `parent_external_id`, seeded from
+ * a set of session ids and labelling every row with the seed it descends from.
+ * UNION (not UNION ALL) both dedupes diamond paths and terminates on the
+ * self-parent cycles a malformed rollout could produce.
+ */
+function subtreeUsageRows(sessionIds: number[]): (UsageJoinRow & {
+  rootId: number;
+})[] {
+  const placeholders = sessionIds.map(() => "?").join(", ");
+  return sqlite
+    .prepare(
+      `WITH RECURSIVE subtree(rootId, id, provider, externalId) AS (
+        SELECT id, id, provider, external_id FROM sessions WHERE id IN (${placeholders})
+        UNION
+        SELECT t.rootId, s.id, s.provider, s.external_id
+        FROM sessions s JOIN subtree t
+          ON s.provider = t.provider AND s.parent_external_id = t.externalId
+      )
+      SELECT t.rootId rootId, u.session_id sessionId, s.provider, s.repository,
+        s.started_at startedAt, u.model, u.input_tokens inputTokens,
+        u.output_tokens outputTokens, u.cache_read_tokens cacheReadTokens,
+        u.cache_write_tokens cacheWriteTokens, u.reported_cost_usd reportedCostUsd
+      FROM subtree t
+      JOIN sessions s ON s.id = t.id
+      JOIN session_model_usage u ON u.session_id = t.id`,
+    )
+    .all(...sessionIds) as (UsageJoinRow & { rootId: number })[];
+}
+
+/**
+ * Bulk read-time cost for a set of sessions, rolled up over each session's
+ * subagent subtree: a main session's figure is its own spend plus every
+ * descendant subagent's, because delegated work is spend the parent caused.
+ * The pricing-trust rule spans the subtree too — the roll-up is a dollar
+ * figure only when every usage row in it is priced, and null otherwise.
+ * Sessions with no priced-or-unpriced usage anywhere in their subtree are
+ * absent from the map. Aggregate views (usage, insights) must keep visiting
+ * sessions individually; rolling up there would double-count subagents.
  */
 export function getSessionsCostUsd(
   sessionIds: number[],
 ): Map<number, number | null> {
   if (!sessionIds.length) return new Map();
-  const rows = sqlite
-    .prepare(
-      `${USAGE_JOIN} WHERE u.session_id IN (${sessionIds.map(() => "?").join(", ")})`,
-    )
-    .all(...sessionIds) as UsageJoinRow[];
   const totals = new Map<number, number | null>();
-  for (const row of rows) {
+  for (const row of subtreeUsageRows(sessionIds)) {
     const cost = rowCost(row);
-    const current = totals.get(row.sessionId);
-    if (cost === undefined || current === null) totals.set(row.sessionId, null);
-    else totals.set(row.sessionId, (current ?? 0) + cost);
+    const current = totals.get(row.rootId);
+    if (cost === undefined || current === null) totals.set(row.rootId, null);
+    else totals.set(row.rootId, (current ?? 0) + cost);
   }
   return totals;
 }
@@ -752,20 +784,20 @@ export interface SessionUsageDetail {
     cacheReadTokens: number;
     cacheWriteTokens: number;
   }[];
+  /** This session's own spend, excluding subagents. */
   costUsd: number | null;
   costSource: CostSource;
+  /** Descendant subagent spend; 0 when the session delegated nothing. */
+  subagentCostUsd: number | null;
+  /** Own + descendant spend, under the pricing-trust rule across the subtree. */
+  totalCostUsd: number | null;
+  totalCostSource: CostSource;
 }
 
-/**
- * Cost is derived at read time (never stored) so pricing-table updates
- * apply retroactively. Per the pricing-trust rule, a session only gets a
- * dollar figure when every token-bearing row is priced — either reported
- * by the provider or matched to a pricing entry.
- */
-export function getSessionUsage(sessionId: number): SessionUsageDetail {
-  const rows = sqlite
-    .prepare(`${USAGE_JOIN} WHERE u.session_id = ?`)
-    .all(sessionId) as UsageJoinRow[];
+function totalCost(rows: UsageJoinRow[]): {
+  costUsd: number | null;
+  costSource: CostSource;
+} {
   let costUsd = 0;
   let priced = true;
   let reported = rows.length > 0;
@@ -775,6 +807,27 @@ export function getSessionUsage(sessionId: number): SessionUsageDetail {
     else costUsd += cost;
     if (row.reportedCostUsd === null) reported = false;
   }
+  const known = rows.length > 0 && priced;
+  return {
+    costUsd: known ? costUsd : null,
+    costSource: known ? (reported ? "reported" : "estimated") : "unavailable",
+  };
+}
+
+/**
+ * Cost is derived at read time (never stored) so pricing-table updates
+ * apply retroactively. Per the pricing-trust rule, a session only gets a
+ * dollar figure when every token-bearing row is priced — either reported
+ * by the provider or matched to a pricing entry. Own spend and the subagent
+ * roll-up are reported separately so the detail view can show the breakdown;
+ * `models` stays this session's own usage.
+ */
+export function getSessionUsage(sessionId: number): SessionUsageDetail {
+  const subtree = subtreeUsageRows([sessionId]);
+  const rows = subtree.filter((row) => row.sessionId === sessionId);
+  const descendants = subtree.filter((row) => row.sessionId !== sessionId);
+  const own = totalCost(rows);
+  const total = totalCost(subtree);
   return {
     models: rows.map((row) => ({
       model: row.model,
@@ -783,13 +836,12 @@ export function getSessionUsage(sessionId: number): SessionUsageDetail {
       cacheReadTokens: row.cacheReadTokens,
       cacheWriteTokens: row.cacheWriteTokens,
     })),
-    costUsd: rows.length && priced ? costUsd : null,
-    costSource:
-      rows.length && priced
-        ? reported
-          ? "reported"
-          : "estimated"
-        : "unavailable",
+    ...own,
+    subagentCostUsd: descendants.length
+      ? totalCost(descendants).costUsd
+      : /* nothing delegated: an honest zero, not an unknown */ 0,
+    totalCostUsd: total.costUsd,
+    totalCostSource: total.costSource,
   };
 }
 
@@ -1178,8 +1230,14 @@ export interface CapabilityCoverage {
 
 export interface CapabilitiesInsight {
   range: CapabilityRange;
-  mostUsed: CapabilityInsight[];
+  used: CapabilityInsight[];
   unused: UnusedCapabilityInsight[];
+  // Adoption denominator: distinct active installations across providers with
+  // complete coverage, and how many of those were observed inside the range.
+  // Both stay 0 while no provider has complete coverage, so the ratio is only
+  // ever stated when it can be trusted.
+  installedCount: number;
+  installedUsedCount: number;
   coverage: CapabilityCoverage[];
 }
 
@@ -1206,6 +1264,7 @@ export interface Insights {
       top5SharePct: number | null;
       paretoSharePct: number | null;
     };
+    /** Main sessions ranked by rolled-up cost (own spend + subagents). */
     outliers: {
       id: number;
       title: string;
@@ -1302,8 +1361,11 @@ function capabilityInsights(
         right.lastUsedAt.localeCompare(left.lastUsedAt) ||
         left.name.localeCompare(right.name),
     );
-  const mostUsed = (["skill", "mcp"] as const).flatMap((kind) =>
-    ranked.filter((item) => item.kind === kind).slice(0, 5),
+  // Every observed capability is returned: the card ranks each kind in its own
+  // tab and discloses the tail behind a toggle, so trimming here would make the
+  // "show all N" affordance lie about what it can reveal.
+  const used = (["skill", "mcp"] as const).flatMap((kind) =>
+    ranked.filter((item) => item.kind === kind),
   );
 
   const scanRows = sqlite
@@ -1352,6 +1414,8 @@ function capabilityInsights(
     UnusedCapabilityInsight & { providerSet: Set<AgentProvider> }
   >();
   const seenInstallations = new Set<string>();
+  const installedKeys = new Set<string>();
+  const installedUsedKeys = new Set<string>();
   for (const inventory of inventories) {
     if (coverageByProvider.get(inventory.provider) !== "complete") continue;
     for (const installed of inventory.capabilities) {
@@ -1371,9 +1435,13 @@ function capabilityInsights(
       if (seenInstallations.has(installationKey)) continue;
       seenInstallations.add(installationKey);
       const lastUsedAt = history.get(installationKey) ?? null;
-      if (lastUsedAt !== null && lastUsedAt >= rangeStart) continue;
-
       const groupKey = `${installed.kind}:${name}`;
+      installedKeys.add(groupKey);
+      if (lastUsedAt !== null && lastUsedAt >= rangeStart) {
+        installedUsedKeys.add(groupKey);
+        continue;
+      }
+
       const current = unusedByCapability.get(groupKey) ?? {
         kind: installed.kind,
         name,
@@ -1410,7 +1478,14 @@ function capabilityInsights(
       );
     });
 
-  return { range, mostUsed, unused, coverage };
+  return {
+    range,
+    used,
+    unused,
+    installedCount: installedKeys.size,
+    installedUsedCount: installedUsedKeys.size,
+    coverage,
+  };
 }
 
 // Aggregate cache hit-rate and $-saved over a window of usage rows.
@@ -1534,6 +1609,8 @@ export function getInsights(
   // --- cost outliers: per-session cost + runtime over the week window ---
   interface CostRow {
     id: number;
+    externalId: string;
+    parentExternalId: string | null;
     title: string;
     model: string | null;
     provider: AgentProvider;
@@ -1542,7 +1619,8 @@ export function getInsights(
   }
   const costSessionRows = sqlite
     .prepare(
-      `SELECT s.id, s.title, s.model, s.provider, s.started_at startedAt,
+      `SELECT s.id, s.external_id externalId, s.parent_external_id parentExternalId,
+        s.title, s.model, s.provider, s.started_at startedAt,
         CAST((julianday(COALESCE(s.ended_at, s.updated_at)) - julianday(s.started_at)) * 86400000 AS INTEGER) AS runtimeMs
        FROM sessions s WHERE s.started_at >= ?`,
     )
@@ -1593,9 +1671,37 @@ export function getInsights(
   });
 
   // --- cost outliers ---
-  // Per-session usage cost over the week, keyed by session id. A session's
-  // cost is the sum of its priced usage rows; unpriced rows contribute nothing
-  // to that session's cost. runtimeMs comes from costSessionRows.
+  // Spend rolls up to the session that delegated it, matching the per-session
+  // cost shown everywhere else: a main session's figure is its own priced
+  // usage plus every descendant subagent's. Attribution is resolved *within
+  // the week window* — a session whose parent started before the window is
+  // its own root here — so the roll-ups still sum to exactly weekTotalUsd and
+  // Pareto shares stay bounded. Unpriced rows contribute nothing to a
+  // session's cost. runtimeMs comes from costSessionRows.
+  const runtimeById = new Map(costSessionRows.map((row) => [row.id, row]));
+  const byExternalId = new Map(
+    costSessionRows.map((row) => [`${row.provider}:${row.externalId}`, row]),
+  );
+  const rootIdCache = new Map<number, number>();
+  const rootIdOf = (sessionId: number): number => {
+    const cached = rootIdCache.get(sessionId);
+    if (cached !== undefined) return cached;
+    // Walk to the topmost in-window ancestor. `seen` guards against a cycle a
+    // malformed rollout could introduce; the chain then roots at its entry.
+    const seen = new Set<number>();
+    let current = runtimeById.get(sessionId);
+    let root = sessionId;
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      root = current.id;
+      current = current.parentExternalId
+        ? byExternalId.get(`${current.provider}:${current.parentExternalId}`)
+        : undefined;
+    }
+    rootIdCache.set(sessionId, root);
+    return root;
+  };
+
   const sessionCost = new Map<number, number>();
   let weekTotalUsd: number | null = 0;
   let anyUnpriced = false;
@@ -1606,17 +1712,14 @@ export function getInsights(
       continue;
     }
     weekTotalUsd += cost; // accumulate the priced grand total
-    sessionCost.set(
-      row.sessionId,
-      (sessionCost.get(row.sessionId) ?? 0) + cost,
-    );
+    const rootId = rootIdOf(row.sessionId);
+    sessionCost.set(rootId, (sessionCost.get(rootId) ?? 0) + cost);
   }
   if (anyUnpriced) weekTotalUsd = null; // trust rule: null when any row unpriced
 
-  // Outliers: top 5 by session cost. usdPerMin excludes zero/negative runtime.
-  const runtimeById = new Map(
-    costSessionRows.map((r) => [r.id, { row: r, runtimeMs: r.runtimeMs }]),
-  );
+  // Outliers: top 5 by rolled-up session cost. usdPerMin measures the whole
+  // delegated tree against the main session's wall clock, since subagents run
+  // inside it. Zero/negative runtime is floored at a minute.
   const outliers = [...sessionCost.entries()]
     .map(([id, costUsd]) => {
       const meta = runtimeById.get(id);
@@ -1624,8 +1727,8 @@ export function getInsights(
       const minutes = Math.max(runtimeMs / 60_000, 1);
       return {
         id,
-        title: meta?.row.title ?? "Untitled",
-        model: meta?.row.model ?? null,
+        title: meta?.title ?? "Untitled",
+        model: meta?.model ?? null,
         costUsd,
         runtimeMs,
         usdPerMin: costUsd / minutes,

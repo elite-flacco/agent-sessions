@@ -23,7 +23,7 @@ afterEach(() => {
 
 const fixtureCapabilities: CapabilitiesInsight = {
   range: "30d",
-  mostUsed: [
+  used: [
     {
       kind: "skill",
       name: "frontend-rules",
@@ -48,6 +48,8 @@ const fixtureCapabilities: CapabilitiesInsight = {
     lastUsedAt: null,
     neverObserved: true,
   })),
+  installedCount: 11,
+  installedUsedCount: 2,
   coverage: [
     { provider: "codex", state: "complete" },
     {
@@ -58,33 +60,98 @@ const fixtureCapabilities: CapabilitiesInsight = {
   ],
 };
 
+function tab(name: RegExp): HTMLElement {
+  return screen.getByRole("tab", { name });
+}
+
 describe("CapabilityUsageCard", () => {
-  test("renders most-used and unused capability states", () => {
+  test("leads with the adoption ratio and opens on the skills ladder", () => {
     render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
 
     expect(
-      screen.getByRole("heading", { name: "Skills & MCP usage" }),
+      screen.getByRole("heading", { name: "Capability adoption" }),
     ).toBeVisible();
     expect(
-      screen.getByText("Observed capability calls across coding agents"),
+      screen.getByText(/of 11 installed capabilities used · 30 days/),
     ).toBeVisible();
+    expect(tab(/Skills/)).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("frontend-rules")).toBeVisible();
-    expect(screen.getByText("github")).toBeVisible();
-    const neverObserved = screen.getAllByText(
-      "Never observed in available history",
+    expect(screen.queryByText("github")).not.toBeInTheDocument();
+    expect(screen.queryByText("unused-1")).not.toBeInTheDocument();
+  });
+
+  test("states a bare used count when no provider has complete coverage", () => {
+    render(
+      <CapabilityUsageCard
+        capabilities={{
+          ...fixtureCapabilities,
+          installedCount: 0,
+          installedUsedCount: 0,
+        }}
+      />,
     );
+
+    expect(screen.getByText(/capabilities used · 30 days/)).toBeVisible();
+    expect(
+      screen.queryByText(/installed capabilities/),
+    ).not.toBeInTheDocument();
+  });
+
+  test("counts each tab and scales bars against that tab's own peak", () => {
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    expect(tab(/Skills/)).toHaveTextContent("1");
+    expect(tab(/MCPs/)).toHaveTextContent("1");
+    expect(tab(/Unused/)).toHaveTextContent("9");
+
+    // frontend-rules (2) tops the skills tab and fills it, even though the
+    // MCP tab's github (4) is the larger number.
+    expect(document.querySelector(".meter-fill-10")).not.toBeNull();
+  });
+
+  test("writes only non-default tab selection to the URL", () => {
+    query = "provider=codex";
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    fireEvent.click(tab(/Unused/));
+    expect(replace).toHaveBeenCalledWith(
+      "/insights?provider=codex&capabilityTab=unused",
+      { scroll: false },
+    );
+
+    replace.mockReset();
+    fireEvent.click(tab(/Skills/));
+    expect(replace).toHaveBeenCalledWith("/insights?provider=codex", {
+      scroll: false,
+    });
+  });
+
+  test("renders the unused list and its coverage caveat on the unused tab", () => {
+    query = "capabilityTab=unused";
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    expect(tab(/Unused/)).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("frontend-rules")).not.toBeInTheDocument();
+
+    const neverObserved = screen.getAllByText("Never observed");
     expect(neverObserved).toHaveLength(9);
     expect(neverObserved[0]).toBeVisible();
     expect(neverObserved[8]).not.toBeVisible();
-    expect(screen.getByText("2 uses · 2 sessions")).toBeVisible();
 
-    const disclosure = screen
-      .getByText("Show all 9 unused capabilities")
-      .closest("details");
-    expect(disclosure).not.toBeNull();
+    const disclosure = screen.getByText("Show 1 more").closest("details");
     expect(disclosure).toContainElement(screen.getByText("unused-9"));
-    fireEvent.click(screen.getByText("Show all 9 unused capabilities"));
+    fireEvent.click(screen.getByText("Show 1 more"));
     expect(neverObserved[8]).toBeVisible();
+
+    expect(screen.getByText(/Pi/)).toHaveTextContent(
+      "Pi coverage partial: Some session sources could not be read.",
+    );
+  });
+
+  test("keeps the coverage caveat attached to the unused conclusion", () => {
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    expect(screen.queryByText(/Pi coverage partial/)).not.toBeInTheDocument();
   });
 
   test("writes only non-default range selection to the URL", () => {
@@ -94,6 +161,7 @@ describe("CapabilityUsageCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     expect(replace).toHaveBeenCalledWith(
       "/insights?provider=codex&capabilityRange=7d",
+      { scroll: false },
     );
   });
 
@@ -106,14 +174,8 @@ describe("CapabilityUsageCard", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "30 days" }));
-    expect(replace).toHaveBeenCalledWith("/insights?provider=codex");
-  });
-
-  test("explains providers omitted by incomplete coverage", () => {
-    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
-
-    expect(screen.getByText(/Pi/)).toHaveTextContent(
-      "Pi coverage partial: Some session sources could not be read.",
-    );
+    expect(replace).toHaveBeenCalledWith("/insights?provider=codex", {
+      scroll: false,
+    });
   });
 });
