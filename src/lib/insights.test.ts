@@ -633,6 +633,11 @@ describe("getInsights — capability usage", () => {
     const Database = (await import("better-sqlite3")).default;
     const db = new Database(dbPath);
     db.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
       CREATE TABLE message (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
         time_created INTEGER NOT NULL, data TEXT NOT NULL
@@ -655,8 +660,8 @@ describe("getInsights — capability usage", () => {
     sqlite
       .prepare(
         `INSERT INTO adapter_scans
-        (provider, last_scan_at, sources, imported, errors)
-        VALUES ('zcode', ?, 1, 1, 0)`,
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 1)`,
       )
       .run(new Date().toISOString());
     try {
@@ -666,21 +671,51 @@ describe("getInsights — capability usage", () => {
         warnings: [],
         capabilities: [capability("zcode", "skill", "zcode-never-used")],
       };
-      const capabilities = queries.getInsights("30d", [
+      const complete = queries.getInsights("30d", [
         zcodeInventory,
       ]).capabilities;
 
-      expect(capabilities.coverage).toContainEqual({
+      expect(complete.coverage).toContainEqual({
         provider: "zcode",
         state: "complete",
       });
-      expect(capabilities.unused).toEqual([
+      expect(complete.unused).toEqual([
         expect.objectContaining({
           name: "zcode-never-used",
           providers: ["zcode"],
           neverObserved: true,
         }),
       ]);
+
+      sqlite
+        .prepare(
+          `UPDATE adapter_scans
+           SET capability_reconciliation_complete = 0
+           WHERE provider = 'zcode'`,
+        )
+        .run();
+      const failed = queries.getInsights("30d", [zcodeInventory]).capabilities;
+      expect(failed.coverage).toContainEqual({
+        provider: "zcode",
+        state: "partial",
+      });
+      expect(failed.unused).toEqual([]);
+
+      sqlite
+        .prepare(
+          `UPDATE adapter_scans
+           SET capability_reconciliation_complete = 1
+           WHERE provider = 'zcode'`,
+        )
+        .run();
+      const recovered = queries.getInsights("30d", [
+        zcodeInventory,
+      ]).capabilities;
+      expect(recovered.coverage).toContainEqual({
+        provider: "zcode",
+        state: "complete",
+      });
+      expect(recovered.unused).toHaveLength(1);
     } finally {
       sqlite
         .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")

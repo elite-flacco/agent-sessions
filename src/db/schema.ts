@@ -130,6 +130,11 @@ export const adapterScans = sqliteTable("adapter_scans", {
   sources: integer("sources").notNull(),
   imported: integer("imported").notNull(),
   errors: integer("errors").notNull(),
+  capabilityReconciliationComplete: integer(
+    "capability_reconciliation_complete",
+  )
+    .notNull()
+    .default(0),
 });
 
 export const collectorLeases = sqliteTable("collector_leases", {

@@ -39,6 +39,10 @@ const zcodeDbPath = (): string =>
     : path.join(os.homedir(), ".zcode", "cli", "db", "db.sqlite");
 
 const dbConnections = new Map<string, BetterSqlite3Database>();
+const ZCODE_SESSION_SELECT = `SELECT id, directory, title, parent_id,
+  task_type, title_source, time_created, time_updated FROM session`;
+
+export type ZcodeQueryResult<T> = { ok: true; value: T } | { ok: false };
 
 function zcodeDb(): BetterSqlite3Database | undefined {
   const dbPath = zcodeDbPath();
@@ -67,6 +71,9 @@ export function isZcodeCapabilityDbAvailable(): boolean {
   const db = zcodeDb();
   if (!db) return false;
   try {
+    db.prepare(`${ZCODE_SESSION_SELECT} WHERE id = ? LIMIT 0`).all(
+      "__relay_capability_health__",
+    );
     db.prepare(
       `SELECT id, time_created timeCreated, data
        FROM message WHERE session_id = ? LIMIT 0`,
@@ -121,24 +128,44 @@ export function getZcodeSessionMetadata(
     const row = db
       .prepare("SELECT * FROM session WHERE id = ?")
       .get(sessionId) as Record<string, unknown> | undefined;
-    if (!row) return undefined;
-    return metadata(row);
+    return row ? metadata(row) : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function listZcodeSessionMetadata(): ZcodeSessionMetadata[] | undefined {
+export function getZcodeSessionMetadataResult(
+  sessionId: string,
+): ZcodeQueryResult<ZcodeSessionMetadata | undefined> {
   const db = zcodeDb();
-  if (!db) return undefined;
+  if (!db) return { ok: false };
   try {
-    return (
-      db
-        .prepare("SELECT * FROM session ORDER BY time_created, id")
-        .all() as Array<Record<string, unknown>>
-    ).map(metadata);
+    const row = db
+      .prepare(`${ZCODE_SESSION_SELECT} WHERE id = ?`)
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return { ok: true, value: row ? metadata(row) : undefined };
   } catch {
-    return undefined;
+    return { ok: false };
+  }
+}
+
+export function listZcodeSessionMetadata(): ZcodeSessionMetadata[] | undefined {
+  const result = listZcodeSessionMetadataResult();
+  return result.ok ? result.value : undefined;
+}
+
+export function listZcodeSessionMetadataResult(): ZcodeQueryResult<
+  ZcodeSessionMetadata[]
+> {
+  const db = zcodeDb();
+  if (!db) return { ok: false };
+  try {
+    const rows = db
+      .prepare(`${ZCODE_SESSION_SELECT} ORDER BY time_created, id`)
+      .all() as Array<Record<string, unknown>>;
+    return { ok: true, value: rows.map(metadata) };
+  } catch {
+    return { ok: false };
   }
 }
 

@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   __resetZcodeDbCache,
+  getZcodeSessionMetadataResult,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
 } from "./zcode-db";
@@ -34,15 +35,36 @@ afterEach(async () => {
 });
 
 describe("Zcode capability database health", () => {
-  it("rejects an open database that lacks the authoritative capability tables", async () => {
-    await zcodeFixture("CREATE TABLE session (id TEXT PRIMARY KEY)");
+  it("rejects an open database that lacks the authoritative session query", async () => {
+    await zcodeFixture(`
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+        session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      );
+    `);
 
     expect(isZcodeDbAvailable()).toBe(true);
     expect(isZcodeCapabilityDbAvailable()).toBe(false);
+    expect(getZcodeSessionMetadataResult("missing")).toEqual({ ok: false });
   });
 
-  it("accepts a database with readable message, part, and tool usage queries", async () => {
+  it("accepts a database with every authoritative capability query", async () => {
     await zcodeFixture(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
       CREATE TABLE message (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -66,5 +88,9 @@ describe("Zcode capability database health", () => {
     `);
 
     expect(isZcodeCapabilityDbAvailable()).toBe(true);
+    expect(getZcodeSessionMetadataResult("missing")).toEqual({
+      ok: true,
+      value: undefined,
+    });
   });
 });

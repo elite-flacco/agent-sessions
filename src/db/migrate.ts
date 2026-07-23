@@ -53,20 +53,32 @@ if (hasSessions) {
         )
         .get(),
     );
+    const adapterScanColumns = sqlite
+      .prepare("PRAGMA table_info(adapter_scans)")
+      .all() as { name: string }[];
+    const hasCapabilityReconciliation = adapterScanColumns.some(
+      (column) => column.name === "capability_reconciliation_complete",
+    );
     const migrations = readMigrationFiles({ migrationsFolder });
     const baseline =
+      hasCapabilityReconciliation &&
       hasCapabilityUsage &&
       hasStatusReason &&
       hasSessionHierarchy &&
       hasSourcePath
         ? migrations
-        : hasStatusReason && hasSessionHierarchy && hasSourcePath
+        : hasCapabilityUsage &&
+            hasStatusReason &&
+            hasSessionHierarchy &&
+            hasSourcePath
           ? migrations.slice(0, -1)
-          : hasSessionHierarchy && hasSourcePath
+          : hasStatusReason && hasSessionHierarchy && hasSourcePath
             ? migrations.slice(0, -2)
-            : hasSourcePath
+            : hasSessionHierarchy && hasSourcePath
               ? migrations.slice(0, -3)
-              : migrations.slice(0, -4);
+              : hasSourcePath
+                ? migrations.slice(0, -4)
+                : migrations.slice(0, -5);
     const insert = sqlite.prepare(
       "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
     );

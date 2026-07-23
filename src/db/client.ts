@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS adapter_scans (
   last_scan_at TEXT NOT NULL,
   sources INTEGER NOT NULL,
   imported INTEGER NOT NULL,
-  errors INTEGER NOT NULL
+  errors INTEGER NOT NULL,
+  capability_reconciliation_complete INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS collector_leases (
   name TEXT PRIMARY KEY,

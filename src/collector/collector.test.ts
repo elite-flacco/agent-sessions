@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProviderAdapter } from "@/lib/types";
 
@@ -69,6 +70,39 @@ function sessionCount(externalId: string): number {
       .prepare("SELECT COUNT(*) count FROM sessions WHERE external_id = ?")
       .get(externalId) as { count: number }
   ).count;
+}
+
+function createZcodeCapabilityDatabase(
+  dbPath: string,
+  completeSchema: boolean,
+): void {
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+      parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+    );
+    ${
+      completeSchema
+        ? `CREATE TABLE message (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            time_created INTEGER NOT NULL, data TEXT NOT NULL
+          );
+          CREATE TABLE part (
+            id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+            session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+            data TEXT NOT NULL
+          );
+          CREATE TABLE tool_usage (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+            started_at INTEGER NOT NULL
+          );`
+        : ""
+    }
+  `);
+  db.close();
 }
 
 describe("collector sync", () => {
@@ -217,6 +251,199 @@ describe("collector sync", () => {
       .get() as { sources: number } | undefined;
     expect(scan).toBeDefined();
     expect(scan?.sources).toBeGreaterThanOrEqual(1);
+  });
+
+  it("persists Zcode capability reconciliation success, failure, and recovery", async () => {
+    const healthyOne = path.join(directory, "zcode-capability-healthy-one.db");
+    const unhealthy = path.join(directory, "zcode-capability-unhealthy.db");
+    const healthyTwo = path.join(directory, "zcode-capability-healthy-two.db");
+    createZcodeCapabilityDatabase(healthyOne, true);
+    createZcodeCapabilityDatabase(unhealthy, false);
+    createZcodeCapabilityDatabase(healthyTwo, true);
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 0)`,
+      )
+      .run(new Date().toISOString());
+    const reconciliationState = (): number =>
+      (
+        sqlite
+          .prepare(
+            `SELECT capability_reconciliation_complete complete
+             FROM adapter_scans WHERE provider = 'zcode'`,
+          )
+          .get() as { complete: number }
+      ).complete;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+
+    try {
+      process.env.ZCODE_DB_PATH = healthyOne;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(1);
+
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at)
+          VALUES ('zcode-rollout-preserved', 'zcode', 'Preserved rollout',
+                  'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z')`,
+        )
+        .run();
+      sqlite
+        .prepare(
+          `INSERT INTO session_capability_usage
+          (session_id, external_id, provider, kind, capability_name, occurred_at)
+          SELECT id, 'skill:preserved', 'zcode', 'skill', 'frontend-rules',
+                 '2026-07-22T10:00:30Z'
+          FROM sessions WHERE external_id = 'zcode-rollout-preserved'`,
+        )
+        .run();
+
+      process.env.ZCODE_DB_PATH = unhealthy;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(0);
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE external_id = 'skill:preserved'`,
+            )
+            .get() as { count: number }
+        ).count,
+      ).toBe(1);
+
+      process.env.ZCODE_DB_PATH = healthyTwo;
+      __resetZcodeDbCache();
+      await collector.syncAll({ adapters: [] });
+      expect(reconciliationState()).toBe(1);
+      expect(
+        (
+          sqlite
+            .prepare(
+              `SELECT COUNT(*) count FROM session_capability_usage
+               WHERE external_id = 'skill:preserved'`,
+            )
+            .get() as { count: number }
+        ).count,
+      ).toBe(1);
+    } finally {
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+      __resetZcodeDbCache();
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id = 'zcode-rollout-preserved'",
+        )
+        .run();
+    }
+  });
+
+  it("records a per-session Zcode capability read failure without clearing rollout evidence", async () => {
+    const dbPath = path.join(directory, "zcode-capability-read-failure.db");
+    const zcodeDb = new Database(dbPath);
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+        session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage_source (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      );
+      CREATE VIEW tool_usage AS
+        SELECT id, session_id, tool_call_id, tool_name,
+          CASE WHEN session_id = 'zcode-per-session-failure'
+            THEN json_extract('not-json', '$') ELSE started_at END started_at
+        FROM tool_usage_source;
+      INSERT INTO session
+        (id, directory, title, parent_id, task_type, title_source,
+         time_created, time_updated)
+      VALUES ('zcode-per-session-failure', '/work/relay', 'Read failure',
+              NULL, 'interactive', 'generated', 1750000000000, 1750000001000);
+      INSERT INTO tool_usage_source
+        (id, session_id, tool_call_id, tool_name, started_at)
+      VALUES ('tool-1', 'zcode-per-session-failure', 'call-1',
+              'mcp__github__search_prs', 1750000000500);
+    `);
+    zcodeDb.close();
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 1)`,
+      )
+      .run(new Date().toISOString());
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, status, started_at, updated_at)
+        VALUES ('zcode-per-session-failure', 'zcode', 'Rollout title',
+                'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z')`,
+      )
+      .run();
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+        (session_id, external_id, provider, kind, capability_name, occurred_at)
+        SELECT id, 'skill:rollout-preserved', 'zcode', 'skill',
+               'frontend-rules', '2026-07-22T10:00:30Z'
+        FROM sessions WHERE external_id = 'zcode-per-session-failure'`,
+      )
+      .run();
+    process.env.ZCODE_DB_PATH = dbPath;
+    const { __resetZcodeDbCache, isZcodeCapabilityDbAvailable } =
+      await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+
+    try {
+      expect(isZcodeCapabilityDbAvailable()).toBe(true);
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT capability_reconciliation_complete complete
+             FROM adapter_scans WHERE provider = 'zcode'`,
+          )
+          .get(),
+      ).toEqual({ complete: 0 });
+      expect(
+        sqlite
+          .prepare(
+            `SELECT capability_name name FROM session_capability_usage
+             WHERE external_id = 'skill:rollout-preserved'`,
+          )
+          .get(),
+      ).toEqual({ name: "frontend-rules" });
+    } finally {
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+      __resetZcodeDbCache();
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id = 'zcode-per-session-failure'",
+        )
+        .run();
+    }
   });
 
   it("clears sync errors once a source parses cleanly again", async () => {

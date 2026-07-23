@@ -16,9 +16,10 @@ import { getCodexThreadTitle } from "@/lib/codex-db";
 import { sqlite } from "@/db/client";
 import { getAgentInventories } from "@/lib/agent-inventory";
 import {
-  getZcodeSessionMetadata,
+  getZcodeSessionMetadataResult,
+  isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
-  listZcodeSessionMetadata,
+  listZcodeSessionMetadataResult,
   readZcodeSessionMessages,
   readZcodeToolUsage,
   type ZcodeStoredMessage,
@@ -327,158 +328,195 @@ function reconcileCodexTitles(): void {
   write();
 }
 
-function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): void {
-  if (!isZcodeDbAvailable()) return;
-  const sessions = sqlite
-    .prepare(
-      "SELECT id, external_id externalId, title, cwd, status, updated_at updatedAt FROM sessions WHERE provider = 'zcode'",
-    )
-    .all() as Array<{
-    id: number;
-    externalId: string;
-    title: string;
-    cwd: string | null;
-    status: string;
-    updatedAt: string;
-  }>;
-  const update = sqlite.prepare(
-    `UPDATE sessions
-     SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-         session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?
-     WHERE id = ?`,
-  );
-  const write = sqlite.transaction(() => {
-    for (const session of sessions) {
-      const metadata = getZcodeSessionMetadata(session.externalId);
-      if (!metadata) continue;
-      const cwd = metadata.directory ?? session.cwd ?? undefined;
-      const storedMessages = readZcodeSessionMessages(session.externalId);
-      const storedTools = readZcodeToolUsage(session.externalId);
-      const messages = storedMessages ?? [];
-      const updatedAt =
+function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
+  if (!isZcodeDbAvailable()) return false;
+  let capabilityComplete = isZcodeCapabilityDbAvailable();
+  const capabilityReplacements: Array<{
+    sessionId: number;
+    usage: CapabilityUsage[];
+  }> = [];
+  const databaseOnlySessions: NormalizedSession[] = [];
+
+  try {
+    const sessions = sqlite
+      .prepare(
+        "SELECT id, external_id externalId, title, cwd, status, updated_at updatedAt FROM sessions WHERE provider = 'zcode'",
+      )
+      .all() as Array<{
+      id: number;
+      externalId: string;
+      title: string;
+      cwd: string | null;
+      status: string;
+      updatedAt: string;
+    }>;
+    const update = sqlite.prepare(
+      `UPDATE sessions
+       SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
+           session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?
+       WHERE id = ?`,
+    );
+    const writeMetadata = sqlite.transaction(() => {
+      for (const session of sessions) {
+        const metadataResult = getZcodeSessionMetadataResult(
+          session.externalId,
+        );
+        if (!metadataResult.ok) {
+          capabilityComplete = false;
+          continue;
+        }
+        const metadata = metadataResult.value;
+        // A rollout can legitimately have no corresponding database session.
+        // That is absence, not a failed query, so its rollout evidence stays.
+        if (!metadata) continue;
+        const cwd = metadata.directory ?? session.cwd ?? undefined;
+        const storedMessages = readZcodeSessionMessages(session.externalId);
+        const storedTools = readZcodeToolUsage(session.externalId);
+        if (!storedMessages || !storedTools) capabilityComplete = false;
+        const messages = storedMessages ?? [];
+        const updatedAt =
+          metadata.timeUpdated === undefined
+            ? undefined
+            : new Date(metadata.timeUpdated).toISOString();
+        const storedStatus =
+          messages.length && updatedAt
+            ? zcodeStoredStatus(messages, updatedAt)
+            : undefined;
+        const keepInterrupted =
+          session.status === "interrupted" &&
+          (storedStatus?.status === "running" ||
+            storedStatus?.status === "incomplete");
+        const status = keepInterrupted
+          ? session.status
+          : (storedStatus?.status ?? session.status);
+        const statusReason = keepInterrupted
+          ? null
+          : (storedStatus?.reason ?? null);
+        // The Zcode DB is often fresher than the rollout JSONL (event-only
+        // subagents, interactive turns). Advance updated_at so a genuinely
+        // active session does not read as stale at query time.
+        const freshestUpdatedAt =
+          updatedAt && updatedAt > session.updatedAt
+            ? updatedAt
+            : session.updatedAt;
+        update.run(
+          zcodeTitle(
+            safeTitle(metadata.title, session.title),
+            metadata.taskType,
+            messages,
+          ),
+          cwd ?? null,
+          repositoryFromCwd(cwd) ?? null,
+          sessionSummary("zcode", cwd),
+          metadata.parentId ?? null,
+          metadata.taskType === "subagent_child" ? "subagent" : "main",
+          metadata.parentId ? 1 : 0,
+          status,
+          statusReason,
+          status === "completed" ||
+            status === "needs_attention" ||
+            status === "failed"
+            ? (updatedAt ?? null)
+            : null,
+          freshestUpdatedAt,
+          session.id,
+        );
+        if (storedMessages && storedTools) {
+          capabilityReplacements.push({
+            sessionId: session.id,
+            usage: zcodeStoredCapabilityUsage(
+              storedMessages,
+              storedTools,
+              capabilityLookup,
+            ),
+          });
+        }
+      }
+    });
+    writeMetadata();
+
+    const metadataListResult = listZcodeSessionMetadataResult();
+    if (!metadataListResult.ok) capabilityComplete = false;
+    const allMetadata = metadataListResult.ok ? metadataListResult.value : [];
+    const existingIds = new Set(sessions.map((session) => session.externalId));
+    for (const metadata of allMetadata) {
+      if (existingIds.has(metadata.id ?? "")) continue;
+      if (
+        !metadata.id ||
+        metadata.timeCreated === undefined ||
         metadata.timeUpdated === undefined
-          ? undefined
-          : new Date(metadata.timeUpdated).toISOString();
-      const storedStatus =
-        messages.length && updatedAt
-          ? zcodeStoredStatus(messages, updatedAt)
-          : undefined;
-      const keepInterrupted =
-        session.status === "interrupted" &&
-        (storedStatus?.status === "running" ||
-          storedStatus?.status === "incomplete");
-      const status = keepInterrupted
-        ? session.status
-        : (storedStatus?.status ?? session.status);
-      const statusReason = keepInterrupted
-        ? null
-        : (storedStatus?.reason ?? null);
-      // The Zcode DB is often fresher than the rollout JSONL (event-only
-      // subagents, interactive turns). Advance updated_at so a genuinely
-      // active session does not read as stale at query time.
-      const freshestUpdatedAt =
-        updatedAt && updatedAt > session.updatedAt
-          ? updatedAt
-          : session.updatedAt;
-      update.run(
-        zcodeTitle(
-          safeTitle(metadata.title, session.title),
+      ) {
+        capabilityComplete = false;
+        continue;
+      }
+      const startedAt = new Date(metadata.timeCreated).toISOString();
+      const updatedAt = new Date(metadata.timeUpdated).toISOString();
+      const storedMessages = readZcodeSessionMessages(metadata.id);
+      const storedTools = readZcodeToolUsage(metadata.id);
+      if (!storedMessages || !storedTools) {
+        capabilityComplete = false;
+        continue;
+      }
+      const { status, reason: statusReason } = zcodeStoredStatus(
+        storedMessages,
+        updatedAt,
+      );
+      databaseOnlySessions.push({
+        externalId: metadata.id,
+        provider: "zcode",
+        parentExternalId: metadata.parentId,
+        sessionKind:
+          metadata.taskType === "subagent_child" ? "subagent" : "main",
+        agentDepth: metadata.parentId ? 1 : 0,
+        title: zcodeTitle(
+          safeTitle(metadata.title, "Zcode coding session"),
           metadata.taskType,
-          messages,
+          storedMessages,
         ),
-        cwd ?? null,
-        repositoryFromCwd(cwd) ?? null,
-        sessionSummary("zcode", cwd),
-        metadata.parentId ?? null,
-        metadata.taskType === "subagent_child" ? "subagent" : "main",
-        metadata.parentId ? 1 : 0,
+        summary: sessionSummary("zcode", metadata.directory),
+        repository: repositoryFromCwd(metadata.directory),
+        cwd: metadata.directory,
         status,
         statusReason,
-        status === "completed" ||
+        startedAt,
+        endedAt:
+          status === "completed" ||
           status === "needs_attention" ||
           status === "failed"
-          ? (updatedAt ?? null)
-          : null,
-        freshestUpdatedAt,
-        session.id,
-      );
-      if (storedMessages && storedTools)
-        replaceCapabilityUsage(
-          session.id,
-          "zcode",
-          zcodeStoredCapabilityUsage(
-            storedMessages,
-            storedTools,
-            capabilityLookup,
-          ),
-        );
+            ? updatedAt
+            : undefined,
+        updatedAt,
+        usage: [],
+        capabilityUsage: zcodeStoredCapabilityUsage(
+          storedMessages,
+          storedTools,
+          capabilityLookup,
+        ),
+        events: [
+          {
+            externalId: "started",
+            kind: "started",
+            title: "Session started",
+            occurredAt: startedAt,
+          },
+        ],
+      });
     }
-  });
-  write();
 
-  const allMetadata = listZcodeSessionMetadata() ?? [];
-  const existingIds = new Set(sessions.map((session) => session.externalId));
-  for (const metadata of allMetadata) {
-    if (
-      !metadata.id ||
-      existingIds.has(metadata.id) ||
-      metadata.timeCreated === undefined ||
-      metadata.timeUpdated === undefined
-    )
-      continue;
-    const startedAt = new Date(metadata.timeCreated).toISOString();
-    const updatedAt = new Date(metadata.timeUpdated).toISOString();
-    const storedMessages = readZcodeSessionMessages(metadata.id);
-    const storedTools = readZcodeToolUsage(metadata.id);
-    const messages = storedMessages ?? [];
-    const capabilityUsage =
-      storedMessages && storedTools
-        ? zcodeStoredCapabilityUsage(
-            storedMessages,
-            storedTools,
-            capabilityLookup,
-          )
-        : [];
-    const { status, reason: statusReason } = zcodeStoredStatus(
-      messages,
-      updatedAt,
-    );
-    const title = zcodeTitle(
-      safeTitle(metadata.title, "Zcode coding session"),
-      metadata.taskType,
-      messages,
-    );
-    persistSession({
-      externalId: metadata.id,
-      provider: "zcode",
-      parentExternalId: metadata.parentId,
-      sessionKind: metadata.taskType === "subagent_child" ? "subagent" : "main",
-      agentDepth: metadata.parentId ? 1 : 0,
-      title,
-      summary: sessionSummary("zcode", metadata.directory),
-      repository: repositoryFromCwd(metadata.directory),
-      cwd: metadata.directory,
-      status,
-      statusReason,
-      startedAt,
-      endedAt:
-        status === "completed" ||
-        status === "needs_attention" ||
-        status === "failed"
-          ? updatedAt
-          : undefined,
-      updatedAt,
-      usage: [],
-      capabilityUsage,
-      events: [
-        {
-          externalId: "started",
-          kind: "started",
-          title: "Session started",
-          occurredAt: startedAt,
-        },
-      ],
-    });
+    if (!capabilityComplete) return false;
+    sqlite.transaction(() => {
+      for (const replacement of capabilityReplacements) {
+        replaceCapabilityUsage(
+          replacement.sessionId,
+          "zcode",
+          replacement.usage,
+        );
+      }
+    })();
+    databaseOnlySessions.forEach(persistSession);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -573,6 +611,15 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
     return totals;
   }
   try {
+    // Clear the prior result before doing any work. If this run exits before
+    // authoritative reconciliation completes, Insights must stay conservative.
+    sqlite
+      .prepare(
+        `UPDATE adapter_scans
+         SET capability_reconciliation_complete = 0
+         WHERE provider = 'zcode'`,
+      )
+      .run();
     const selectedAdapters = options.adapters ?? adapters;
     const capabilityLookups =
       options.capabilityLookups ??
@@ -623,7 +670,16 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
       totals.errors += scan.errors;
     }
     reconcileCodexTitles();
-    reconcileZcodeMetadata(capabilityLookups.zcode);
+    const capabilityReconciliationComplete = reconcileZcodeMetadata(
+      capabilityLookups.zcode,
+    );
+    sqlite
+      .prepare(
+        `UPDATE adapter_scans
+         SET capability_reconciliation_complete = ?
+         WHERE provider = 'zcode'`,
+      )
+      .run(capabilityReconciliationComplete ? 1 : 0);
     return totals;
   } finally {
     releaseLease("sync");

@@ -49,12 +49,22 @@ const capabilityIndexes = [
   "capability_usage_session_external_idx",
 ].sort();
 
+const currentAdapterScanColumns = [
+  "provider",
+  "last_scan_at",
+  "sources",
+  "imported",
+  "errors",
+  "capability_reconciliation_complete",
+].sort();
+
 const legacyBoundaries = [
   { name: "base bootstrap", generation: 0 },
   { name: "source-path bootstrap", generation: 1 },
   { name: "hierarchy bootstrap", generation: 2 },
   { name: "status-reason bootstrap", generation: 3 },
   { name: "capability-usage bootstrap", generation: 4 },
+  { name: "capability-reconciliation bootstrap", generation: 5 },
 ] as const;
 
 function createLegacyDatabase(databasePath: string, generation: number): void {
@@ -97,6 +107,14 @@ function createLegacyDatabase(databasePath: string, generation: number): void {
     CREATE INDEX sessions_started_idx ON sessions(started_at);
     CREATE INDEX sessions_status_idx ON sessions(status);
     ${generation >= 2 ? "CREATE INDEX sessions_parent_idx ON sessions(provider, parent_external_id);" : ""}
+    CREATE TABLE adapter_scans (
+      provider TEXT PRIMARY KEY,
+      last_scan_at TEXT NOT NULL,
+      sources INTEGER NOT NULL,
+      imported INTEGER NOT NULL,
+      errors INTEGER NOT NULL
+      ${generation >= 5 ? ", capability_reconciliation_complete INTEGER NOT NULL DEFAULT 0" : ""}
+    );
     ${
       generation >= 4
         ? `CREATE TABLE session_capability_usage (
@@ -169,6 +187,13 @@ describe("database migration baseline", () => {
       )
         .map((index) => index.name)
         .sort();
+      const adapterScanColumns = (
+        migrated.prepare("PRAGMA table_info(adapter_scans)").all() as {
+          name: string;
+        }[]
+      )
+        .map((column) => column.name)
+        .sort();
       const migrationCount = (
         migrated
           .prepare("SELECT COUNT(*) count FROM __drizzle_migrations")
@@ -180,7 +205,8 @@ describe("database migration baseline", () => {
       expect(sessionIndexes).toEqual(currentSessionIndexes);
       expect(capabilityTable).toBeDefined();
       expect(persistedCapabilityIndexes).toEqual(capabilityIndexes);
-      expect(migrationCount).toBe(7);
+      expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
+      expect(migrationCount).toBe(8);
     },
   );
 });

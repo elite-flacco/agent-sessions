@@ -13,7 +13,6 @@ import {
   type SessionStatus,
   type StatusReason,
 } from "./types";
-import { isZcodeCapabilityDbAvailable } from "./zcode-db";
 
 export interface SessionListItem {
   id: number;
@@ -1240,6 +1239,7 @@ interface AdapterScanCoverageRow {
   provider: string;
   sources: number;
   errors: number;
+  capabilityReconciliationComplete: number;
 }
 
 const providerOrder = new Map(
@@ -1307,7 +1307,11 @@ function capabilityInsights(
   );
 
   const scanRows = sqlite
-    .prepare("SELECT provider, sources, errors FROM adapter_scans")
+    .prepare(
+      `SELECT provider, sources, errors,
+              capability_reconciliation_complete capabilityReconciliationComplete
+       FROM adapter_scans`,
+    )
     .all() as AdapterScanCoverageRow[];
   const scans = new Map(scanRows.map((row) => [row.provider, row]));
   const coverage: CapabilityCoverage[] = agentProviders.map((provider) => {
@@ -1315,7 +1319,7 @@ function capabilityInsights(
     if (!scan || scan.sources === 0) return { provider, state: "unavailable" };
     if (
       scan.errors > 0 ||
-      (provider === "zcode" && !isZcodeCapabilityDbAvailable())
+      (provider === "zcode" && scan.capabilityReconciliationComplete !== 1)
     ) {
       return { provider, state: "partial" };
     }

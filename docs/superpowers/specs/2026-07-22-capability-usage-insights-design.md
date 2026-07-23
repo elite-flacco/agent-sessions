@@ -189,10 +189,10 @@ The list is ordered with never-observed capabilities first, then by oldest last 
 
 A quiet note summarizes provider coverage. It appears only when at least one provider is partial or unavailable and explicitly says that those providers are omitted from unused conclusions. Source parse errors remain visible through the existing sidebar health indicator as well.
 
-Coverage derives from the latest `adapter_scans` row and required auxiliary source availability:
+Coverage derives from the latest `adapter_scans` row and the persisted outcome of required auxiliary reconciliation:
 
-- `complete`: the latest scan found at least one source, reported zero errors, and the provider's required database (Zcode) was readable.
-- `partial`: sources were scanned but at least one parse error occurred, or Zcode rollout data was readable while its authoritative database was unavailable.
+- `complete`: the latest scan found at least one source, reported zero errors, and Zcode's latest authoritative capability reconciliation completed successfully when applicable.
+- `partial`: sources were scanned but at least one parse error occurred, or Zcode's latest reconciliation could not read every required `session`, `message`, `part`, and `tool_usage` query. A later successful pass restores complete coverage.
 - `unavailable`: the provider has no completed scan or no readable sources.
 
 Coverage describes the available Relay history, not whether a provider is currently installed or enabled.
