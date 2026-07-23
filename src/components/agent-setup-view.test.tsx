@@ -1725,16 +1725,18 @@ describe("Scheduled tasks view", () => {
     },
   ];
 
-  test("renders the tab, summary, and task rows in a single table", () => {
-    render(
+  test("renders the tab and task rows in a single table", () => {
+    const { container } = render(
       <AgentSetupView
         inventories={taskInventories}
         filters={parseAgentSetupFilters({ view: "tasks" })}
       />,
     );
     expect(screen.getByRole("link", { name: "Scheduled tasks" })).toBeDefined();
-    // Summary line counts all tasks across providers.
-    screen.getByText("3 scheduled tasks across agents.");
+    // No count summary line (removed); tasks render directly in the table.
+    expect(container.textContent).not.toMatch(
+      /\d+ scheduled tasks? across agents\./,
+    );
     // Task names and schedules render in the table.
     screen.getByText("Weekly digest");
     screen.getByText("Mondays at 08:00");

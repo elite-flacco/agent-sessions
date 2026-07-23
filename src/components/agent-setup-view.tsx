@@ -1504,12 +1504,11 @@ function ScheduledTasksView({
   const total = tasks.length;
   return (
     <div className="agent-inventory-list">
-      <p className="agent-tasks-summary">
-        {total === 0
-          ? "No scheduled tasks found across agents."
-          : `${total} scheduled ${total === 1 ? "task" : "tasks"} across agents.`}
-      </p>
-      {total > 0 ? (
+      {total === 0 ? (
+        <p className="agent-tasks-summary">
+          No scheduled tasks found across agents.
+        </p>
+      ) : (
         <div className="agent-task-table">
           <div className="agent-task-head">
             <span aria-hidden="true" />
@@ -1525,7 +1524,7 @@ function ScheduledTasksView({
             />
           ))}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
