@@ -1311,6 +1311,7 @@
   }
   .capability-insight {
     grid-column: 1 / -1;
+    min-inline-size: 0;
   }
   .capability-insight-head {
     display: flex;
@@ -1517,6 +1518,103 @@
     gap: 0.35rem;
     color: var(--muted-foreground);
     font-size: var(--text-xs);
+  }
+  /* The grid has a floor width, so both the panel and the card must be allowed
+     to shrink below their content or the whole page scrolls sideways. */
+  .capability-panel {
+    min-inline-size: 0;
+  }
+  .capability-grid-scroll {
+    inline-size: 100%;
+    max-inline-size: 38rem;
+    overflow-x: auto;
+  }
+  .capability-grid {
+    inline-size: 100%;
+    min-inline-size: 26rem;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: var(--text-sm);
+  }
+  .capability-grid-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+  .capability-grid th[scope="col"] {
+    padding-bottom: 0.4rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    text-align: center;
+  }
+  .capability-grid th[scope="col"]:first-child {
+    text-align: left;
+  }
+  .capability-grid th[scope="row"] {
+    font-weight: 400;
+    text-align: left;
+  }
+  .capability-grid td,
+  .capability-grid tbody th {
+    padding-block: 0.3rem;
+    border-top: 1px solid var(--border);
+  }
+  .capability-grid th:first-child {
+    inline-size: 42%;
+  }
+  .capability-grid td:last-child,
+  .capability-grid th:last-child {
+    inline-size: 3rem;
+  }
+  .capability-kind-dot {
+    flex: none;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 0.12rem;
+  }
+  .capability-kind-dot.is-skill {
+    background: var(--badge-2-foreground);
+  }
+  .capability-kind-dot.is-mcp {
+    background: var(--badge-3-foreground);
+  }
+  .capability-cell {
+    display: block;
+    inline-size: 1.8rem;
+    height: 0.95rem;
+    margin-inline: auto;
+    border-radius: 0.15rem;
+    background: var(--heat-0);
+  }
+  /* Hatching reads as "no answer", distinct from an observed zero. */
+  .capability-cell.is-unknown {
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      var(--border) 3px,
+      var(--border) 4px
+    );
+  }
+  .capability-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    padding-top: 0.7rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .capability-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .capability-legend .capability-cell {
+    inline-size: 1.1rem;
+    height: 0.6rem;
+    margin-inline: 0;
   }
   .capability-more summary {
     padding-block: 0.5rem;

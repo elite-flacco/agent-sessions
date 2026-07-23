@@ -31,6 +31,7 @@ const fixtureCapabilities: CapabilitiesInsight = {
       sessionCount: 2,
       lastUsedAt: "2026-07-22T10:00:00Z",
       providers: ["codex", "claude"],
+      byProvider: { codex: 1, claude: 1 },
     },
     {
       kind: "mcp",
@@ -39,6 +40,7 @@ const fixtureCapabilities: CapabilitiesInsight = {
       sessionCount: 2,
       lastUsedAt: "2026-07-22T10:05:00Z",
       providers: ["codex", "claude"],
+      byProvider: { codex: 3, claude: 1 },
     },
   ],
   unused: Array.from({ length: 9 }, (_, index) => ({
@@ -52,6 +54,8 @@ const fixtureCapabilities: CapabilitiesInsight = {
   installedUsedCount: 2,
   coverage: [
     { provider: "codex", state: "complete" },
+    { provider: "claude", state: "complete" },
+    { provider: "zcode", state: "complete" },
     {
       provider: "pi",
       state: "partial",
@@ -146,6 +150,39 @@ describe("CapabilityUsageCard", () => {
     expect(screen.getByText(/Pi/)).toHaveTextContent(
       "Pi coverage partial: Some session sources could not be read.",
     );
+  });
+
+  test("crosses capabilities with providers on the by-provider tab", () => {
+    query = "capabilityTab=providers";
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    // Both kinds share the grid, ranked by total across providers.
+    const rows = screen.getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("github");
+    expect(rows[2]).toHaveTextContent("frontend-rules");
+    expect(rows[1]).toHaveTextContent("4");
+
+    // The grid scales cells against the largest single provider contribution
+    // (github on Codex, 3), not the largest total.
+    expect(rows[1].querySelector('[title="Codex: 3"]')?.className).toContain(
+      "heat-fill-10",
+    );
+  });
+
+  test("hatches providers whose coverage cannot answer the question", () => {
+    query = "capabilityTab=providers";
+    render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
+
+    // Pi is partial and observed nothing — unknown, not a zero. Codex is
+    // complete, so its observed zero stays a real zero.
+    const row = screen.getAllByRole("row")[2];
+    expect(row.querySelector('[title="Pi: coverage incomplete"]')).toHaveClass(
+      "is-unknown",
+    );
+    expect(
+      row.querySelector('[title="Zcode: coverage incomplete"]'),
+    ).toBeNull();
+    expect(row.querySelector('[title="Zcode: 0"]')).toHaveClass("heat-fill-0");
   });
 
   test("keeps the coverage caveat attached to the unused conclusion", () => {

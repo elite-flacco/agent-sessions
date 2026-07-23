@@ -1212,6 +1212,10 @@ export interface CapabilityInsight {
   sessionCount: number;
   lastUsedAt: string;
   providers: AgentProvider[];
+  // Invocations credited to each provider that observed this capability.
+  // Providers with no observations are absent, which the by-provider grid
+  // reads differently depending on that provider's coverage.
+  byProvider: Partial<Record<AgentProvider, number>>;
 }
 
 export interface UnusedCapabilityInsight {
@@ -1281,10 +1285,10 @@ export interface Insights {
 interface CapabilityAggregateRow {
   kind: "skill" | "mcp";
   name: string;
+  provider: string;
   invocations: number;
   sessionCount: number;
   lastUsedAt: string;
-  providers: string;
 }
 
 interface CapabilityHistoryRow {
@@ -1332,35 +1336,51 @@ function capabilityInsights(
   const rangeStart = new Date(
     Date.now() - (range === "7d" ? 7 : 30) * DAY_MS,
   ).toISOString();
+  // Grouped per provider so the by-provider grid can shade each cell. Session
+  // counts stay exact when folded because a session belongs to exactly one
+  // provider, so the per-provider distinct counts never overlap.
   const aggregateRows = sqlite
     .prepare(
-      `SELECT kind, LOWER(TRIM(capability_name)) name,
+      `SELECT kind, LOWER(TRIM(capability_name)) name, provider,
         COUNT(*) invocations,
         COUNT(DISTINCT session_id) sessionCount,
-        MAX(occurred_at) lastUsedAt,
-        GROUP_CONCAT(DISTINCT provider) providers
+        MAX(occurred_at) lastUsedAt
        FROM session_capability_usage
        WHERE occurred_at >= ? AND kind IN ('skill', 'mcp')
-       GROUP BY kind, LOWER(TRIM(capability_name))`,
+       GROUP BY kind, LOWER(TRIM(capability_name)), provider`,
     )
     .all(rangeStart) as CapabilityAggregateRow[];
 
-  const ranked = aggregateRows
-    .map((row): CapabilityInsight => ({
+  const folded = new Map<string, CapabilityInsight>();
+  for (const row of aggregateRows) {
+    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
+    const name = canonicalCapabilityName(row.name);
+    const key = `${row.kind}:${name}`;
+    const current = folded.get(key) ?? {
       kind: row.kind,
-      name: canonicalCapabilityName(row.name),
-      invocations: row.invocations,
-      sessionCount: row.sessionCount,
+      name,
+      invocations: 0,
+      sessionCount: 0,
       lastUsedAt: row.lastUsedAt,
-      providers: orderedProviders(row.providers.split(",")),
-    }))
-    .sort(
-      (left, right) =>
-        right.invocations - left.invocations ||
-        right.sessionCount - left.sessionCount ||
-        right.lastUsedAt.localeCompare(left.lastUsedAt) ||
-        left.name.localeCompare(right.name),
-    );
+      providers: [],
+      byProvider: {},
+    };
+    current.invocations += row.invocations;
+    current.sessionCount += row.sessionCount;
+    if (row.lastUsedAt > current.lastUsedAt)
+      current.lastUsedAt = row.lastUsedAt;
+    current.byProvider[row.provider as AgentProvider] = row.invocations;
+    current.providers = orderedProviders(Object.keys(current.byProvider));
+    folded.set(key, current);
+  }
+
+  const ranked = [...folded.values()].sort(
+    (left, right) =>
+      right.invocations - left.invocations ||
+      right.sessionCount - left.sessionCount ||
+      right.lastUsedAt.localeCompare(left.lastUsedAt) ||
+      left.name.localeCompare(right.name),
+  );
   // Every observed capability is returned: the card ranks each kind in its own
   // tab and discloses the tail behind a toggle, so trimming here would make the
   // "show all N" affordance lie about what it can reveal.
