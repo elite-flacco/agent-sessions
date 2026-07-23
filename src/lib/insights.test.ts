@@ -473,6 +473,49 @@ describe("getInsights — capability usage", () => {
     });
   });
 
+  it("does not contradict a canonically mapped MCP observation with unused", () => {
+    const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
+    const sessionId = Number(
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at, ended_at)
+          VALUES ('mapped-mcp', 'codex', 'Mapped MCP', 'completed', ?, ?, ?)`,
+        )
+        .run(occurredAt, occurredAt, occurredAt).lastInsertRowid,
+    );
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+        (session_id, external_id, provider, kind, capability_name, occurred_at)
+        VALUES (?, 'mapped-event-stream', 'codex', 'mcp', 'event-stream', ?)`,
+      )
+      .run(sessionId, occurredAt);
+    const mappedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      warnings: [],
+      capabilities: [capability("codex", "mcp", "event-stream", "enabled")],
+    };
+
+    try {
+      const capabilities = queries.getInsights("30d", [
+        mappedInventory,
+      ]).capabilities;
+
+      expect(capabilities.mostUsed).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "mcp", name: "event-stream" }),
+        ]),
+      );
+      expect(capabilities.unused.map((item) => item.name)).not.toContain(
+        "event-stream",
+      );
+    } finally {
+      sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+    }
+  });
+
   it("does not report unused capabilities for partially covered providers", () => {
     sqlite
       .prepare("UPDATE adapter_scans SET errors = 1 WHERE provider = 'codex'")
@@ -541,6 +584,109 @@ describe("getInsights — capability usage", () => {
       sqlite
         .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
         .run();
+    }
+  });
+
+  it("marks Zcode coverage partial when the database opens without capability tables", async () => {
+    const dbPath = path.join(directory, "zcode-missing-capability-tables.db");
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE session (id TEXT PRIMARY KEY)");
+    db.close();
+    process.env.ZCODE_DB_PATH = dbPath;
+    const { __resetZcodeDbCache } = await import("./zcode-db");
+    __resetZcodeDbCache();
+    sqlite
+      .prepare(
+        `INSERT INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors)
+        VALUES ('zcode', ?, 1, 1, 0)`,
+      )
+      .run(new Date().toISOString());
+    try {
+      const zcodeInventory: AgentInventory = {
+        provider: "zcode",
+        scope: "global",
+        warnings: [],
+        capabilities: [capability("zcode", "skill", "zcode-never-used")],
+      };
+      const capabilities = queries.getInsights("30d", [
+        zcodeInventory,
+      ]).capabilities;
+
+      expect(capabilities.coverage).toContainEqual({
+        provider: "zcode",
+        state: "partial",
+      });
+      expect(capabilities.unused).toEqual([]);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      process.env.ZCODE_DB_PATH = path.join(directory, "missing-zcode.db");
+      __resetZcodeDbCache();
+    }
+  });
+
+  it("allows Zcode unused conclusions only with a healthy capability schema", async () => {
+    const dbPath = path.join(directory, "zcode-healthy-capability-tables.db");
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL, data TEXT NOT NULL
+      );
+      CREATE TABLE part (
+        id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+        session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      );
+      CREATE TABLE tool_usage (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+        started_at INTEGER NOT NULL
+      );
+    `);
+    db.close();
+    process.env.ZCODE_DB_PATH = dbPath;
+    const { __resetZcodeDbCache } = await import("./zcode-db");
+    __resetZcodeDbCache();
+    sqlite
+      .prepare(
+        `INSERT INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors)
+        VALUES ('zcode', ?, 1, 1, 0)`,
+      )
+      .run(new Date().toISOString());
+    try {
+      const zcodeInventory: AgentInventory = {
+        provider: "zcode",
+        scope: "global",
+        warnings: [],
+        capabilities: [capability("zcode", "skill", "zcode-never-used")],
+      };
+      const capabilities = queries.getInsights("30d", [
+        zcodeInventory,
+      ]).capabilities;
+
+      expect(capabilities.coverage).toContainEqual({
+        provider: "zcode",
+        state: "complete",
+      });
+      expect(capabilities.unused).toEqual([
+        expect.objectContaining({
+          name: "zcode-never-used",
+          providers: ["zcode"],
+          neverObserved: true,
+        }),
+      ]);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+      process.env.ZCODE_DB_PATH = path.join(directory, "missing-zcode.db");
+      __resetZcodeDbCache();
     }
   });
 });

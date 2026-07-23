@@ -1,6 +1,10 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
 import { __resetZcodeDbCache, getZcodeSessionMetadata } from "@/lib/zcode-db";
-import { explicitSkillUsage, mcpUsage } from "../capabilities";
+import {
+  capabilityTimestamp,
+  explicitSkillUsage,
+  mcpUsage,
+} from "../capabilities";
 import {
   homePath,
   record,
@@ -29,7 +33,7 @@ export const zcodeAdapter: ProviderAdapter = {
     const agents = await walkJsonl(homePath(".zcode", "cli", "agents"));
     return [...rollout, ...agents];
   },
-  parse: async (filePath) => {
+  parse: async (filePath, context) => {
     const result = await parseJsonl(filePath, {
       provider: "zcode",
       fallbackTitle: "Zcode coding session",
@@ -116,6 +120,8 @@ export const zcodeAdapter: ProviderAdapter = {
           const responseToolCalls = Array.isArray(response?.toolCalls)
             ? response.toolCalls.map(record).filter(Boolean)
             : [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
           return [...requestToolCalls, ...responseToolCalls].flatMap(
             (tool, blockIndex) => {
               if (!tool) return [];
@@ -127,7 +133,6 @@ export const zcodeAdapter: ProviderAdapter = {
                 stringValue(row.uuid) ??
                 stringValue(row.id) ??
                 `${rowIndex}-${blockIndex}`;
-              const occurredAt = timestamp(row) ?? new Date(0).toISOString();
               return [
                 explicitSkillUsage(
                   externalId,
@@ -141,6 +146,7 @@ export const zcodeAdapter: ProviderAdapter = {
                   toolName: tool.name,
                   namespace: tool.namespace,
                   occurredAt,
+                  lookup: context?.capabilities,
                 }),
               ].filter(
                 (entry): entry is CapabilityUsage => entry !== undefined,

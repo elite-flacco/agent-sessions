@@ -1,5 +1,9 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
-import { matchedSkillReads, mcpUsage } from "../capabilities";
+import {
+  capabilityTimestamp,
+  matchedSkillReads,
+  mcpUsage,
+} from "../capabilities";
 import { homePath, record, stringValue, walkJsonl } from "../utils";
 import {
   accumulateUsage,
@@ -75,6 +79,8 @@ export const piAdapter: ProviderAdapter = {
           const blocks = Array.isArray(message?.content)
             ? message.content.map(record).filter(Boolean)
             : [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
           return blocks.flatMap((tool, blockIndex) => {
             if (tool?.type !== "toolCall" && tool?.type !== "tool_use")
               return [];
@@ -83,13 +89,13 @@ export const piAdapter: ProviderAdapter = {
               stringValue(row.uuid) ??
               stringValue(row.id) ??
               `${rowIndex}-${blockIndex}`;
-            const occurredAt = timestamp(row) ?? new Date(0).toISOString();
             return [
               mcpUsage({
                 externalId,
                 toolName: tool.name,
                 namespace: tool.namespace,
                 occurredAt,
+                lookup: context?.capabilities,
               }),
               ...matchedSkillReads({
                 externalId,

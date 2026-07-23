@@ -41,6 +41,24 @@ function emptyLookup(): {
   return { skillFiles: new Map(), mcpNames: new Map() };
 }
 
+function mcpConventionAlias(value: string): string {
+  return canonicalCapabilityName(value).replace(/[- ]+/g, "_");
+}
+
+function addMcpAlias(
+  candidates: Map<string, Map<string, string>>,
+  alias: string,
+  inventoryName: string,
+): void {
+  const key = safeCanonicalName(alias);
+  if (!key) return;
+  const targets = candidates.get(key) ?? new Map<string, string>();
+  const canonicalTarget = canonicalCapabilityName(inventoryName);
+  if (!targets.has(canonicalTarget))
+    targets.set(canonicalTarget, inventoryName);
+  candidates.set(key, targets);
+}
+
 export function buildCapabilityLookups(
   inventories: AgentInventory[],
 ): Record<AgentProvider, CapabilityLookup> {
@@ -50,12 +68,22 @@ export function buildCapabilityLookups(
     AgentProvider,
     { skillFiles: Map<string, string>; mcpNames: Map<string, string> }
   >;
+  const mcpAliasCandidates = Object.fromEntries(
+    agentProviders.map((provider) => [
+      provider,
+      new Map<string, Map<string, string>>(),
+    ]),
+  ) as Record<AgentProvider, Map<string, Map<string, string>>>;
 
   for (const inventory of inventories) {
     const lookup = lookups[inventory.provider];
+    const mcpAliases = mcpAliasCandidates[inventory.provider];
     for (const capability of inventory.capabilities) {
       if (!ACTIVE_STATUSES.has(capability.status)) continue;
-      const name = safeCanonicalName(capability.name);
+      const name =
+        capability.kind === "mcp"
+          ? safeName(capability.name)
+          : safeCanonicalName(capability.name);
       if (!name) continue;
 
       if (capability.kind === "skill") {
@@ -67,8 +95,23 @@ export function buildCapabilityLookups(
         }
       }
       if (capability.kind === "mcp") {
-        lookup.mcpNames.set(canonicalCapabilityName(capability.name), name);
+        addMcpAlias(mcpAliases, capability.name, name);
+        addMcpAlias(mcpAliases, mcpConventionAlias(capability.name), name);
+        const pluginName = capability.sourcePlugin?.split("@")[0];
+        if (pluginName && safeName(pluginName)) {
+          addMcpAlias(
+            mcpAliases,
+            `plugin_${pluginName}_${capability.name}`,
+            name,
+          );
+        }
       }
+    }
+  }
+  for (const provider of agentProviders) {
+    for (const [alias, targets] of mcpAliasCandidates[provider]) {
+      if (targets.size === 1)
+        lookups[provider].mcpNames.set(alias, [...targets.values()][0]!);
     }
   }
 
@@ -81,12 +124,13 @@ export function explicitSkillUsage(
   occurredAt: string,
 ): CapabilityUsage | undefined {
   const safe = safeCanonicalName(name);
-  return safe
+  const timestamp = capabilityTimestamp(occurredAt);
+  return safe && timestamp
     ? {
         externalId: `skill:${externalId}`,
         kind: "skill",
         name: safe,
-        occurredAt,
+        occurredAt: timestamp,
       }
     : undefined;
 }
@@ -96,6 +140,16 @@ interface McpUsageInput {
   toolName: unknown;
   namespace?: unknown;
   occurredAt: string;
+  lookup?: CapabilityLookup;
+}
+
+export function capabilityTimestamp(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) {
+    return Number.isFinite(Date.parse(value)) ? value : undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
 
 function mcpName(toolName: unknown, namespace: unknown): string | undefined {
@@ -113,10 +167,20 @@ export function mcpUsage({
   toolName,
   namespace,
   occurredAt,
+  lookup,
 }: McpUsageInput): CapabilityUsage | undefined {
-  const name = safeCanonicalName(mcpName(toolName, namespace));
-  return name
-    ? { externalId: `mcp:${externalId}`, kind: "mcp", name, occurredAt }
+  const observedName = safeCanonicalName(mcpName(toolName, namespace));
+  const name = observedName
+    ? (lookup?.mcpNames.get(observedName) ?? observedName)
+    : undefined;
+  const timestamp = capabilityTimestamp(occurredAt);
+  return name && safeName(name) && timestamp
+    ? {
+        externalId: `mcp:${externalId}`,
+        kind: "mcp",
+        name,
+        occurredAt: timestamp,
+      }
     : undefined;
 }
 
@@ -129,6 +193,7 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 export function zcodeStoredCapabilityUsage(
   messages: ZcodeStoredMessage[],
   tools: ZcodeToolUsage[],
+  lookup?: CapabilityLookup,
 ): CapabilityUsage[] {
   const skillUsage = messages.flatMap((message) =>
     message.parts.flatMap((part) => {
@@ -136,20 +201,21 @@ export function zcodeStoredCapabilityUsage(
       const state = objectRecord(data?.state);
       const input = objectRecord(state?.input);
       if (data?.type !== "tool" || data.tool !== "Skill") return [];
-      const usage = explicitSkillUsage(
-        part.id,
-        input?.skill,
-        new Date(part.timeCreated).toISOString(),
-      );
+      const occurredAt = capabilityTimestamp(part.timeCreated);
+      if (!occurredAt) return [];
+      const usage = explicitSkillUsage(part.id, input?.skill, occurredAt);
       return usage ? [usage] : [];
     }),
   );
   const mcpToolUsage = tools.flatMap((tool) => {
     if (!tool.toolName.startsWith("mcp__")) return [];
+    const occurredAt = capabilityTimestamp(tool.startedAt);
+    if (!occurredAt) return [];
     const usage = mcpUsage({
       externalId: tool.toolCallId,
       toolName: tool.toolName,
-      occurredAt: new Date(tool.startedAt).toISOString(),
+      occurredAt,
+      lookup,
     });
     return usage ? [usage] : [];
   });
@@ -237,6 +303,8 @@ export function matchedSkillReads({
   lookup,
 }: MatchedSkillReadsInput): CapabilityUsage[] {
   if (typeof toolName !== "string" || !READ_LIKE_TOOL.test(toolName)) return [];
+  const timestamp = capabilityTimestamp(occurredAt);
+  if (!timestamp) return [];
 
   const leaves = stringLeaves(input);
   const nativeRead = toolName.toLowerCase() === "read";
@@ -251,6 +319,6 @@ export function matchedSkillReads({
     externalId: `skill-read:${externalId}:${name}`,
     kind: "skill",
     name,
-    occurredAt,
+    occurredAt: timestamp,
   }));
 }

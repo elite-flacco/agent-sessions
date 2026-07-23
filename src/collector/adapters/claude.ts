@@ -1,5 +1,9 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
-import { explicitSkillUsage, mcpUsage } from "../capabilities";
+import {
+  capabilityTimestamp,
+  explicitSkillUsage,
+  mcpUsage,
+} from "../capabilities";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   accumulateUsage,
@@ -14,7 +18,7 @@ import {
 export const claudeAdapter: ProviderAdapter = {
   provider: "claude",
   discover: () => walkJsonl(homePath(".claude", "projects")),
-  parse: (filePath) =>
+  parse: (filePath, context) =>
     parseJsonl(filePath, {
       provider: "claude",
       fallbackTitle: "Claude Code session",
@@ -114,6 +118,8 @@ export const claudeAdapter: ProviderAdapter = {
           const blocks = Array.isArray(message?.content)
             ? message.content.map(record).filter(Boolean)
             : [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
           return blocks.flatMap((tool, blockIndex) => {
             if (tool?.type !== "tool_use") return [];
             const externalId =
@@ -121,7 +127,6 @@ export const claudeAdapter: ProviderAdapter = {
               stringValue(row.uuid) ??
               stringValue(row.id) ??
               `${rowIndex}-${blockIndex}`;
-            const occurredAt = timestamp(row) ?? new Date(0).toISOString();
             return [
               explicitSkillUsage(
                 externalId,
@@ -132,6 +137,7 @@ export const claudeAdapter: ProviderAdapter = {
                 externalId,
                 toolName: tool.name,
                 occurredAt,
+                lookup: context?.capabilities,
               }),
             ].filter((entry): entry is CapabilityUsage => entry !== undefined);
           });

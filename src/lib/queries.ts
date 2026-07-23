@@ -13,7 +13,7 @@ import {
   type SessionStatus,
   type StatusReason,
 } from "./types";
-import { isZcodeDbAvailable } from "./zcode-db";
+import { isZcodeCapabilityDbAvailable } from "./zcode-db";
 
 export interface SessionListItem {
   id: number;
@@ -1313,7 +1313,10 @@ function capabilityInsights(
   const coverage: CapabilityCoverage[] = agentProviders.map((provider) => {
     const scan = scans.get(provider);
     if (!scan || scan.sources === 0) return { provider, state: "unavailable" };
-    if (scan.errors > 0 || (provider === "zcode" && !isZcodeDbAvailable())) {
+    if (
+      scan.errors > 0 ||
+      (provider === "zcode" && !isZcodeCapabilityDbAvailable())
+    ) {
       return { provider, state: "partial" };
     }
     return { provider, state: "complete" };

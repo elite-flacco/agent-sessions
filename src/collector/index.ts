@@ -65,7 +65,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "12";
+const NORMALIZATION_VERSION = "13";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -327,7 +327,7 @@ function reconcileCodexTitles(): void {
   write();
 }
 
-function reconcileZcodeMetadata(): void {
+function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): void {
   if (!isZcodeDbAvailable()) return;
   const sessions = sqlite
     .prepare(
@@ -406,7 +406,11 @@ function reconcileZcodeMetadata(): void {
         replaceCapabilityUsage(
           session.id,
           "zcode",
-          zcodeStoredCapabilityUsage(storedMessages, storedTools),
+          zcodeStoredCapabilityUsage(
+            storedMessages,
+            storedTools,
+            capabilityLookup,
+          ),
         );
     }
   });
@@ -429,7 +433,11 @@ function reconcileZcodeMetadata(): void {
     const messages = storedMessages ?? [];
     const capabilityUsage =
       storedMessages && storedTools
-        ? zcodeStoredCapabilityUsage(storedMessages, storedTools)
+        ? zcodeStoredCapabilityUsage(
+            storedMessages,
+            storedTools,
+            capabilityLookup,
+          )
         : [];
     const { status, reason: statusReason } = zcodeStoredStatus(
       messages,
@@ -615,7 +623,7 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
       totals.errors += scan.errors;
     }
     reconcileCodexTitles();
-    reconcileZcodeMetadata();
+    reconcileZcodeMetadata(capabilityLookups.zcode);
     return totals;
   } finally {
     releaseLease("sync");

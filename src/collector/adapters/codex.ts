@@ -1,6 +1,10 @@
 import type { CapabilityUsage, ProviderAdapter } from "@/lib/types";
 import { getCodexThreadTitle } from "@/lib/codex-db";
-import { matchedSkillReads, mcpUsage } from "../capabilities";
+import {
+  capabilityTimestamp,
+  matchedSkillReads,
+  mcpUsage,
+} from "../capabilities";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   contentText,
@@ -137,25 +141,35 @@ export const codexAdapter: ProviderAdapter = {
       capabilityUsage: (rows) =>
         rows.flatMap((row, rowIndex) => {
           const payload = record(row.payload);
-          if (row.type !== "response_item" || payload?.type !== "function_call")
+          const callType = stringValue(payload?.type);
+          if (
+            !payload ||
+            row.type !== "response_item" ||
+            (callType !== "function_call" && callType !== "custom_tool_call")
+          )
             return [];
+          const occurredAt = capabilityTimestamp(timestamp(row));
+          if (!occurredAt) return [];
           const externalId =
             stringValue(payload.call_id) ??
             stringValue(row.uuid) ??
             stringValue(row.id) ??
             `${rowIndex}-0`;
-          const occurredAt = timestamp(row) ?? new Date(0).toISOString();
+          const input = functionInput(
+            callType === "custom_tool_call" ? payload.input : payload.arguments,
+          );
           return [
             mcpUsage({
               externalId,
               toolName: payload.name,
               namespace: payload.namespace,
               occurredAt,
+              lookup: context?.capabilities,
             }),
             ...matchedSkillReads({
               externalId,
               toolName: payload.name,
-              input: functionInput(payload.arguments),
+              input,
               occurredAt,
               lookup: context?.capabilities,
             }),
@@ -171,14 +185,21 @@ export const codexAdapter: ProviderAdapter = {
             return [numberedEvent(row, index, "completed", "Task completed")];
           if (type === "turn_aborted")
             return [numberedEvent(row, index, "warning", "Turn interrupted")];
-          if (row.type === "response_item" && type === "function_call") {
+          if (
+            row.type === "response_item" &&
+            (type === "function_call" || type === "custom_tool_call")
+          ) {
+            const event = numberedEvent(
+              row,
+              index,
+              "tool",
+              `Used ${stringValue(payload?.name) ?? "a tool"}`,
+            );
             return [
-              numberedEvent(
-                row,
-                index,
-                "tool",
-                `Used ${stringValue(payload?.name) ?? "a tool"}`,
-              ),
+              {
+                ...event,
+                externalId: stringValue(payload?.call_id) ?? event.externalId,
+              },
             ];
           }
           return [];

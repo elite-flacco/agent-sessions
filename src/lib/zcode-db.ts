@@ -57,6 +57,34 @@ export function isZcodeDbAvailable(): boolean {
   return zcodeDb() !== undefined;
 }
 
+/**
+ * Capability coverage requires more than an open SQLite file: Relay must be
+ * able to execute the authoritative message, part, and tool-usage reads used
+ * during reconciliation. Preparing and running empty health queries validates
+ * the required tables and columns without reading or retaining any content.
+ */
+export function isZcodeCapabilityDbAvailable(): boolean {
+  const db = zcodeDb();
+  if (!db) return false;
+  try {
+    db.prepare(
+      `SELECT id, time_created timeCreated, data
+       FROM message WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    db.prepare(
+      `SELECT id, message_id messageId, time_created timeCreated, data
+       FROM part WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    db.prepare(
+      `SELECT tool_call_id toolCallId, tool_name toolName, started_at startedAt
+       FROM tool_usage WHERE session_id = ? LIMIT 0`,
+    ).all("__relay_capability_health__");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length ? value : undefined;
 }

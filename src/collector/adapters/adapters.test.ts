@@ -537,6 +537,192 @@ describe("provider adapters", () => {
     );
   });
 
+  it("normalizes Codex custom tool calls without retaining input", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map([["event_stream", "event-stream"]]),
+    };
+    const result = await parse(
+      codexAdapter,
+      [
+        {
+          type: "session_meta",
+          timestamp: "2026-07-22T10:00:00Z",
+          payload: { id: "codex-custom-capabilities", cwd: "/work/relay" },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:01:00Z",
+          id: "custom-row-read",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "custom-read-skill",
+            name: "exec_command",
+            input:
+              "sed -n '1,240p' /safe/links/frontend-rules/SKILL.md && echo SECRET_CUSTOM_INPUT",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:02:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "custom-event-stream",
+            name: "mcp__event_stream__publish",
+            input: "SECRET_CUSTOM_MCP_INPUT",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:03:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "custom-unmatched-read",
+            name: "exec_command",
+            input: "cat /tmp/SKILL.md",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-07-22T10:04:00Z",
+          payload: {
+            type: "developer",
+            content: "Mention only: /safe/links/frontend-rules/SKILL.md",
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({
+        externalId: "skill-read:custom-read-skill:frontend-rules",
+        kind: "skill",
+        name: "frontend-rules",
+      }),
+      expect.objectContaining({
+        externalId: "mcp:custom-event-stream",
+        kind: "mcp",
+        name: "event-stream",
+      }),
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
+      /SECRET_CUSTOM_INPUT|SECRET_CUSTOM_MCP_INPUT|custom-unmatched-read/,
+    );
+    expect(
+      result.sessions[0]?.events.filter((event) => event.kind === "tool"),
+    ).toHaveLength(3);
+    expect(
+      result.sessions[0]?.events
+        .filter((event) => event.kind === "tool")
+        .map((event) => event.externalId),
+    ).toEqual([
+      "custom-read-skill",
+      "custom-event-stream",
+      "custom-unmatched-read",
+    ]);
+  });
+
+  it("skips capability evidence with missing or malformed timestamps", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map([["github", "github"]]),
+    };
+    const contexts = { capabilities: lookup };
+    const [claude, codex, pi, zcode] = await Promise.all([
+      parse(claudeAdapter, [
+        {
+          type: "assistant",
+          sessionId: "claude-malformed-capability-time",
+          timestamp: "not-a-date",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "claude-invalid-time",
+                name: "Skill",
+                input: { skill: "frontend-rules" },
+              },
+            ],
+          },
+        },
+      ]),
+      parse(
+        codexAdapter,
+        [
+          {
+            type: "session_meta",
+            timestamp: "2026-07-22T10:00:00Z",
+            payload: { id: "codex-malformed-capability-time" },
+          },
+          {
+            type: "response_item",
+            timestamp: "invalid",
+            payload: {
+              type: "custom_tool_call",
+              call_id: "codex-invalid-time",
+              name: "exec_command",
+              input: "cat /safe/links/frontend-rules/SKILL.md",
+            },
+          },
+        ],
+        false,
+        contexts,
+      ),
+      parse(
+        piAdapter,
+        [
+          {
+            type: "session",
+            id: "pi-malformed-capability-time",
+            timestamp: "2026-07-22T10:00:00Z",
+          },
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "pi-missing-time",
+                  name: "mcp__github__search_prs",
+                },
+              ],
+            },
+          },
+        ],
+        false,
+        contexts,
+      ),
+      parse(zcodeAdapter, [
+        {
+          type: "model_io",
+          sessionId: "zcode-malformed-capability-time",
+          startedAt: "not-a-date",
+          response: {
+            toolCalls: [
+              {
+                id: "zcode-invalid-time",
+                name: "Skill",
+                arguments: { skill: "frontend-rules" },
+              },
+            ],
+          },
+        },
+      ]),
+    ]);
+
+    for (const result of [claude, codex, pi, zcode]) {
+      expect(result.sessions[0]?.capabilityUsage).toEqual([]);
+    }
+  });
+
   it("prefers Claude's latest custom title over generated titles and user messages", async () => {
     const result = await parse(claudeAdapter, [
       {
@@ -829,41 +1015,52 @@ describe("provider adapters", () => {
   });
 
   it("normalizes Zcode Skill and MCP calls without retaining inputs", async () => {
-    const result = await parse(zcodeAdapter, [
-      {
-        type: "model_io",
-        sessionId: "z-capabilities",
-        turnId: "turn-capabilities",
-        startedAt: "2026-07-22T10:00:00Z",
-        completedAt: "2026-07-22T10:01:00Z",
-        request: {
-          messages: [
-            {
-              role: "assistant",
-              toolCalls: [
-                {
-                  id: "z-skill",
-                  name: "Skill",
-                  arguments: {
-                    skill: "review-code-changes",
-                    args: "SECRET_ZCODE_ARGS",
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map(),
+      mcpNames: new Map([
+        ["plugin_openai-developers_openaideveloperdocs", "openaiDeveloperDocs"],
+      ]),
+    };
+    const result = await parse(
+      zcodeAdapter,
+      [
+        {
+          type: "model_io",
+          sessionId: "z-capabilities",
+          turnId: "turn-capabilities",
+          startedAt: "2026-07-22T10:00:00Z",
+          completedAt: "2026-07-22T10:01:00Z",
+          request: {
+            messages: [
+              {
+                role: "assistant",
+                toolCalls: [
+                  {
+                    id: "z-skill",
+                    name: "Skill",
+                    arguments: {
+                      skill: "review-code-changes",
+                      args: "SECRET_ZCODE_ARGS",
+                    },
                   },
-                },
-                {
-                  id: "z-mcp",
-                  name: "mcp__openaiDeveloperDocs__search_openai_docs",
-                  arguments: { query: "SECRET_ZCODE_QUERY" },
-                },
-              ],
-            },
-          ],
+                  {
+                    id: "z-mcp",
+                    name: "mcp__plugin_openai-developers_openaiDeveloperDocs__search_openai_docs",
+                    arguments: { query: "SECRET_ZCODE_QUERY" },
+                  },
+                ],
+              },
+            ],
+          },
         },
-      },
-    ]);
+      ],
+      false,
+      { capabilities: lookup },
+    );
 
     expect(result.sessions[0]?.capabilityUsage).toEqual([
       expect.objectContaining({ kind: "skill", name: "review-code-changes" }),
-      expect.objectContaining({ kind: "mcp", name: "openaideveloperdocs" }),
+      expect.objectContaining({ kind: "mcp", name: "openaiDeveloperDocs" }),
     ]);
     expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
       /SECRET_ZCODE_ARGS|SECRET_ZCODE_QUERY/,
@@ -969,6 +1166,15 @@ describe("provider adapters", () => {
           startedAt: 1_750_000_000_400,
         },
       ],
+      {
+        skillFiles: new Map(),
+        mcpNames: new Map([
+          [
+            "plugin_openai-developers_openaideveloperdocs",
+            "openaiDeveloperDocs",
+          ],
+        ]),
+      },
     );
 
     expect(capabilityUsage).toEqual([
@@ -981,13 +1187,45 @@ describe("provider adapters", () => {
       {
         externalId: "mcp:mcp-call",
         kind: "mcp",
-        name: "plugin_openai-developers_openaideveloperdocs",
+        name: "openaiDeveloperDocs",
         occurredAt: new Date(1_750_000_000_300).toISOString(),
       },
     ]);
     expect(JSON.stringify(capabilityUsage)).not.toMatch(
       /PRIVATE_SKILL_INPUT|PRIVATE_SKILL_OUTPUT|must-not-appear|plain-call/,
     );
+  });
+
+  it("skips malformed authoritative Zcode database capability timestamps", () => {
+    const capabilityUsage = zcodeStoredCapabilityUsage(
+      [
+        {
+          id: "message-invalid-time",
+          timeCreated: Number.NaN,
+          data: { role: "assistant" },
+          parts: [
+            {
+              id: "skill-invalid-time",
+              timeCreated: Number.NaN,
+              data: {
+                type: "tool",
+                tool: "Skill",
+                state: { input: { skill: "systematic-debugging" } },
+              },
+            },
+          ],
+        },
+      ],
+      [
+        {
+          toolCallId: "mcp-invalid-time",
+          toolName: "mcp__github__search_prs",
+          startedAt: Number.NaN,
+        },
+      ],
+    );
+
+    expect(capabilityUsage).toEqual([]);
   });
 
   it("normalizes Zcode capability calls found only in a model response", async () => {

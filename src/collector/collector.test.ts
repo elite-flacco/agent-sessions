@@ -361,9 +361,28 @@ describe("collector sync", () => {
       .run("2026-07-11T10:00:30Z", "zcode-orphan");
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    const { buildCapabilityLookups } = await import("./capabilities");
     __resetZcodeDbCache();
     try {
-      await collector.syncAll({ adapters: [] });
+      const capabilityLookups = buildCapabilityLookups([
+        {
+          provider: "zcode",
+          scope: "global",
+          warnings: [],
+          capabilities: [
+            {
+              id: "zcode:mcp:openai-developer-docs",
+              name: "openaiDeveloperDocs",
+              kind: "mcp",
+              status: "enabled",
+              packaging: "plugin",
+              origin: "marketplace",
+              sourcePlugin: "openai-developers@openai-curated-remote",
+            },
+          ],
+        },
+      ]);
+      await collector.syncAll({ adapters: [], capabilityLookups });
       expect(
         sqlite
           .prepare(
@@ -409,7 +428,7 @@ describe("collector sync", () => {
           externalId: "mcp:zcode-mcp-call",
           provider: "zcode",
           kind: "mcp",
-          name: "plugin_openai-developers_openaideveloperdocs",
+          name: "openaiDeveloperDocs",
           occurredAt: new Date(1_750_000_000_700).toISOString(),
         },
       ]);

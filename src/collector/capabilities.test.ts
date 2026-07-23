@@ -50,6 +50,23 @@ const inventories: AgentInventory[] = [
         origin: "marketplace",
       },
       {
+        id: "codex:mcp:openai-developer-docs",
+        name: "openaiDeveloperDocs",
+        kind: "mcp",
+        status: "enabled",
+        packaging: "plugin",
+        origin: "marketplace",
+        sourcePlugin: "openai-developers@openai-curated-remote",
+      },
+      {
+        id: "codex:mcp:event-stream",
+        name: "event-stream",
+        kind: "mcp",
+        status: "enabled",
+        packaging: "standalone",
+        origin: "personal",
+      },
+      {
         id: "codex:mcp:unavailable",
         name: "unavailable-mcp",
         kind: "mcp",
@@ -73,7 +90,51 @@ describe("capability normalization", () => {
     expect([...lookup.skillFiles.values()]).not.toContain("disabled-skill");
     expect([...lookup.skillFiles.values()]).not.toContain("unavailable-skill");
     expect(lookup.mcpNames.get("github")).toBe("github");
+    expect(
+      lookup.mcpNames.get("plugin_openai-developers_openaideveloperdocs"),
+    ).toBe("openaiDeveloperDocs");
+    expect(lookup.mcpNames.get("event_stream")).toBe("event-stream");
     expect(lookup.mcpNames.has("unavailable-mcp")).toBe(false);
+  });
+
+  it("omits convention aliases that collide across active inventory names", () => {
+    const colliding: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [
+          {
+            id: "codex:mcp:event-space",
+            name: "event stream",
+            kind: "mcp",
+            status: "enabled",
+            packaging: "standalone",
+            origin: "personal",
+          },
+          {
+            id: "codex:mcp:event-hyphen",
+            name: "event-stream",
+            kind: "mcp",
+            status: "enabled",
+            packaging: "standalone",
+            origin: "personal",
+          },
+        ],
+      },
+    ];
+
+    const lookup = buildCapabilityLookups(colliding).codex;
+
+    expect(lookup.mcpNames.has("event_stream")).toBe(false);
+    expect(
+      mcpUsage({
+        externalId: "ambiguous",
+        toolName: "mcp__event_stream__publish",
+        occurredAt: "2026-07-22T10:00:00Z",
+        lookup,
+      }),
+    ).toMatchObject({ name: "event_stream" });
   });
 
   it("accepts a native skill name without retaining other input", () => {
@@ -106,6 +167,25 @@ describe("capability normalization", () => {
         occurredAt: "2026-07-22T10:00:00Z",
       }),
     ).toMatchObject({ kind: "mcp", name: "github" });
+
+    const lookup = buildCapabilityLookups(inventories).codex;
+    expect(
+      mcpUsage({
+        externalId: "call-3",
+        toolName:
+          "mcp__plugin_openai-developers_openaiDeveloperDocs__search_openai_docs",
+        occurredAt: "2026-07-22T10:00:00Z",
+        lookup,
+      }),
+    ).toMatchObject({ kind: "mcp", name: "openaiDeveloperDocs" });
+    expect(
+      mcpUsage({
+        externalId: "call-4",
+        toolName: "mcp__event_stream__publish",
+        occurredAt: "2026-07-22T10:00:00Z",
+        lookup,
+      }),
+    ).toMatchObject({ kind: "mcp", name: "event-stream" });
   });
 
   it("counts only read-like calls containing an exact inventory skill file", () => {
