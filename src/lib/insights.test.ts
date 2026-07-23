@@ -325,6 +325,120 @@ describe("getInsights — capability usage", () => {
     expect(skills).toHaveLength(5);
   });
 
+  it("ranks ties by invocations, sessions, recency, then name", () => {
+    const insertSession = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, status, started_at, updated_at, ended_at)
+      VALUES (?, 'codex', ?, 'completed', ?, ?, ?)`);
+    const insertUsage = sqlite.prepare(`INSERT INTO session_capability_usage
+      (session_id, external_id, provider, kind, capability_name, occurred_at)
+      VALUES (?, ?, 'codex', 'skill', ?, ?)`);
+    const sessionIds: number[] = [];
+    const now = Date.now();
+    const older = new Date(now - 2 * DAY_MS).toISOString();
+    const newer = new Date(now - DAY_MS).toISOString();
+    const addSession = (suffix: string, occurredAt: string): number => {
+      const id = Number(
+        insertSession.run(
+          `ranking-${suffix}`,
+          `Ranking ${suffix}`,
+          occurredAt,
+          occurredAt,
+          occurredAt,
+        ).lastInsertRowid,
+      );
+      sessionIds.push(id);
+      return id;
+    };
+    const addUses = (
+      sessionId: number,
+      name: string,
+      count: number,
+      occurredAt: string,
+    ) => {
+      for (let index = 0; index < count; index += 1) {
+        insertUsage.run(
+          sessionId,
+          `${name}-${sessionId}-${index}`,
+          name,
+          occurredAt,
+        );
+      }
+    };
+
+    try {
+      addUses(addSession("invocations", older), "tie-invocations", 6, older);
+      addUses(addSession("sessions-a", older), "tie-sessions", 3, older);
+      addUses(addSession("sessions-b", older), "tie-sessions", 2, older);
+      addUses(addSession("newer", newer), "tie-newer", 5, newer);
+      const sameTimeSession = addSession("same-time", older);
+      addUses(sameTimeSession, "tie-alpha", 5, older);
+      addUses(sameTimeSession, "tie-zeta", 5, older);
+
+      const skills = queries
+        .getInsights("30d", inventories)
+        .capabilities.mostUsed.filter((item) => item.kind === "skill");
+
+      expect(skills.map((item) => item.name)).toEqual([
+        "tie-invocations",
+        "tie-sessions",
+        "tie-newer",
+        "tie-alpha",
+        "tie-zeta",
+      ]);
+    } finally {
+      const placeholders = sessionIds.map(() => "?").join(", ");
+      sqlite
+        .prepare(`DELETE FROM sessions WHERE id IN (${placeholders})`)
+        .run(...sessionIds);
+    }
+  });
+
+  it("keeps only the top five MCP names when more than five are observed", () => {
+    const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
+    const sessionId = Number(
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at, ended_at)
+          VALUES ('mcp-ranking', 'codex', 'MCP ranking', 'completed', ?, ?, ?)`,
+        )
+        .run(occurredAt, occurredAt, occurredAt).lastInsertRowid,
+    );
+    const insertUsage = sqlite.prepare(`INSERT INTO session_capability_usage
+      (session_id, external_id, provider, kind, capability_name, occurred_at)
+      VALUES (?, ?, 'codex', 'mcp', ?, ?)`);
+
+    try {
+      for (const [name, count] of [
+        ["mcp-rank-a", 10],
+        ["mcp-rank-b", 9],
+        ["mcp-rank-c", 8],
+        ["mcp-rank-d", 7],
+        ["mcp-rank-e", 6],
+        ["mcp-rank-f", 5],
+      ] as const) {
+        for (let index = 0; index < count; index += 1) {
+          insertUsage.run(sessionId, `${name}-${index}`, name, occurredAt);
+        }
+      }
+
+      const mcps = queries
+        .getInsights("30d", inventories)
+        .capabilities.mostUsed.filter((item) => item.kind === "mcp");
+
+      expect(mcps.map((item) => item.name)).toEqual([
+        "mcp-rank-a",
+        "mcp-rank-b",
+        "mcp-rank-c",
+        "mcp-rank-d",
+        "mcp-rank-e",
+      ]);
+      expect(mcps).toHaveLength(5);
+    } finally {
+      sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+    }
+  });
+
   it("ranks observed capabilities even when they are no longer installed", () => {
     const capabilities = queries.getInsights("30d", inventories).capabilities;
 

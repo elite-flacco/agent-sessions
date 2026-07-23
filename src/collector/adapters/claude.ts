@@ -1,9 +1,5 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
-import {
-  explicitSkillUsage,
-  matchedSkillReads,
-  mcpUsage,
-} from "../capabilities";
+import { explicitSkillUsage, mcpUsage } from "../capabilities";
 import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
 import {
   accumulateUsage,
@@ -18,7 +14,7 @@ import {
 export const claudeAdapter: ProviderAdapter = {
   provider: "claude",
   discover: () => walkJsonl(homePath(".claude", "projects")),
-  parse: (filePath, context) =>
+  parse: (filePath) =>
     parseJsonl(filePath, {
       provider: "claude",
       fallbackTitle: "Claude Code session",
@@ -136,13 +132,6 @@ export const claudeAdapter: ProviderAdapter = {
                 externalId,
                 toolName: tool.name,
                 occurredAt,
-              }),
-              ...matchedSkillReads({
-                externalId,
-                toolName: tool.name,
-                input: tool.input,
-                occurredAt,
-                lookup: context?.capabilities,
               }),
             ].filter((entry): entry is CapabilityUsage => entry !== undefined);
           });

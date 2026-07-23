@@ -65,7 +65,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "11";
+const NORMALIZATION_VERSION = "12";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto

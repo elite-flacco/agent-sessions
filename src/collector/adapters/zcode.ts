@@ -1,10 +1,6 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
 import { __resetZcodeDbCache, getZcodeSessionMetadata } from "@/lib/zcode-db";
-import {
-  explicitSkillUsage,
-  matchedSkillReads,
-  mcpUsage,
-} from "../capabilities";
+import { explicitSkillUsage, mcpUsage } from "../capabilities";
 import {
   homePath,
   record,
@@ -33,7 +29,7 @@ export const zcodeAdapter: ProviderAdapter = {
     const agents = await walkJsonl(homePath(".zcode", "cli", "agents"));
     return [...rollout, ...agents];
   },
-  parse: async (filePath, context) => {
+  parse: async (filePath) => {
     const result = await parseJsonl(filePath, {
       provider: "zcode",
       fallbackTitle: "Zcode coding session",
@@ -145,13 +141,6 @@ export const zcodeAdapter: ProviderAdapter = {
                   toolName: tool.name,
                   namespace: tool.namespace,
                   occurredAt,
-                }),
-                ...matchedSkillReads({
-                  externalId,
-                  toolName: tool.name,
-                  input: tool.arguments ?? tool.input,
-                  occurredAt,
-                  lookup: context?.capabilities,
                 }),
               ].filter(
                 (entry): entry is CapabilityUsage => entry !== undefined,

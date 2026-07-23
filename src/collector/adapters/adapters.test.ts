@@ -407,6 +407,53 @@ describe("provider adapters", () => {
     );
   });
 
+  it("ignores Claude SKILL.md reads while retaining native Skill evidence", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map(),
+    };
+    const result = await parse(
+      claudeAdapter,
+      [
+        {
+          type: "assistant",
+          uuid: "claude-native-and-read",
+          sessionId: "claude-native-only",
+          timestamp: "2026-07-22T10:01:00Z",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "claude-native-skill",
+                name: "Skill",
+                input: { skill: "review-code-changes" },
+              },
+              {
+                type: "tool_use",
+                id: "claude-skill-read",
+                name: "Read",
+                input: { file_path: "/safe/links/frontend-rules/SKILL.md" },
+              },
+            ],
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({
+        externalId: "skill:claude-native-skill",
+        kind: "skill",
+        name: "review-code-changes",
+      }),
+    ]);
+  });
+
   it("normalizes exact Codex skill reads and namespaced MCP calls", async () => {
     const lookup: CapabilityLookup = {
       skillFiles: new Map([
@@ -821,6 +868,57 @@ describe("provider adapters", () => {
     expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toMatch(
       /SECRET_ZCODE_ARGS|SECRET_ZCODE_QUERY/,
     );
+  });
+
+  it("ignores Zcode rollout SKILL.md reads while retaining native Skill evidence", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map(),
+    };
+    const result = await parse(
+      zcodeAdapter,
+      [
+        {
+          type: "model_io",
+          sessionId: "z-native-only",
+          startedAt: "2026-07-22T10:00:00Z",
+          completedAt: "2026-07-22T10:01:00Z",
+          request: {
+            messages: [
+              {
+                role: "assistant",
+                toolCalls: [
+                  {
+                    id: "z-native-skill",
+                    name: "Skill",
+                    arguments: { skill: "systematic-debugging" },
+                  },
+                  {
+                    id: "z-skill-read",
+                    name: "read",
+                    arguments: {
+                      path: "/safe/links/frontend-rules/SKILL.md",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({
+        externalId: "skill:z-native-skill",
+        kind: "skill",
+        name: "systematic-debugging",
+      }),
+    ]);
   });
 
   it("normalizes authoritative Zcode database capability usage safely", () => {
