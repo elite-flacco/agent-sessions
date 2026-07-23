@@ -1519,7 +1519,10 @@ function ScheduledTasksView({
             <span>Status</span>
           </div>
           {tasks.map((task) => (
-            <ScheduledTaskDetails key={task.id} task={task} />
+            <ScheduledTaskDetails
+              key={`${task.provider}:${task.id}`}
+              task={task}
+            />
           ))}
         </div>
       ) : null}
