@@ -48,6 +48,12 @@ describe("humanizeSchedule", () => {
   test("returns undefined for empty string", () => {
     expect(humanizeSchedule("")).toBeUndefined();
   });
+
+  test("strips RRULE: prefix (RFC 5545 form)", () => {
+    expect(
+      humanizeSchedule("RRULE:FREQ=WEEKLY;BYHOUR=7;BYMINUTE=0;BYDAY=MO"),
+    ).toBe("Mondays at 07:00");
+  });
 });
 
 function task(overrides: Partial<ScheduledTask> = {}): ScheduledTask {

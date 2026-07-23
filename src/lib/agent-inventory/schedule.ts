@@ -12,8 +12,11 @@ const DAY_NAMES: Record<string, string> = {
 
 function parsePairs(raw: string): Map<string, string[]> {
   // rrule allows repeated keys (BYDAY=MO;BYDAY=WE) — collect all values per key.
+  // Some sources include the RFC 5545 "RRULE:" prefix; strip it so FREQ etc.
+  // parse correctly regardless of which form the provider stored.
+  const stripped = raw.replace(/^RRULE:/i, "");
   const map = new Map<string, string[]>();
-  for (const part of raw.split(";")) {
+  for (const part of stripped.split(";")) {
     const [key, value] = part.split("=");
     if (!key || value === undefined) continue;
     const list = map.get(key.toUpperCase());
