@@ -1535,7 +1535,7 @@ function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
     <details name="agent-tasks" className="agent-task-row">
       <summary className="agent-task-summary">
         <span className="agent-task-sched">
-          {schedule ?? "Not scheduled"}
+          {schedule ?? "Schedule unavailable"}
         </span>
         <strong className="agent-task-name">{task.name}</strong>
         <span className={`badge ${providerBadges[task.provider]}`}>
