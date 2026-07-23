@@ -1662,23 +1662,164 @@ describe("AgentSetupView", () => {
 });
 
 describe("Scheduled tasks view", () => {
-  test("renders third tab and per-provider cards", () => {
-    render(
+  const taskInventories: AgentInventory[] = [
+    {
+      provider: "codex",
+      scope: "global",
+      capabilities: [],
+      scheduledTasks: [
+        {
+          id: "weekly-digest",
+          name: "Weekly digest",
+          provider: "codex",
+          scheduleRaw: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8",
+          scheduleHuman: "Mondays at 08:00",
+          scheduleMissing: false,
+          status: "active",
+          model: "gpt-5.5",
+          instructionBody: "Summarize the week.",
+          instructionFormat: "toml_prompt",
+          sourcePath: "/safe/.codex/automations/weekly-digest/automation.toml",
+          warnings: [],
+        },
+        {
+          id: "nightly-cleanup",
+          name: "Nightly cleanup",
+          provider: "codex",
+          scheduleRaw: "FREQ=DAILY;BYHOUR=2",
+          scheduleHuman: "Daily at 02:00",
+          scheduleMissing: false,
+          status: "active",
+          instructionFormat: "toml_prompt",
+          sourcePath: "/safe/.codex/automations/cleanup/automation.toml",
+          warnings: [],
+        },
+      ],
+      warnings: [],
+    },
+    {
+      provider: "claude",
+      scope: "global",
+      capabilities: [],
+      scheduledTasks: [
+        {
+          id: "paused-monthly",
+          name: "Monthly report",
+          provider: "claude",
+          scheduleRaw: "FREQ=MONTHLY;BYMONTHDAY=1",
+          scheduleHuman: "Monthly on day 1 at 00:00",
+          scheduleMissing: false,
+          status: "paused",
+          instructionFormat: "skill_md",
+          sourcePath: "/safe/.claude/scheduled-tasks/report",
+          warnings: [],
+        },
+      ],
+      warnings: [],
+    },
+    {
+      provider: "pi",
+      scope: "global",
+      capabilities: [],
+      warnings: [],
+    },
+  ];
+
+  test("renders the tab and task rows in a single table", () => {
+    const { container } = render(
       <AgentSetupView
-        inventories={inventories}
+        inventories={taskInventories}
         filters={parseAgentSetupFilters({ view: "tasks" })}
       />,
     );
-    // The Scheduled tasks nav tab exists.
     expect(screen.getByRole("link", { name: "Scheduled tasks" })).toBeDefined();
-    // The codex fixture task renders with its humanized schedule and model.
+    // No count summary line (removed); tasks render directly in the table.
+    expect(container.textContent).not.toMatch(
+      /\d+ scheduled tasks? across agents\./,
+    );
+    // Task names and schedules render in the table.
     screen.getByText("Weekly digest");
     screen.getByText("Mondays at 08:00");
-    screen.getByText("gpt-5.5");
-    // Pi has no scheduled tasks; its empty card renders the header source label.
-    expect(
-      screen.getByText(/Pi does not expose scheduled tasks/i),
-    ).toBeDefined();
+    screen.getByText("Nightly cleanup");
+    screen.getByText("Daily at 02:00");
+    screen.getByText("Monthly report");
+  });
+
+  test("sorts by cadence: active daily before active weekly before paused", () => {
+    render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    // The task-name cells are <strong> elements; collect them in DOM order.
+    const taskNames = Array.from(
+      document.querySelectorAll(".agent-task-name"),
+    ).map((el) => el.textContent);
+    expect(taskNames).toEqual([
+      "Nightly cleanup",
+      "Weekly digest",
+      "Monthly report",
+    ]);
+  });
+
+  test("does not render per-provider provenance labels or Pi empty card", () => {
+    const { container } = render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    expect(container.textContent).not.toMatch(
+      /Pi does not expose scheduled tasks/i,
+    );
+    expect(container.textContent).not.toMatch(/Read from ~\/\.codex/i);
+  });
+
+  test("uses exclusive accordion — details share one name", () => {
+    render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    const details = document.querySelectorAll("details.agent-task-row");
+    expect(details.length).toBe(3);
+    const names = new Set(
+      Array.from(details).map((d) => d.getAttribute("name")),
+    );
+    expect(names.size).toBe(1);
+  });
+
+  test("shows model and instruction body inside detail", () => {
+    const { container } = render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    // jsdom renders <details> body content even when collapsed.
+    expect(container.textContent).toContain("gpt-5.5");
+    expect(container.textContent).toContain("Summarize the week.");
+  });
+
+  test("shows zero-state message when no tasks exist", () => {
+    const empty: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        capabilities: [],
+        scheduledTasks: [],
+        warnings: [],
+      },
+    ];
+    render(
+      <AgentSetupView
+        inventories={empty}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    screen.getByText("No scheduled tasks found across agents.");
   });
 });
 

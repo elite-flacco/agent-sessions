@@ -1,3 +1,5 @@
+import type { ScheduledTask } from "./types";
+
 const DAY_NAMES: Record<string, string> = {
   MO: "Monday",
   TU: "Tuesday",
@@ -10,8 +12,11 @@ const DAY_NAMES: Record<string, string> = {
 
 function parsePairs(raw: string): Map<string, string[]> {
   // rrule allows repeated keys (BYDAY=MO;BYDAY=WE) — collect all values per key.
+  // Some sources include the RFC 5545 "RRULE:" prefix; strip it so FREQ etc.
+  // parse correctly regardless of which form the provider stored.
+  const stripped = raw.replace(/^RRULE:/i, "");
   const map = new Map<string, string[]>();
-  for (const part of raw.split(";")) {
+  for (const part of stripped.split(";")) {
     const [key, value] = part.split("=");
     if (!key || value === undefined) continue;
     const list = map.get(key.toUpperCase());
@@ -58,4 +63,49 @@ export function humanizeSchedule(raw: string): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Sort rank for a scheduled task: `[activeRank, frequencyRank, timeRank]`.
+ * Active tasks sort before inactive; within the same active state, more
+ * frequent cadences (daily < weekly < monthly) sort first; within the same
+ * cadence, earlier wall-clock times sort first. Frequency bands mirror
+ * `humanizeSchedule` exactly — no new rrule parsing is introduced.
+ */
+export function scheduledTaskSortKey(
+  task: ScheduledTask,
+): [number, number, number] {
+  const activeRank = task.status === "active" ? 0 : 1;
+
+  let frequencyRank = 3;
+  if (task.scheduleRaw && !task.scheduleMissing) {
+    const freq = parsePairs(task.scheduleRaw).get("FREQ")?.at(0)?.toUpperCase();
+    if (freq === "DAILY") frequencyRank = 0;
+    else if (freq === "WEEKLY") frequencyRank = 1;
+    else if (freq === "MONTHLY") frequencyRank = 2;
+  }
+
+  let timeRank = 0;
+  if (task.scheduleRaw) {
+    const pairs = parsePairs(task.scheduleRaw);
+    const hour = Number.parseInt(pairs.get("BYHOUR")?.at(0) ?? "0", 10);
+    const minute = Number.parseInt(pairs.get("BYMINUTE")?.at(0) ?? "0", 10);
+    if (!Number.isNaN(hour) && !Number.isNaN(minute)) {
+      timeRank = hour * 60 + minute;
+    }
+  }
+
+  return [activeRank, frequencyRank, timeRank];
+}
+
+/**
+ * Comparator for `Array.sort` that orders tasks by their sort key.
+ */
+export function compareScheduledTasks(
+  a: ScheduledTask,
+  b: ScheduledTask,
+): number {
+  const [aa, af, at] = scheduledTaskSortKey(a);
+  const [ba, bf, bt] = scheduledTaskSortKey(b);
+  return aa - ba || af - bf || at - bt;
 }

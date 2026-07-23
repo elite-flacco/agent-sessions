@@ -384,9 +384,7 @@ function SessionRow({
               {session.sessionKind === "subagent"
                 ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
                 : (session.repository ?? "Unknown workspace")}
-              {session.sessionKind !== "subagent" &&
-              session.children.length > 0 &&
-              session.branch
+              {session.sessionKind !== "subagent" && session.branch
                 ? ` · ${session.branch}`
                 : ""}
             </span>
