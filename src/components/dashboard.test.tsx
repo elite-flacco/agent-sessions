@@ -117,7 +117,7 @@ describe("Dashboard session rows", () => {
     expect(html).toContain('title="Jul 15, 2026, 8:05 AM"');
   });
 
-  test("omits title action icons and hides branches for sessions without subagents", () => {
+  test("omits title action icons and shows branches on main sessions", () => {
     const child = {
       ...session(3, "Child session"),
       parentExternalId: "session-2",
@@ -154,7 +154,7 @@ describe("Dashboard session rows", () => {
     expect(html).not.toContain("session-open-link");
     expect(html).not.toContain("Open Standalone session in a new tab");
     expect(html).toContain(
-      'Standalone session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions</span></span>',
+      'Standalone session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions · main</span></span>',
     );
     expect(html).toContain(
       'Parent session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions · main</span>',
