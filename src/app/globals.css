@@ -2113,7 +2113,7 @@
     background: var(--card-hover);
   }
   .agent-task-sched {
-    font-weight: 600;
+    font-weight: 400;
     font-size: var(--text-sm);
     overflow: hidden;
     text-overflow: ellipsis;
