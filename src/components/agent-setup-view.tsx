@@ -26,6 +26,7 @@ import {
   type InventoryWarning,
   type ScheduledTask,
 } from "@/lib/agent-inventory";
+import { compareScheduledTasks } from "@/lib/agent-inventory/schedule";
 import { providerBadges, providerLabels } from "@/lib/labels";
 import { shortenHomePath } from "@/lib/format";
 import { agentProviders, type AgentProvider } from "@/lib/types";
@@ -1484,27 +1485,23 @@ const scheduledStatusBadges: Record<ScheduledTask["status"], string> = {
   unknown: "badge-5",
 };
 
-const scheduledSourceLabels: Record<AgentProvider, string> = {
-  codex: "Read from ~/.codex/automations/",
-  claude: "Read from ~/.claude/scheduled-tasks/",
-  zcode: "Read from ~/.zcode/cli/db/db.sqlite (workflow_definition)",
-  pi: "Pi does not expose scheduled tasks",
-};
-
 /**
- * Third `/agents` tab. Renders one card per provider (always all four, even
- * when empty) with that provider's discovered scheduled/recurring tasks. The
- * KindRail is scoped to InventoryView so it does not render here.
+ * Third `/agents` tab. Renders all discovered scheduled/recurring tasks in a
+ * single schedule-first table (sorted by cadence, active tasks first). Empty
+ * providers contribute no rows and render nothing. Each row is a native
+ * `<details name="agent-tasks">` so only one row is open at a time (exclusive
+ * accordion) with zero client-side JavaScript. The KindRail is scoped to
+ * InventoryView so it does not render here.
  */
 function ScheduledTasksView({
   inventories,
 }: {
   inventories: AgentInventory[];
 }) {
-  const total = inventories.reduce(
-    (sum, inventory) => sum + (inventory.scheduledTasks?.length ?? 0),
-    0,
-  );
+  const tasks = inventories
+    .flatMap((inventory) => inventory.scheduledTasks ?? [])
+    .sort(compareScheduledTasks);
+  const total = tasks.length;
   return (
     <div className="agent-inventory-list">
       <p className="agent-tasks-summary">
@@ -1512,85 +1509,65 @@ function ScheduledTasksView({
           ? "No scheduled tasks found across agents."
           : `${total} scheduled ${total === 1 ? "task" : "tasks"} across agents.`}
       </p>
-      {inventories.map((inventory) => (
-        <ProviderScheduledTasks
-          key={inventory.provider}
-          inventory={inventory}
-        />
-      ))}
+      {total > 0 ? (
+        <div className="agent-task-table">
+          <div className="agent-task-head">
+            <span aria-hidden="true" />
+            <span>Schedule</span>
+            <span>Task</span>
+            <span>Agent</span>
+            <span>Status</span>
+          </div>
+          {tasks.map((task) => (
+            <ScheduledTaskDetails key={task.id} task={task} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function ProviderScheduledTasks({ inventory }: { inventory: AgentInventory }) {
-  const tasks = inventory.scheduledTasks ?? [];
-  return (
-    <section className="card agent-provider-section">
-      <header className="agent-provider-heading">
-        <div>
-          <span className={`badge ${providerBadges[inventory.provider]}`}>
-            {providerLabels[inventory.provider]}
-          </span>
-          <strong>
-            {tasks.length === 0
-              ? "No scheduled tasks"
-              : `${tasks.length} scheduled ${tasks.length === 1 ? "task" : "tasks"}`}
-          </strong>
-        </div>
-        <span>{scheduledSourceLabels[inventory.provider]}</span>
-      </header>
-      {tasks.length === 0 ? (
-        <div className="empty-state agent-empty-state">
-          <p>No scheduled tasks found for this agent.</p>
-        </div>
-      ) : (
-        <div className="agent-capability-list">
-          {tasks.map((task) => (
-            <ScheduledTaskRow key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ScheduledTaskRow({ task }: { task: ScheduledTask }) {
+function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
   const schedule = task.scheduleHuman ?? task.scheduleRaw;
   return (
-    <div className="agent-capability-row">
-      <div className="agent-capability-primary">
-        <strong>{task.name}</strong>
-        <span>
+    <details name="agent-tasks" className="agent-task-row">
+      <summary className="agent-task-summary">
+        <span className="agent-task-sched">
           {schedule ?? "Schedule not specified"}
           {task.scheduleMissing ? (
             <em className="agent-tasks-hint"> (no schedule configured)</em>
           ) : null}
         </span>
-        {task.model ? (
+        <strong className="agent-task-name">{task.name}</strong>
+        <span className={`badge ${providerBadges[task.provider]}`}>
+          {providerLabels[task.provider]}
+        </span>
+        <span
+          className={`badge ${scheduledStatusBadges[task.status]} agent-status-tag`}
+        >
+          {scheduledStatusLabels[task.status]}
+        </span>
+      </summary>
+      <div className="agent-task-detail">
+        <div className="agent-task-meta">
+          {task.model ? (
+            <span>
+              Model: <code>{task.model}</code>
+            </span>
+          ) : null}
+          {task.targetProject ? (
+            <span>
+              Target: <code>{task.targetProject}</code>
+            </span>
+          ) : null}
           <span>
-            <code>{task.model}</code>
+            Source: <code>{shortenHomePath(task.sourcePath)}</code>
           </span>
-        ) : null}
-        {task.targetProject ? (
-          <span>
-            <code>{task.targetProject}</code>
-          </span>
+        </div>
+        {task.instructionBody ? (
+          <pre className="agent-task-instruction">{task.instructionBody}</pre>
         ) : null}
       </div>
-      <span
-        className={`badge ${scheduledStatusBadges[task.status]} agent-status-tag`}
-      >
-        {scheduledStatusLabels[task.status]}
-      </span>
-      {task.instructionBody ? (
-        <details className="agent-instruction agent-task-instruction">
-          <summary>
-            <strong>Instructions</strong>
-            <span>{task.sourcePath}</span>
-          </summary>
-          <pre>{task.instructionBody}</pre>
-        </details>
-      ) : null}
-    </div>
+    </details>
   );
 }
