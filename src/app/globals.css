@@ -1724,6 +1724,11 @@
     align-items: end;
     padding-top: 0.4rem;
   }
+  .insight-spark {
+    height: 1.6rem;
+    gap: 0.12rem;
+    padding-top: 0;
+  }
   .spark-slot {
     display: flex;
     align-items: flex-end;

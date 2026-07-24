@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Insights } from "@/lib/queries";
-import { SignalBand } from "./insights-view";
+import { InsightSparkline, SignalBand } from "./insights-view";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -52,5 +52,27 @@ describe("SignalBand", () => {
   test("renders nothing when there are no signals", () => {
     const { container } = render(<SignalBand insights={baseInsights()} />);
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("InsightSparkline", () => {
+  test("renders one slot per value with quantized fills", () => {
+    const { container } = render(
+      <InsightSparkline values={[0, 5, 10]} label="trend" />,
+    );
+    const slots = container.querySelectorAll(".spark-slot");
+    expect(slots).toHaveLength(3);
+    expect(container.querySelector(".spark-fill-10")).not.toBeNull();
+  });
+
+  test("renders nothing when every value is null or empty", () => {
+    const { container: a } = render(
+      <InsightSparkline values={[]} label="trend" />,
+    );
+    expect(a.firstChild).toBeNull();
+    const { container: b } = render(
+      <InsightSparkline values={[null, null]} label="trend" />,
+    );
+    expect(b.firstChild).toBeNull();
   });
 });

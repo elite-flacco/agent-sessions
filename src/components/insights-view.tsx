@@ -83,6 +83,28 @@ export function SignalBand({ insights }: { insights: Insights }) {
   );
 }
 
+export function InsightSparkline({
+  values,
+  label,
+}: {
+  values: (number | null)[];
+  label: string;
+}) {
+  const present = values.filter((v): v is number => v !== null);
+  if (present.length === 0) return null;
+  const max = Math.max(...present, 0);
+
+  return (
+    <span className="spark insight-spark" role="img" aria-label={label}>
+      {values.map((v, i) => (
+        <span className="spark-slot" key={i}>
+          <i className={`spark-fill-${level(v ?? 0, max)}`} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function CacheCard({ insights }: { insights: Insights }) {
   const { cache } = insights;
   const hitPct =
