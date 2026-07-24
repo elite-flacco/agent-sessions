@@ -99,13 +99,33 @@ export function SessionDetailView({
           }
         />
         <Detail
-          label="Cost"
+          label={subagents.length ? "Cost (incl. subagents)" : "Cost"}
           value={
-            usage.costUsd !== null
-              ? `${formatCostUsd(usage.costUsd)} · ${costSourceLabels[usage.costSource]}`
+            usage.totalCostUsd !== null
+              ? `${formatCostUsd(usage.totalCostUsd)} · ${costSourceLabels[usage.totalCostSource]}`
               : "Unavailable"
           }
         />
+        {subagents.length > 0 && (
+          <>
+            <Detail
+              label="Main agent cost"
+              value={
+                usage.costUsd !== null
+                  ? formatCostUsd(usage.costUsd)
+                  : "Unavailable"
+              }
+            />
+            <Detail
+              label="Subagent cost"
+              value={
+                usage.subagentCostUsd !== null
+                  ? formatCostUsd(usage.subagentCostUsd)
+                  : "Unavailable"
+              }
+            />
+          </>
+        )}
       </div>
 
       {subagents.length > 0 && (

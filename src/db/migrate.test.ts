@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { afterEach, describe, expect, it } from "vitest";
 
 const directories: string[] = [];
@@ -209,4 +210,73 @@ describe("database migration baseline", () => {
       expect(migrationCount).toBe(8);
     },
   );
+
+  // The runtime bootstrap in client.ts creates tables with CREATE TABLE IF
+  // NOT EXISTS, so a new table can land on an already-baselined database
+  // before its migration ever runs. Re-running that migration must not abort
+  // the run and strand the migrations behind it.
+  it("applies missing migrations when the bootstrap already created a later table", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "relay-migrate-"),
+    );
+    directories.push(directory);
+    const databasePath = path.join(directory, "relay.db");
+    createLegacyDatabase(databasePath, 3);
+
+    const staged = new Database(databasePath);
+    // Baseline recorded by an earlier release that knew only migrations 0-5.
+    staged.exec(`CREATE TABLE "__drizzle_migrations" (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at numeric
+    )`);
+    const migrations = readMigrationFiles({
+      migrationsFolder: path.join(process.cwd(), "drizzle"),
+    });
+    const insert = staged.prepare(
+      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+    );
+    for (const migration of migrations.slice(0, 6))
+      insert.run(migration.hash, migration.folderMillis);
+    // Then the app booted and its bootstrap SQL created the newer table.
+    staged.exec(`
+      CREATE TABLE session_capability_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        external_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        capability_name TEXT NOT NULL,
+        occurred_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX capability_usage_session_external_idx ON session_capability_usage(session_id, external_id);
+      CREATE INDEX capability_usage_kind_name_idx ON session_capability_usage(kind, capability_name);
+      CREATE INDEX capability_usage_occurred_idx ON session_capability_usage(occurred_at);
+    `);
+    staged.close();
+
+    execFileSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], {
+      cwd: process.cwd(),
+      env: { ...process.env, RELAY_DATABASE_PATH: databasePath },
+      stdio: "pipe",
+    });
+
+    const migrated = new Database(databasePath, { readonly: true });
+    const adapterScanColumns = (
+      migrated.prepare("PRAGMA table_info(adapter_scans)").all() as {
+        name: string;
+      }[]
+    )
+      .map((column) => column.name)
+      .sort();
+    const migrationCount = (
+      migrated
+        .prepare("SELECT COUNT(*) count FROM __drizzle_migrations")
+        .get() as { count: number }
+    ).count;
+    migrated.close();
+
+    expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
+    expect(migrationCount).toBe(8);
+  });
 });

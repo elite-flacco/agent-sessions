@@ -342,7 +342,9 @@ function SessionsTable({
         <span>Started</span>
         <span>Updated</span>
         <span>Duration</span>
-        <span>Cost</span>
+        <span title="Includes the cost of any subagents the session spawned">
+          Cost
+        </span>
       </div>
       {sessions.length ? (
         sessions.map((session) => (

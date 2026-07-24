@@ -163,7 +163,9 @@ function CostCard({ insights }: { insights: Insights }) {
 
       {cost.outliers.length ? (
         <div>
-          <div className="insight-sub">Most expensive sessions</div>
+          <div className="insight-sub">
+            Most expensive sessions (incl. subagents)
+          </div>
           {cost.outliers.map((o) => (
             <Link
               key={o.id}

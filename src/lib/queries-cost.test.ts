@@ -52,12 +52,72 @@ beforeAll(async () => {
     new Date(now - 2.5 * HOUR_MS).toISOString(),
     new Date(now - 2.5 * HOUR_MS).toISOString(),
   );
+  // Sessions 4-6: a main session with a subagent that itself delegates once.
+  const nested = sqlite.prepare(`INSERT INTO sessions
+    (external_id, provider, parent_external_id, session_kind, agent_depth,
+     title, repository, status, started_at, updated_at, ended_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  nested.run(
+    "tree-main",
+    "claude",
+    null,
+    "main",
+    0,
+    "Main with subagents",
+    "relay",
+    "completed",
+    new Date(now - 5 * HOUR_MS).toISOString(),
+    new Date(now - 4 * HOUR_MS).toISOString(),
+    new Date(now - 4 * HOUR_MS).toISOString(),
+  );
+  nested.run(
+    "tree-child",
+    "claude",
+    "tree-main",
+    "subagent",
+    1,
+    "Child subagent",
+    "relay",
+    "completed",
+    new Date(now - 5 * HOUR_MS).toISOString(),
+    new Date(now - 4.5 * HOUR_MS).toISOString(),
+    new Date(now - 4.5 * HOUR_MS).toISOString(),
+  );
+  nested.run(
+    "tree-grandchild",
+    "claude",
+    "tree-child",
+    "subagent",
+    2,
+    "Grandchild subagent",
+    "relay",
+    "completed",
+    new Date(now - 5 * HOUR_MS).toISOString(),
+    new Date(now - 4.6 * HOUR_MS).toISOString(),
+    new Date(now - 4.6 * HOUR_MS).toISOString(),
+  );
+  // Session 7: another provider reusing the same external id, to prove the
+  // roll-up stays provider-scoped.
+  insert.run(
+    "tree-child",
+    "codex",
+    "Same id, different provider",
+    "relay",
+    "completed",
+    new Date(now - 5 * HOUR_MS).toISOString(),
+    new Date(now - 4 * HOUR_MS).toISOString(),
+    new Date(now - 4 * HOUR_MS).toISOString(),
+  );
   const usage = sqlite.prepare(`INSERT INTO session_model_usage
     (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
   usage.run(1, "pi-model", 1000, 500, 0, 0, 1.25);
   usage.run(2, "mystery-model", 1000, 500, 0, 0, 2.5);
   usage.run(2, "unknown-unpriced-model", 1000, 500, 0, 0, null);
+  usage.run(4, "pi-model", 1000, 500, 0, 0, 1);
+  usage.run(5, "pi-model", 1000, 500, 0, 0, 2);
+  usage.run(6, "pi-model", 1000, 500, 0, 0, 4);
+  usage.run(7, "pi-model", 1000, 500, 0, 0, 8);
 });
 
 afterAll(async () => {
@@ -79,18 +139,64 @@ describe("getSessionsCostUsd", () => {
   it("returns an empty map for no ids", () => {
     expect(queries.getSessionsCostUsd([]).size).toBe(0);
   });
+
+  it("rolls subagent spend up into the session that delegated it", () => {
+    const costs = queries.getSessionsCostUsd([4, 5, 6]);
+    // main + child + grandchild
+    expect(costs.get(4)).toBe(7);
+    // child + grandchild, without the main session above it
+    expect(costs.get(5)).toBe(6);
+    expect(costs.get(6)).toBe(4);
+  });
+
+  it("keeps the roll-up scoped to the session's own provider", () => {
+    // Session 7 shares "tree-child" with the Claude subagent but is a Codex
+    // root: it must neither absorb nor be absorbed by that tree.
+    expect(queries.getSessionsCostUsd([7]).get(7)).toBe(8);
+    expect(queries.getSessionsCostUsd([4]).get(4)).toBe(7);
+  });
+});
+
+describe("getSessionUsage", () => {
+  it("splits own spend from the subagent roll-up", () => {
+    const usage = queries.getSessionUsage(4);
+    expect(usage.costUsd).toBe(1);
+    expect(usage.subagentCostUsd).toBe(6);
+    expect(usage.totalCostUsd).toBe(7);
+    expect(usage.totalCostSource).toBe("reported");
+    // models stays the session's own usage, not the subtree's.
+    expect(usage.models).toHaveLength(1);
+  });
+
+  it("reports zero subagent spend for a session that delegated nothing", () => {
+    const usage = queries.getSessionUsage(1);
+    expect(usage.subagentCostUsd).toBe(0);
+    expect(usage.totalCostUsd).toBe(1.25);
+  });
+
+  it("propagates an unpriced row to the total", () => {
+    const usage = queries.getSessionUsage(2);
+    expect(usage.totalCostUsd).toBeNull();
+    expect(usage.totalCostSource).toBe("unavailable");
+  });
 });
 
 describe("getSessions sorting", () => {
   it("defaults to last updated with derived costUsd attached", () => {
     const sessions = queries.getSessions({});
+    // Subagents nest under their main session, so only roots are listed.
     expect(sessions.map((session) => session.externalId)).toEqual([
       "cost-1",
       "cost-2",
       "cost-3",
+      "tree-main",
+      "tree-child",
     ]);
     expect(sessions[0].costUsd).toBe(1.25);
     expect(sessions[2].costUsd).toBeNull();
+    // Root row carries the whole subtree; the nested child carries its own.
+    expect(sessions[3].costUsd).toBe(7);
+    expect(sessions[3].children[0].costUsd).toBe(6);
   });
 
   it("sorts by duration", () => {
@@ -98,9 +204,15 @@ describe("getSessions sorting", () => {
     expect(sessions[0].externalId).toBe("cost-2");
   });
 
-  it("sorts by cost with unpriced sessions last", () => {
+  it("sorts by rolled-up cost with unpriced sessions last", () => {
     const sessions = queries.getSessions({ sort: "cost" });
-    expect(sessions[0].externalId).toBe("cost-1");
+    expect(sessions.map((session) => session.externalId)).toEqual([
+      "tree-child", // codex root, $8
+      "tree-main", // $1 own + $6 delegated beats cost-1's $1.25
+      "cost-1",
+      "cost-2",
+      "cost-3",
+    ]);
     expect(sessions.at(-1)?.costUsd ?? null).toBeNull();
   });
 });
