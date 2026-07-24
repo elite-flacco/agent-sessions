@@ -1289,6 +1289,11 @@
   .insight-delta.is-down {
     color: var(--destructive);
   }
+  .insight-signal-band {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 0.9rem;
+  }
   .insight-signal {
     display: flex;
     align-items: flex-start;

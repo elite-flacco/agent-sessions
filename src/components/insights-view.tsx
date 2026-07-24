@@ -44,6 +44,8 @@ export function InsightsView({ insights }: InsightsViewProps) {
         </div>
       </header>
 
+      <SignalBand insights={insights} />
+
       <div className="insights-grid">
         <CacheCard insights={insights} />
         <CostCard insights={insights} />
@@ -61,6 +63,22 @@ function Signal({ signal }: { signal: InsightSignal }) {
     >
       <Sparkles size={13} />
       <span>{signal.text}</span>
+    </div>
+  );
+}
+
+export function SignalBand({ insights }: { insights: Insights }) {
+  const signals = [insights.cache.signal, insights.cost.signal]
+    .filter((s): s is InsightSignal => s !== null)
+    .sort((a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1));
+
+  if (signals.length === 0) return null;
+
+  return (
+    <div className="insight-signal-band">
+      {signals.map((signal, i) => (
+        <Signal key={`${signal.tone}-${i}`} signal={signal} />
+      ))}
     </div>
   );
 }
@@ -91,8 +109,6 @@ function CacheCard({ insights }: { insights: Insights }) {
         <h3>Cache effectiveness</h3>
         <span className="mono">last 7 days</span>
       </div>
-
-      {cache.signal && <Signal signal={cache.signal} />}
 
       <div>
         <div className="insight-headline">{hitPct}</div>
@@ -145,8 +161,6 @@ function CostCard({ insights }: { insights: Insights }) {
         <h3>Cost outliers</h3>
         <span className="mono">last 7 days</span>
       </div>
-
-      {cost.signal && <Signal signal={cost.signal} />}
 
       <div>
         <div className="insight-headline">
