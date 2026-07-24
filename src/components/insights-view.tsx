@@ -3,7 +3,7 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
@@ -46,10 +46,14 @@ export function InsightsView({ insights }: InsightsViewProps) {
 
       <SignalBand insights={insights} />
 
+      <HeroStrip insights={insights} />
+
       <div className="insights-grid">
         <CacheCard insights={insights} />
         <CostCard insights={insights} />
-        <CapabilityUsageCard capabilities={insights.capabilities} />
+        <div id="insight-capability">
+          <CapabilityUsageCard capabilities={insights.capabilities} />
+        </div>
       </div>
     </section>
   );
@@ -105,6 +109,74 @@ export function InsightSparkline({
   );
 }
 
+function KpiTile({
+  href,
+  label,
+  value,
+  children,
+}: {
+  href: string;
+  label: string;
+  value: string;
+  children?: ReactNode;
+}) {
+  return (
+    <a className="insight-kpi" href={href}>
+      <span className="insight-kpi-label">{label}</span>
+      <span className="insight-kpi-value">{value}</span>
+      <span className="insight-kpi-trend">{children}</span>
+    </a>
+  );
+}
+
+export function HeroStrip({ insights }: { insights: Insights }) {
+  const { cache, cost, capabilities } = insights;
+
+  const costValue =
+    cost.week.totalUsd === null ? "—" : formatCostUsd(cost.week.totalUsd);
+  const hitValue =
+    cache.week.hitRate === null
+      ? "—"
+      : `${Math.round(cache.week.hitRate * 100)}%`;
+
+  const adoptionValue =
+    capabilities.installedCount > 0
+      ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
+      : `${capabilities.used.length} used`;
+  const adoptionLevel =
+    capabilities.installedCount > 0
+      ? level(capabilities.installedUsedCount, capabilities.installedCount)
+      : 0;
+
+  return (
+    <div className="insight-hero">
+      <KpiTile href="#insight-cost" label="Week cost" value={costValue}>
+        <InsightSparkline
+          values={cost.trend.map((d) => d.costUsd)}
+          label="Cost per day this week"
+        />
+      </KpiTile>
+      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue}>
+        <InsightSparkline
+          values={cache.trend.map((d) => d.hitRate)}
+          label="Cache hit rate per day this week"
+        />
+      </KpiTile>
+      <KpiTile
+        href="#insight-capability"
+        label="Capability adoption"
+        value={adoptionValue}
+      >
+        {capabilities.installedCount > 0 ? (
+          <span className="meter" aria-hidden>
+            <i className={`meter-fill-${adoptionLevel}`} />
+          </span>
+        ) : null}
+      </KpiTile>
+    </div>
+  );
+}
+
 function CacheCard({ insights }: { insights: Insights }) {
   const { cache } = insights;
   const hitPct =
@@ -126,7 +198,11 @@ function CacheCard({ insights }: { insights: Insights }) {
       : `${deltaPts > 0 ? "▲" : "▼"} ${Math.abs(Math.round(deltaPts))} pts wk-over-wk`;
 
   return (
-    <section className="card insight-card" aria-label="Cache effectiveness">
+    <section
+      className="card insight-card"
+      id="insight-cache"
+      aria-label="Cache effectiveness"
+    >
       <div className="insight-card-head">
         <h3>Cache effectiveness</h3>
         <span className="mono">last 7 days</span>
@@ -178,7 +254,11 @@ function CostCard({ insights }: { insights: Insights }) {
   const maxOutlier = Math.max(...cost.outliers.map((o) => o.costUsd), 0);
 
   return (
-    <section className="card insight-card" aria-label="Cost outliers">
+    <section
+      className="card insight-card"
+      id="insight-cost"
+      aria-label="Cost outliers"
+    >
       <div className="insight-card-head">
         <h3>Cost outliers</h3>
         <span className="mono">last 7 days</span>

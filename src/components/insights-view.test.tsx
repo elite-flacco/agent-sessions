@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Insights } from "@/lib/queries";
-import { InsightSparkline, SignalBand } from "./insights-view";
+import { HeroStrip, InsightSparkline, SignalBand } from "./insights-view";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -74,5 +74,57 @@ describe("InsightSparkline", () => {
       <InsightSparkline values={[null, null]} label="trend" />,
     );
     expect(b.firstChild).toBeNull();
+  });
+});
+
+describe("HeroStrip", () => {
+  test("renders cost, cache, and adoption tiles with values and anchors", () => {
+    const insights = baseInsights();
+    insights.cost.week.totalUsd = 48.2;
+    insights.cost.trend = [
+      { day: "2026-07-20", costUsd: 4 },
+      { day: "2026-07-21", costUsd: 8 },
+    ];
+    insights.cache.week.hitRate = 0.54;
+    insights.cache.trend = [
+      { day: "2026-07-20", hitRate: 0.6 },
+      { day: "2026-07-21", hitRate: 0.54 },
+    ];
+    insights.capabilities.installedCount = 14;
+    insights.capabilities.installedUsedCount = 9;
+
+    const { container } = render(<HeroStrip insights={insights} />);
+    expect(screen.getByText("54%")).toBeInTheDocument();
+    expect(screen.getByText("9 / 14")).toBeInTheDocument();
+    expect(
+      container.querySelector('a[href="#insight-cost"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('a[href="#insight-capability"]'),
+    ).not.toBeNull();
+  });
+
+  test("shows a bare used count when nothing qualifies for the ratio", () => {
+    const insights = baseInsights();
+    insights.capabilities.installedCount = 0;
+    insights.capabilities.installedUsedCount = 0;
+    insights.capabilities.used = [
+      {
+        kind: "skill",
+        name: "x",
+        invocations: 1,
+        sessionCount: 1,
+        lastUsedAt: "2026-07-21",
+        providers: [],
+        byProvider: {},
+      },
+    ];
+    render(<HeroStrip insights={insights} />);
+    expect(screen.getByText("1 used")).toBeInTheDocument();
+  });
+
+  test("renders em dash for null cost and cache headlines", () => {
+    render(<HeroStrip insights={baseInsights()} />);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
   });
 });
