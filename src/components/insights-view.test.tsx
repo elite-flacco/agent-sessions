@@ -23,7 +23,13 @@ function baseInsights(overrides: Partial<Insights> = {}): Insights {
       coverage: [],
     },
     cache: {
-      week: { hitRate: null, hitRateDeltaPts: null, savedUsd: null, savedSharePct: null, byModel: [] },
+      week: {
+        hitRate: null,
+        hitRateDeltaPts: null,
+        savedUsd: null,
+        savedSharePct: null,
+        byModel: [],
+      },
       trend: [],
       signal: null,
     },
@@ -96,9 +102,7 @@ describe("HeroStrip", () => {
     const { container } = render(<HeroStrip insights={insights} />);
     expect(screen.getByText("54%")).toBeInTheDocument();
     expect(screen.getByText("9 / 14")).toBeInTheDocument();
-    expect(
-      container.querySelector('a[href="#insight-cost"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('a[href="#insight-cost"]')).not.toBeNull();
     expect(
       container.querySelector('a[href="#insight-capability"]'),
     ).not.toBeNull();

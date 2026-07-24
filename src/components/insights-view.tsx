@@ -74,7 +74,9 @@ function Signal({ signal }: { signal: InsightSignal }) {
 export function SignalBand({ insights }: { insights: Insights }) {
   const signals = [insights.cache.signal, insights.cost.signal]
     .filter((s): s is InsightSignal => s !== null)
-    .sort((a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1));
+    .sort(
+      (a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1),
+    );
 
   if (signals.length === 0) return null;
 
