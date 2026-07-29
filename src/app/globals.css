@@ -1245,7 +1245,7 @@
   }
   .insights-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 26rem));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.8rem;
     margin-top: 0.9rem;
   }
@@ -1348,8 +1348,11 @@
   .insight-signal > span {
     color: var(--foreground);
   }
-  .capability-insight {
+  .insight-capability-wrap {
     grid-column: 1 / -1;
+    min-inline-size: 0;
+  }
+  .capability-insight {
     min-inline-size: 0;
   }
   .capability-insight-head {
@@ -2780,6 +2783,9 @@
       border-right: 0;
       border-bottom: 1px solid var(--border);
       padding: 0.9rem 1rem;
+    }
+    .insights-grid {
+      grid-template-columns: minmax(0, 1fr);
     }
     .brand-copy,
     .sidebar-footer {

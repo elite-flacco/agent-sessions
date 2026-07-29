@@ -51,7 +51,7 @@ export function InsightsView({ insights }: InsightsViewProps) {
       <div className="insights-grid">
         <CacheCard insights={insights} />
         <CostCard insights={insights} />
-        <div id="insight-capability">
+        <div id="insight-capability" className="insight-capability-wrap">
           <CapabilityUsageCard capabilities={insights.capabilities} />
         </div>
       </div>
