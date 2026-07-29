@@ -3,7 +3,7 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
@@ -115,18 +115,15 @@ function KpiTile({
   href,
   label,
   value,
-  children,
 }: {
   href: string;
   label: string;
   value: string;
-  children?: ReactNode;
 }) {
   return (
     <a className="insight-kpi" href={href}>
       <span className="insight-kpi-label">{label}</span>
       <span className="insight-kpi-value">{value}</span>
-      <span className="insight-kpi-trend">{children}</span>
     </a>
   );
 }
@@ -145,36 +142,16 @@ export function HeroStrip({ insights }: { insights: Insights }) {
     capabilities.installedCount > 0
       ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
       : `${capabilities.used.length} used`;
-  const adoptionLevel =
-    capabilities.installedCount > 0
-      ? level(capabilities.installedUsedCount, capabilities.installedCount)
-      : 0;
 
   return (
     <div className="insight-hero">
-      <KpiTile href="#insight-cost" label="Week cost" value={costValue}>
-        <InsightSparkline
-          values={cost.trend.map((d) => d.costUsd)}
-          label="Cost per day this week"
-        />
-      </KpiTile>
-      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue}>
-        <InsightSparkline
-          values={cache.trend.map((d) => d.hitRate)}
-          label="Cache hit rate per day this week"
-        />
-      </KpiTile>
+      <KpiTile href="#insight-cost" label="Week cost" value={costValue} />
+      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue} />
       <KpiTile
         href="#insight-capability"
         label="Capability adoption"
         value={adoptionValue}
-      >
-        {capabilities.installedCount > 0 ? (
-          <span className="meter" aria-hidden>
-            <i className={`meter-fill-${adoptionLevel}`} />
-          </span>
-        ) : null}
-      </KpiTile>
+      />
     </div>
   );
 }
@@ -268,9 +245,9 @@ function CostCard({ insights }: { insights: Insights }) {
 
       <div>
         <div className="insight-headline">
-          {cost.week.top5SharePct === null
+          {cost.week.paretoSharePct === null
             ? "—"
-            : `Top 5 = ${Math.round(cost.week.top5SharePct)}%`}
+            : `3 sessions = ${Math.round(cost.week.paretoSharePct)}% of cost`}
         </div>
         <div className="insight-sub">
           {cost.week.totalUsd === null

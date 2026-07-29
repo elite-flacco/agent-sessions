@@ -154,4 +154,20 @@ describe("InsightsView", () => {
     expect(wrap).not.toBeNull();
     expect(wrap?.classList.contains("insight-capability-wrap")).toBe(true);
   });
+
+  test("cost card headline shows the top-3 Pareto share when priced", () => {
+    const insights = baseInsights();
+    insights.cost.week.totalUsd = 100;
+    insights.cost.week.paretoSharePct = 81;
+    render(<InsightsView insights={insights} />);
+    expect(screen.getByText("3 sessions = 81% of cost")).toBeInTheDocument();
+  });
+
+  test("cost card headline is an em dash when the week is unpriced", () => {
+    render(<InsightsView insights={baseInsights()} />);
+    // baseInsights has paretoSharePct: null — headline must fall back, not
+    // render a misleading "3 sessions = NaN%" or "0%".
+    const costCard = document.getElementById("insight-cost");
+    expect(costCard?.querySelector(".insight-headline")).toHaveTextContent("—");
+  });
 });
