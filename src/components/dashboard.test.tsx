@@ -66,6 +66,7 @@ describe("Dashboard session rows", () => {
         sessions={[]}
         projects={[]}
         projectOptions={[]}
+        modelOptions={[]}
         summary={{
           sessionsToday: 0,
           activeNow: 0,
@@ -94,6 +95,7 @@ describe("Dashboard session rows", () => {
         sessions={[session(1, "Recently updated session")]}
         projects={[]}
         projectOptions={[]}
+        modelOptions={[]}
         summary={{
           sessionsToday: 1,
           activeNow: 0,
@@ -132,6 +134,7 @@ describe("Dashboard session rows", () => {
         ]}
         projects={[]}
         projectOptions={[]}
+        modelOptions={[]}
         summary={{
           sessionsToday: 2,
           activeNow: 0,
@@ -178,6 +181,7 @@ describe("Dashboard session rows", () => {
         ]}
         projects={[]}
         projectOptions={[]}
+        modelOptions={[]}
         summary={{
           sessionsToday: 1,
           activeNow: 0,

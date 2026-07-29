@@ -7,6 +7,7 @@ import { findPricing, normalizeModel, usageCostUsd } from "./pricing";
 import {
   agentProviders,
   UNKNOWN_PROJECT_KEY,
+  UNKNOWN_MODEL_KEY,
   TASKS_PROJECT_KEY,
   type AgentProvider,
   type CostSource,
@@ -67,6 +68,8 @@ export interface SessionFilters {
   range?: string;
   sort?: string;
   project?: string;
+  /** Canonical model id (normalizeModel output) or UNKNOWN_MODEL_KEY. */
+  model?: string;
 }
 
 const STALE_RUNNING_MS = 10 * 60 * 1000;
@@ -165,6 +168,24 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
       params.push(filters.project);
     }
   }
+  if (filters.model && filters.model !== "all") {
+    if (filters.model === UNKNOWN_MODEL_KEY) {
+      clauses.push("(model IS NULL OR model = '')");
+    } else {
+      // normalizeModel can't run inside SQLite, so resolve the selected
+      // canonical id back to the raw model strings that normalize to it and
+      // match those. An empty set (id no longer present) matches nothing.
+      const raws = distinctRawModels().filter(
+        (raw) => normalizeModel(raw) === filters.model,
+      );
+      if (raws.length) {
+        clauses.push(`model IN (${raws.map(() => "?").join(", ")})`);
+        params.push(...raws);
+      } else {
+        clauses.push("1 = 0");
+      }
+    }
+  }
   const date = cutoff(filters.range);
   if (date) {
     clauses.push("started_at >= ?");
@@ -215,6 +236,47 @@ export function getProjectOptions(): ProjectOption[] {
       label: project.repository as string,
       sessionCount: project.sessionCount,
     }));
+}
+
+export interface ModelOption {
+  value: string;
+  label: string;
+  sessionCount: number;
+}
+
+/** Distinct non-normalized model strings recorded across all sessions. */
+function distinctRawModels(): string[] {
+  return (
+    sqlite
+      .prepare(
+        "SELECT DISTINCT model FROM sessions WHERE model IS NOT NULL AND model != ''",
+      )
+      .all() as { model: string }[]
+  ).map((row) => row.model);
+}
+
+/**
+ * Canonical models for the "Filter by model" control. Raw provider strings are
+ * collapsed with normalizeModel so snapshot/prefix variants share one option,
+ * matching how the Insights page groups models. Sessions with no recorded model
+ * roll up under UNKNOWN_MODEL_KEY. Kept independent of the active filters so
+ * selecting a model never narrows the list, and ordered by session count.
+ */
+export function getModelOptions(): ModelOption[] {
+  const rows = sqlite
+    .prepare("SELECT model, COUNT(*) count FROM sessions GROUP BY model")
+    .all() as { model: string | null; count: number }[];
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.model ? normalizeModel(row.model) : UNKNOWN_MODEL_KEY;
+    counts.set(key, (counts.get(key) ?? 0) + row.count);
+  }
+  return [...counts.entries()]
+    .map(([value, sessionCount]) => ({ value, label: value, sessionCount }))
+    .sort(
+      (a, b) =>
+        b.sessionCount - a.sessionCount || a.label.localeCompare(b.label),
+    );
 }
 
 export function getSessionEvents(sessionId: number): SessionEventRow[] {

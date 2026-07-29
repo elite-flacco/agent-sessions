@@ -29,6 +29,7 @@ export interface TerminalStatus {
 
 export const UNKNOWN_PROJECT_KEY = "(unknown)";
 export const TASKS_PROJECT_KEY = "(tasks)";
+export const UNKNOWN_MODEL_KEY = "(unknown)";
 
 export interface ActivityEvent {
   externalId: string;

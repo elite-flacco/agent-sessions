@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { UNKNOWN_MODEL_KEY } from "@/lib/types";
 
 let directory = "";
 let sqlite: (typeof import("@/db/client"))["sqlite"];
@@ -161,6 +162,60 @@ describe("session queries", () => {
     } finally {
       sqlite
         .prepare("DELETE FROM sessions WHERE external_id LIKE 'hierarchy-%'")
+        .run();
+    }
+  });
+
+  it("groups and filters sessions by canonical model", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, model, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, ?, 'completed', ?, ?)`);
+    insert.run("model-a", "Opus plain", "claude-opus-4-8", now, now);
+    insert.run(
+      "model-b",
+      "Opus snapshot",
+      "claude-opus-4-8-20251001",
+      now,
+      now,
+    );
+    insert.run("model-c", "GLM via prefix", "z-ai/glm-5.2", now, now);
+    insert.run("model-d", "No model", null, now, now);
+    try {
+      const options = queries.getModelOptions();
+      const opus = options.find((o) => o.value === "claude-opus-4-8");
+      // Snapshot and plain ids collapse to one canonical option.
+      expect(opus?.sessionCount).toBe(2);
+      expect(options.map((o) => o.value)).toContain("glm-5.2");
+      const unknown = options.find((o) => o.value === UNKNOWN_MODEL_KEY);
+      expect(unknown && unknown.sessionCount).toBeGreaterThanOrEqual(1);
+
+      // Selecting a canonical id returns every raw variant of it.
+      const opusSessions = queries.getSessions({
+        model: "claude-opus-4-8",
+        range: "all",
+      });
+      expect(opusSessions.map((s) => s.externalId).sort()).toEqual([
+        "model-a",
+        "model-b",
+      ]);
+
+      // The unknown option isolates null/empty-model sessions.
+      const unknownSessions = queries.getSessions({
+        model: UNKNOWN_MODEL_KEY,
+        range: "all",
+      });
+      const unknownIds = unknownSessions.map((s) => s.externalId);
+      expect(unknownIds).toContain("model-d");
+      expect(unknownIds).not.toContain("model-a");
+
+      // An id with no matching sessions returns nothing, not everything.
+      expect(
+        queries.getSessions({ model: "no-such-model", range: "all" }),
+      ).toHaveLength(0);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id LIKE 'model-%'")
         .run();
     }
   });

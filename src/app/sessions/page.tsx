@@ -2,6 +2,7 @@ import { Dashboard, type WorkspaceView } from "@/components/dashboard";
 import { Sidebar } from "@/components/sidebar";
 import { refreshIngestedData } from "@/lib/auto-sync";
 import {
+  getModelOptions,
   getProjectOptions,
   getProjects,
   getSessions,
@@ -31,6 +32,7 @@ export default async function Home({ searchParams }: HomeProps) {
     range: first(params.range),
     sort: first(params.sort),
     project: first(params.project),
+    model: first(params.model),
   };
   const sessions = getSessions(filters);
   const view: WorkspaceView =
@@ -47,6 +49,7 @@ export default async function Home({ searchParams }: HomeProps) {
         sessions={sessions}
         projects={getProjects(filters)}
         projectOptions={getProjectOptions()}
+        modelOptions={getModelOptions()}
         summary={summary}
         syncState={syncState}
         costToday={getUsageSummary().today}

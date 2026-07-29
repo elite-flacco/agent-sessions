@@ -28,7 +28,9 @@ import {
   statusLabels,
 } from "@/lib/labels";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
+import { normalizeModel } from "@/lib/pricing";
 import type {
+  ModelOption,
   ProjectOption,
   ProjectSummary,
   SessionFilters,
@@ -42,6 +44,7 @@ interface DashboardProps {
   sessions: SessionTreeItem[];
   projects: ProjectSummary[];
   projectOptions: ProjectOption[];
+  modelOptions: ModelOption[];
   summary: {
     sessionsToday: number;
     activeNow: number;
@@ -65,6 +68,7 @@ export function Dashboard({
   sessions,
   projects,
   projectOptions,
+  modelOptions,
   summary,
   syncState,
   costToday,
@@ -228,6 +232,18 @@ export function Dashboard({
           ]}
         />
         <FilterSelect
+          label="Filter by model"
+          value={filters.model ?? "all"}
+          onChange={(value) => updateParam("model", value)}
+          options={[
+            { value: "all", label: "All models" },
+            ...modelOptions.map((option) => ({
+              value: option.value,
+              label: `${option.label} (${option.sessionCount})`,
+            })),
+          ]}
+        />
+        <FilterSelect
           label="Filter by status"
           value={filters.status ?? "all"}
           onChange={(value) => updateParam("status", value)}
@@ -342,6 +358,7 @@ function SessionsTable({
         <span>Started</span>
         <span>Updated</span>
         <span>Duration</span>
+        <span>Model</span>
         <span title="Includes the cost of any subagents the session spawned">
           Cost
         </span>
@@ -353,7 +370,11 @@ function SessionsTable({
       ) : (
         <EmptyState
           hasFilters={Boolean(
-            filters.q || filters.provider || filters.status || filters.project,
+            filters.q ||
+            filters.provider ||
+            filters.status ||
+            filters.project ||
+            filters.model,
           )}
           onSync={onSync}
         />
@@ -431,6 +452,12 @@ function SessionRow({
           {hasMeaningfulDuration(session.status)
             ? elapsed(session.startedAt, session.endedAt ?? session.updatedAt)
             : "—"}
+        </span>
+        <span
+          className="mono session-secondary"
+          title={session.model ?? undefined}
+        >
+          {session.model ? normalizeModel(session.model) : "—"}
         </span>
         <span className="mono session-secondary">
           {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}
