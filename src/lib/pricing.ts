@@ -220,18 +220,42 @@ export const PRICING_TABLE: PricingEntry[] = [
     source: ZAI_SOURCE,
     retrievedAt: RETRIEVED,
   },
+  // Distinct deployable source (a user-configured provider routing the same
+  // underlying GLM-5.2 via "z-ai/"), kept separate from the built-in glm-5.2.
+  // Rates mirror the built-in entry for now; update to the source's true rates.
+  {
+    model: "z-ai/glm-5.2",
+    inputPerMTok: 1.4,
+    outputPerMTok: 4.4,
+    cacheReadPerMTok: 0.26,
+    cacheWritePerMTok: 1.4,
+    effectiveFrom: "2026-05-01",
+    source: ZAI_SOURCE,
+    retrievedAt: RETRIEVED,
+  },
 ];
 
 export const PRICING_RETRIEVED_AT = RETRIEVED;
 
-// Reduce raw provider model strings to the canonical ids used in the table:
-// strip routing/plan prefixes ("z-ai/", "builtin:zai-coding-plan/", UUID
-// prefixes), lowercase, and drop dated snapshot suffixes.
+// Reduce raw provider model strings to the canonical ids used in the table.
+// Routing prefixes are stripped (a leading UUID segment from the Zcode routing
+// layer, and any "builtin:.../" provider prefix), but a real source prefix like
+// "z-ai/" is kept: it denotes a distinct deployable source (a user-configured
+// API/MCP provider, not a built-in) that deserves its own canonical id and its
+// own pricing entry. Dated snapshot suffixes are dropped either way.
 export function normalizeModel(raw: string): string {
-  const last = raw.trim().split("/").at(-1) ?? raw;
+  let s = raw.trim();
+  // Leading UUID segment ("315079d2-...-dfce453/"): a routing-layer artifact.
+  s = s.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i,
+    "",
+  );
+  // "builtin:<plan>/" prefix: a built-in provider whose model prices against
+  // the bare canonical id (e.g. "builtin:zai-coding-plan/GLM-5.2" -> "glm-5.2").
+  s = s.replace(/^builtin:[^/]*\//i, "");
   // Dated snapshot suffixes come dashed (gpt-5-mini-2025-08-07) or compact
   // (claude-haiku-4-5-20251001, Anthropic's pinned-id form).
-  return last.toLowerCase().replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, "");
+  return s.toLowerCase().replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, "");
 }
 
 export function findPricing(

@@ -186,7 +186,12 @@ describe("session queries", () => {
       const opus = options.find((o) => o.value === "claude-opus-4-8");
       // Snapshot and plain ids collapse to one canonical option.
       expect(opus?.sessionCount).toBe(2);
-      expect(options.map((o) => o.value)).toContain("glm-5.2");
+      // z-ai/ is a kept source prefix: it does not collapse into glm-5.2 but
+      // forms its own canonical option.
+      expect(options.map((o) => o.value)).toContain("z-ai/glm-5.2");
+      expect(options.map((o) => o.value)).not.toContain("glm-5.2");
+      const zai = options.find((o) => o.value === "z-ai/glm-5.2");
+      expect(zai && zai.sessionCount).toBe(1);
       const unknown = options.find((o) => o.value === UNKNOWN_MODEL_KEY);
       expect(unknown && unknown.sessionCount).toBeGreaterThanOrEqual(1);
 

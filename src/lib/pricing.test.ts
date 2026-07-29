@@ -4,9 +4,11 @@ import { findPricing, normalizeModel, usageCostUsd } from "./pricing";
 describe("model normalization", () => {
   it.each([
     ["claude-fable-5", "claude-fable-5"],
-    ["z-ai/glm-5.2", "glm-5.2"],
+    // z-ai/ is a distinct deployable source, kept separate from the built-in.
+    ["z-ai/glm-5.2", "z-ai/glm-5.2"],
+    // builtin: prefixes still collapse to the bare canonical id.
     ["builtin:zai-coding-plan/GLM-5.2", "glm-5.2"],
-    ["315079d2-9bb1-4210-8a18-c8ac6dfce453/z-ai/glm-5.2", "glm-5.2"],
+    ["315079d2-9bb1-4210-8a18-c8ac6dfce453/z-ai/glm-5.2", "z-ai/glm-5.2"],
     ["GLM-5.2", "glm-5.2"],
     ["gpt-5-mini-2025-08-07", "gpt-5-mini"],
     ["claude-haiku-4-5-20251001", "claude-haiku-4-5"],
@@ -34,6 +36,7 @@ describe("pricing lookup", () => {
     ["gpt-5.5-pro", 30, 180, 0],
     ["gpt-5.4-nano", 0.2, 1.25, 0],
     ["gpt-5.4-pro", 30, 180, 0],
+    ["z-ai/glm-5.2", 1.4, 4.4, 1.4],
   ])(
     "prices %s with its current standard rate",
     (model, inputPerMTok, outputPerMTok, cacheWritePerMTok) => {
