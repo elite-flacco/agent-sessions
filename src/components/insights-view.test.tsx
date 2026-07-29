@@ -4,7 +4,12 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Insights } from "@/lib/queries";
-import { HeroStrip, InsightsView, InsightSparkline, SignalBand } from "./insights-view";
+import {
+  HeroStrip,
+  InsightsView,
+  InsightSparkline,
+  SignalBand,
+} from "./insights-view";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
