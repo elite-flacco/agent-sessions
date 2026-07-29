@@ -138,6 +138,24 @@ export const codexAdapter: ProviderAdapter = {
           },
         ];
       },
+      // A session with no token usage (e.g. an automation that failed before
+      // any turn ran) still records the model it ran on in turn_context; fall
+      // back to session_meta. Lets such sessions show a model instead of blank.
+      model: (rows) => {
+        const turnModels = new Map<string, number>();
+        for (const row of rows) {
+          if (row.type !== "turn_context") continue;
+          const model = stringValue(record(row.payload)?.model);
+          if (model) turnModels.set(model, (turnModels.get(model) ?? 0) + 1);
+        }
+        return (
+          [...turnModels.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+          stringValue(
+            record(rows.find((row) => row.type === "session_meta")?.payload)
+              ?.model,
+          )
+        );
+      },
       capabilityUsage: (rows) =>
         rows.flatMap((row, rowIndex) => {
           const payload = record(row.payload);

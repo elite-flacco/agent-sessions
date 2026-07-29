@@ -16,6 +16,7 @@ import { getCodexThreadTitle } from "@/lib/codex-db";
 import { sqlite } from "@/db/client";
 import { getAgentInventories } from "@/lib/agent-inventory";
 import {
+  getZcodeModelUsage,
   getZcodeSessionMetadataResult,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
@@ -66,7 +67,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "13";
+const NORMALIZATION_VERSION = "14";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -520,6 +521,77 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
   }
 }
 
+/**
+ * Replaces rollout-derived usage for zcode sessions with the authoritative
+ * figures from the Zcode DB `model_usage` table. Rollout `model_io` parsing
+ * undercounts when Zcode prunes or truncates rollout files, so the DB is the
+ * primary source; the adapter path remains the fallback for sessions the DB
+ * does not cover (or when the DB is unavailable). Runs after metadata
+ * reconciliation so database-only sessions already exist. Idempotent.
+ */
+function reconcileZcodeUsage(): void {
+  if (!isZcodeDbAvailable()) return;
+  try {
+    const sessions = sqlite
+      .prepare(
+        "SELECT id, external_id externalId FROM sessions WHERE provider = 'zcode'",
+      )
+      .all() as Array<{ id: number; externalId: string }>;
+    if (!sessions.length) return;
+    const usageBySession = getZcodeModelUsage(
+      sessions.map((session) => session.externalId),
+    );
+    if (!usageBySession) return;
+    const deleteUsage = sqlite.prepare(
+      "DELETE FROM session_model_usage WHERE session_id = ?",
+    );
+    const insertUsage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)`);
+    const updateSession = sqlite.prepare(
+      "UPDATE sessions SET input_tokens = ?, output_tokens = ?, cached_tokens = ?, model = ? WHERE id = ?",
+    );
+    const write = sqlite.transaction(() => {
+      for (const session of sessions) {
+        const usage = usageBySession.get(session.externalId);
+        if (!usage || !usage.length) continue;
+        deleteUsage.run(session.id);
+        let input = 0;
+        let output = 0;
+        let cached = 0;
+        let dominantModel = usage[0].model;
+        let dominantTotal = -1;
+        for (const entry of usage) {
+          insertUsage.run(
+            session.id,
+            entry.model,
+            entry.inputTokens,
+            entry.outputTokens,
+            entry.cacheReadTokens,
+            entry.cacheWriteTokens,
+          );
+          input += entry.inputTokens;
+          output += entry.outputTokens;
+          cached += entry.cacheReadTokens + entry.cacheWriteTokens;
+          const total =
+            entry.inputTokens +
+            entry.outputTokens +
+            entry.cacheReadTokens +
+            entry.cacheWriteTokens;
+          if (total > dominantTotal) {
+            dominantTotal = total;
+            dominantModel = entry.model;
+          }
+        }
+        updateSession.run(input, output, cached, dominantModel, session.id);
+      }
+    });
+    write();
+  } catch {
+    // Any failure leaves rollout-derived usage in place unchanged.
+  }
+}
+
 async function syncFile(
   adapter: ProviderAdapter,
   filePath: string,
@@ -680,6 +752,7 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
          WHERE provider = 'zcode'`,
       )
       .run(capabilityReconciliationComplete ? 1 : 0);
+    reconcileZcodeUsage();
     return totals;
   } finally {
     releaseLease("sync");

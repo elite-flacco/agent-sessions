@@ -5,10 +5,20 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   __resetZcodeDbCache,
+  getZcodeModelUsage,
   getZcodeSessionMetadataResult,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
 } from "./zcode-db";
+
+const MODEL_USAGE_SCHEMA = `
+  CREATE TABLE model_usage (
+    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, model_id TEXT,
+    query_source TEXT, status TEXT, attempt_index INTEGER DEFAULT 0,
+    retry_count INTEGER DEFAULT 0, input_tokens INTEGER, output_tokens INTEGER,
+    cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER
+  );
+`;
 
 const temporaryDirectories: string[] = [];
 
@@ -92,5 +102,98 @@ describe("Zcode capability database health", () => {
       ok: true,
       value: undefined,
     });
+  });
+});
+
+describe("Zcode model usage", () => {
+  async function seedUsage(
+    rows: Array<
+      [string, string | null, string, number, number, number, number]
+    >,
+  ): Promise<void> {
+    const dbPath = await zcodeFixture(MODEL_USAGE_SCHEMA);
+    const db = new Database(dbPath);
+    const insert = db.prepare(`INSERT INTO model_usage
+      (id, session_id, model_id, query_source, status, input_tokens,
+       output_tokens, cache_read_input_tokens, cache_creation_input_tokens)
+      VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?)`);
+    rows.forEach((r, i) =>
+      insert.run(`u${i}`, r[0], r[1], r[2], r[3], r[4], r[5], r[6]),
+    );
+    db.close();
+    __resetZcodeDbCache();
+  }
+
+  it("sums all query sources and derives uncached input", async () => {
+    await seedUsage([
+      // [session, model, query_source, input(cache-incl), output, cacheRead, cacheWrite]
+      ["s1", "GLM-5.2", "main_turn", 8649, 43, 5376, 0],
+      ["s1", "GLM-5.2", "session_title", 123, 11, 64, 0],
+      ["s1", "GLM-5.2", "compact", 100, 0, 0, 0],
+    ]);
+    const usage = getZcodeModelUsage(["s1"]);
+    expect(usage?.get("s1")).toEqual([
+      {
+        model: "GLM-5.2",
+        // uncached input = (8649+123+100) - (5376+64) = 3432
+        inputTokens: 8649 + 123 + 100 - (5376 + 64),
+        outputTokens: 54,
+        cacheReadTokens: 5440,
+        cacheWriteTokens: 0,
+      },
+    ]);
+  });
+
+  it("splits per model and attributes each session independently", async () => {
+    await seedUsage([
+      ["main", "GLM-5.2", "main_turn", 1000, 100, 0, 0],
+      ["main", "claude-sonnet-5", "main_turn", 500, 50, 0, 0],
+      ["sess_subagent_agent_x", "GLM-5.2", "subagent", 200, 20, 0, 0],
+    ]);
+    const usage = getZcodeModelUsage(["main", "sess_subagent_agent_x"]);
+    expect(
+      usage
+        ?.get("main")
+        ?.map((u) => u.model)
+        .sort(),
+    ).toEqual(["GLM-5.2", "claude-sonnet-5"]);
+    // The parent never absorbs the subagent's tokens.
+    expect(usage?.get("sess_subagent_agent_x")).toEqual([
+      {
+        model: "GLM-5.2",
+        inputTokens: 200,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    ]);
+  });
+
+  it("keeps a zero-token model row so failed sessions still have a model", async () => {
+    await seedUsage([["s_err", "GLM-5.2", "main_turn", 0, 0, 0, 0]]);
+    expect(getZcodeModelUsage(["s_err"])?.get("s_err")).toEqual([
+      {
+        model: "GLM-5.2",
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    ]);
+  });
+
+  it("ignores rows with no model and returns nothing for unknown ids", async () => {
+    await seedUsage([["s1", null, "main_turn", 10, 1, 0, 0]]);
+    const usage = getZcodeModelUsage(["s1", "missing"]);
+    expect(usage?.has("s1")).toBe(false);
+    expect(usage?.has("missing")).toBe(false);
+  });
+
+  it("returns undefined when the database is unavailable", async () => {
+    __resetZcodeDbCache();
+    delete process.env.ZCODE_DB_PATH;
+    process.env.ZCODE_DB_PATH = "/nonexistent/relay-zcode-missing.db";
+    __resetZcodeDbCache();
+    expect(getZcodeModelUsage(["s1"])).toBeUndefined();
   });
 });

@@ -34,6 +34,12 @@ export interface JsonlStrategy {
   terminalStatus(rows: Record<string, unknown>[]): TerminalStatus | undefined;
   events(rows: Record<string, unknown>[]): ActivityEvent[];
   usage?(rows: Record<string, unknown>[]): ModelUsage[];
+  /**
+   * The session's model when it is knowable independent of token usage — e.g. a
+   * run that produced no usage (a zero-balance failure) but still recorded the
+   * model it would have used. Used only as a fallback when usage yields none.
+   */
+  model?(rows: Record<string, unknown>[]): string | undefined;
   capabilityUsage?(rows: Record<string, unknown>[]): CapabilityUsage[];
 }
 
@@ -197,7 +203,7 @@ export async function parseJsonl(
       startedAt,
       endedAt: terminalStatus ? updatedAt : undefined,
       updatedAt,
-      model: dominantModel(usage),
+      model: dominantModel(usage) ?? strategy.model?.(rows),
       usage,
       capabilityUsage,
       events: events.length

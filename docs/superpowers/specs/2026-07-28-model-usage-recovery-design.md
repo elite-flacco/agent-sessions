@@ -47,11 +47,11 @@ sessions.
 Making the Zcode DB primary fills 86 blank sessions **and corrects 31
 undercounted ones**. Aggregate zcode usage moves substantially and correctly:
 
-| Metric | Current (rollout) | DB (authoritative) |
-|---|---|---|
-| Output tokens | 0.98M | 2.63M (~2.7×) |
-| Uncached input | 6.16M | 20.73M |
-| Cache read | 161.8M | 361.8M |
+| Metric         | Current (rollout) | DB (authoritative) |
+| -------------- | ----------------- | ------------------ |
+| Output tokens  | 0.98M             | 2.63M (~2.7×)      |
+| Uncached input | 6.16M             | 20.73M             |
+| Cache read     | 161.8M            | 361.8M             |
 
 Cost/usage aggregates (`/usage`, overview cost card, insights week total and
 cost outliers) will rise accordingly. This is a correction of existing
@@ -136,9 +136,9 @@ so codex rollouts re-parse.
   uncached input correctly, includes all query_sources, and returns nothing for
   unknown ids. Use a seeded temp DB via `ZCODE_DB_PATH` (existing test seam).
 - **Collector reconciliation**: a DB-only zcode session (no rollout) gains usage
-  + model; a session with a partial rollout is overwritten with the larger DB
-  totals; the uncovered orphan keeps rollout usage; a zero-token failed session
-  still gets a model. Assert `session_model_usage` rows and `sessions.model`.
+  - model; a session with a partial rollout is overwritten with the larger DB
+    totals; the uncovered orphan keeps rollout usage; a zero-token failed session
+    still gets a model. Assert `session_model_usage` rows and `sessions.model`.
 - **Subagent non-overlap**: a parent and its subagent each receive only their
   own tokens (no double counting).
 - **Codex fallback**: a rollout with `turn_context.model` but no usable

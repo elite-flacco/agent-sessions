@@ -681,6 +681,127 @@ describe("collector sync", () => {
     }
   });
 
+  it("reconciles Zcode usage and model from the authoritative model_usage table", async () => {
+    const zcodeDbPath = path.join(directory, "zcode-usage.db");
+    const zcodeDb = new Database(zcodeDbPath);
+    // Minimal session table keeps the metadata reconcile pass available; the
+    // usage reconcile reads model_usage regardless of session-table contents.
+    zcodeDb.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL,
+        parent_id TEXT, task_type TEXT NOT NULL, title_source TEXT NOT NULL,
+        time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+      );
+      CREATE TABLE model_usage (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, model_id TEXT,
+        query_source TEXT, input_tokens INTEGER, output_tokens INTEGER,
+        cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER
+      );
+    `);
+    const insertUsage = zcodeDb.prepare(`INSERT INTO model_usage
+      (id, session_id, model_id, query_source, input_tokens, output_tokens,
+       cache_read_input_tokens, cache_creation_input_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    // A blank session: the rollout produced nothing.
+    insertUsage.run(
+      "b1",
+      "zcode-usage-blank",
+      "GLM-5.2",
+      "main_turn",
+      8649,
+      43,
+      5376,
+      0,
+    );
+    // A session the rollout undercounted, plus a tiny title call summed in.
+    insertUsage.run(
+      "s1",
+      "zcode-usage-stale",
+      "GLM-5.2",
+      "main_turn",
+      200000,
+      52000,
+      160000,
+      0,
+    );
+    insertUsage.run(
+      "s2",
+      "zcode-usage-stale",
+      "GLM-5.2",
+      "session_title",
+      123,
+      11,
+      64,
+      0,
+    );
+    zcodeDb.close();
+
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, model, input_tokens, output_tokens, cached_tokens, status, started_at, updated_at)
+         VALUES
+         ('zcode-usage-blank', 'zcode', 'Blank usage', NULL, NULL, NULL, NULL, 'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z'),
+         ('zcode-usage-stale', 'zcode', 'Stale usage', 'stale-model', 1000, 10, 500, 'completed', '2026-07-22T10:00:00Z', '2026-07-22T10:01:00Z')`,
+      )
+      .run();
+    // Seed the stale session's old per-model row so we can prove it is replaced.
+    sqlite
+      .prepare(
+        `INSERT INTO session_model_usage
+         (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+         SELECT id, 'stale-model', 1000, 10, 500, 0, NULL
+         FROM sessions WHERE external_id = 'zcode-usage-stale'`,
+      )
+      .run();
+
+    process.env.ZCODE_DB_PATH = zcodeDbPath;
+    const { __resetZcodeDbCache } = await import("@/lib/zcode-db");
+    __resetZcodeDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+
+      const summary = (externalId: string) =>
+        sqlite
+          .prepare(
+            "SELECT model, input_tokens inputTokens, output_tokens outputTokens, cached_tokens cachedTokens FROM sessions WHERE external_id = ?",
+          )
+          .get(externalId);
+      // Blank session is filled: uncached input = 8649 - 5376 = 3273.
+      expect(summary("zcode-usage-blank")).toEqual({
+        model: "GLM-5.2",
+        inputTokens: 3273,
+        outputTokens: 43,
+        cachedTokens: 5376,
+      });
+      // Stale session is overwritten with the larger DB totals (all sources
+      // summed): uncached input = (200000+123) - (160000+64) = 40059.
+      expect(summary("zcode-usage-stale")).toEqual({
+        model: "GLM-5.2",
+        inputTokens: 40059,
+        outputTokens: 52011,
+        cachedTokens: 160064,
+      });
+      // The old per-model row is gone, replaced by the DB-derived one.
+      const models = sqlite
+        .prepare(
+          `SELECT model FROM session_model_usage
+           WHERE session_id = (SELECT id FROM sessions WHERE external_id = 'zcode-usage-stale')`,
+        )
+        .all()
+        .map((row) => (row as { model: string }).model);
+      expect(models).toEqual(["GLM-5.2"]);
+    } finally {
+      process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+      __resetZcodeDbCache();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id IN ('zcode-usage-blank', 'zcode-usage-stale')",
+        )
+        .run();
+    }
+  });
+
   it("reconciles a Zcode session waiting for user input as needs attention", async () => {
     const zcodeDbPath = path.join(directory, "zcode-waiting.db");
     const Database = (await import("better-sqlite3")).default;

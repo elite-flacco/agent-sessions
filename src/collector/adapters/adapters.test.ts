@@ -132,6 +132,31 @@ describe("provider adapters", () => {
     );
   });
 
+  it("reports the Codex model from turn_context when a run produced no usage", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-24T09:00:00Z",
+        payload: { id: "codex-noio", cwd: "/work/relay" },
+      },
+      {
+        type: "turn_context",
+        timestamp: "2026-07-24T09:00:01Z",
+        payload: { model: "gpt-5.5" },
+      },
+      {
+        // A zero-balance failure records a token_count with a null info body,
+        // so no usage is extracted, but the model is still knowable.
+        type: "event_msg",
+        timestamp: "2026-07-24T09:00:02Z",
+        payload: { type: "token_count", info: null },
+      },
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.sessions[0].usage).toEqual([]);
+    expect(result.sessions[0].model).toBe("gpt-5.5");
+  });
+
   it("skips harness-injected wrapper blocks when titling Codex sessions", async () => {
     const result = await parse(codexAdapter, [
       {

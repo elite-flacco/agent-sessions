@@ -48,7 +48,7 @@ describe("Dashboard session rows", () => {
       "utf8",
     );
 
-    expect(styles).toContain(`@media (max-width: 1100px) {
+    expect(styles).toContain(`@media (max-width: 1200px) {
   @layer components {
     .session-filter-row {
       grid-template-columns: repeat(2, minmax(0, 1fr));

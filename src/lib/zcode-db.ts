@@ -33,6 +33,14 @@ export interface ZcodeToolUsage {
   startedAt: number;
 }
 
+export interface ZcodeModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 const zcodeDbPath = (): string =>
   process.env.ZCODE_DB_PATH
     ? path.resolve(process.env.ZCODE_DB_PATH)
@@ -242,6 +250,72 @@ export function readZcodeToolUsage(
         ? [{ toolCallId, toolName, startedAt: row.startedAt }]
         : [];
     });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Per-model token usage for the given sessions, read from the Zcode DB's
+ * authoritative `model_usage` table. This is preferred over rollout `model_io`
+ * parsing, which undercounts when Zcode prunes or truncates rollout files.
+ *
+ * All query sources (main_turn, subagent, session_title, compact) are summed —
+ * it is all real model spend. Retries do not duplicate: each request is one row
+ * (`attempt_index` is always 0; retries are tracked by `retry_count`). Subagent
+ * rows carry their own `session_id`, so a parent never absorbs child tokens.
+ * `input_tokens` is cache-inclusive, so uncached input is the remainder after
+ * removing cache reads and writes, matching the rollout adapter's treatment.
+ *
+ * Returns a map keyed by session id; sessions with no rows are absent. Returns
+ * undefined when the database is unavailable so callers keep rollout usage.
+ */
+export function getZcodeModelUsage(
+  sessionIds: string[],
+): Map<string, ZcodeModelUsage[]> | undefined {
+  const db = zcodeDb();
+  if (!db) return undefined;
+  const result = new Map<string, ZcodeModelUsage[]>();
+  try {
+    const chunkSize = 500;
+    for (let i = 0; i < sessionIds.length; i += chunkSize) {
+      const chunk = sessionIds.slice(i, i + chunkSize);
+      if (!chunk.length) continue;
+      const rows = db
+        .prepare(
+          `SELECT session_id sessionId, model_id model,
+             SUM(input_tokens) input, SUM(output_tokens) output,
+             SUM(cache_read_input_tokens) cacheRead,
+             SUM(cache_creation_input_tokens) cacheWrite
+           FROM model_usage
+           WHERE session_id IN (${chunk.map(() => "?").join(", ")})
+             AND model_id IS NOT NULL AND model_id != ''
+           GROUP BY session_id, model_id`,
+        )
+        .all(...chunk) as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        const sessionId = stringValue(row.sessionId);
+        const model = stringValue(row.model);
+        if (!sessionId || !model) continue;
+        const num = (value: unknown): number =>
+          typeof value === "number" && Number.isFinite(value) && value > 0
+            ? value
+            : 0;
+        const cacheRead = num(row.cacheRead);
+        const cacheWrite = num(row.cacheWrite);
+        const usage: ZcodeModelUsage = {
+          model,
+          inputTokens: Math.max(0, num(row.input) - cacheRead - cacheWrite),
+          outputTokens: num(row.output),
+          cacheReadTokens: cacheRead,
+          cacheWriteTokens: cacheWrite,
+        };
+        const list = result.get(sessionId) ?? [];
+        list.push(usage);
+        result.set(sessionId, list);
+      }
+    }
+    return result;
   } catch {
     return undefined;
   }
