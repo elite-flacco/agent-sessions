@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
-import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { Insights, InsightSignal } from "@/lib/queries";
 import { CapabilityUsageCard } from "./capability-usage-card";
 
@@ -37,14 +36,10 @@ export function InsightsView({ insights }: InsightsViewProps) {
           <h1>Insights</h1>
           <p>
             Observed skill and MCP activity alongside actionable cache and cost
-            signals. API-equivalent cost estimates use public per-token rates
-            (pricing recorded {PRICING_RETRIEVED_AT}); cache hit rate is
-            token-only and always available.
+            signals.
           </p>
         </div>
       </header>
-
-      <SignalBand insights={insights} />
 
       <HeroStrip insights={insights} />
 
@@ -71,12 +66,16 @@ function Signal({ signal }: { signal: InsightSignal }) {
   );
 }
 
-export function SignalBand({ insights }: { insights: Insights }) {
-  const signals = [insights.cache.signal, insights.cost.signal]
+function heroSignals(insights: Insights): InsightSignal[] {
+  return [insights.cache.signal, insights.cost.signal]
     .filter((s): s is InsightSignal => s !== null)
     .sort(
       (a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1),
     );
+}
+
+export function SignalBand({ insights }: { insights: Insights }) {
+  const signals = heroSignals(insights);
 
   if (signals.length === 0) return null;
 
@@ -143,6 +142,8 @@ export function HeroStrip({ insights }: { insights: Insights }) {
       ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
       : `${capabilities.used.length} used`;
 
+  const signals = heroSignals(insights);
+
   return (
     <div className="insight-hero">
       <KpiTile href="#insight-cost" label="Week cost" value={costValue} />
@@ -152,6 +153,13 @@ export function HeroStrip({ insights }: { insights: Insights }) {
         label="Capability adoption"
         value={adoptionValue}
       />
+      {signals.length > 0 && (
+        <div className="insight-hero-signals">
+          {signals.map((signal, i) => (
+            <Signal key={`${signal.tone}-${i}`} signal={signal} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
