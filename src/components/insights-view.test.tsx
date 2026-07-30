@@ -4,10 +4,22 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Insights } from "@/lib/queries";
-import { HeroStrip, InsightSparkline, SignalBand } from "./insights-view";
+import {
+  HeroStrip,
+  InsightsView,
+  InsightSparkline,
+  SignalBand,
+} from "./insights-view";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
+}));
+
+// The InsightsView wrapper-hook test isolates grid structure; it doesn't need
+// CapabilityUsageCard's real nav/param behavior. Stubbing it keeps the test a
+// true unit of the insights-view grid wiring (and lets the assertion run).
+vi.mock("./capability-usage-card", () => ({
+  CapabilityUsageCard: () => null,
 }));
 
 afterEach(cleanup);
@@ -130,5 +142,32 @@ describe("HeroStrip", () => {
   test("renders em dash for null cost and cache headlines", () => {
     render(<HeroStrip insights={baseInsights()} />);
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("InsightsView", () => {
+  test("the capability wrapper div carries the full-width grid hook", () => {
+    const { container } = render(<InsightsView insights={baseInsights()} />);
+    // The grid's direct child for capability must carry the span class so
+    // grid-column: 1 / -1 targets the grid item, not the inner section.
+    const wrap = container.querySelector("#insight-capability");
+    expect(wrap).not.toBeNull();
+    expect(wrap?.classList.contains("insight-capability-wrap")).toBe(true);
+  });
+
+  test("cost card headline shows the top-3 Pareto share when priced", () => {
+    const insights = baseInsights();
+    insights.cost.week.totalUsd = 100;
+    insights.cost.week.paretoSharePct = 81;
+    render(<InsightsView insights={insights} />);
+    expect(screen.getByText("3 sessions = 81% of cost")).toBeInTheDocument();
+  });
+
+  test("cost card headline is an em dash when the week is unpriced", () => {
+    render(<InsightsView insights={baseInsights()} />);
+    // baseInsights has paretoSharePct: null — headline must fall back, not
+    // render a misleading "3 sessions = NaN%" or "0%".
+    const costCard = document.getElementById("insight-cost");
+    expect(costCard?.querySelector(".insight-headline")).toHaveTextContent("—");
   });
 });

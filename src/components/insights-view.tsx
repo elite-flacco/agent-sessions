@@ -3,10 +3,9 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
-import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { Insights, InsightSignal } from "@/lib/queries";
 import { CapabilityUsageCard } from "./capability-usage-card";
 
@@ -37,21 +36,17 @@ export function InsightsView({ insights }: InsightsViewProps) {
           <h1>Insights</h1>
           <p>
             Observed skill and MCP activity alongside actionable cache and cost
-            signals. API-equivalent cost estimates use public per-token rates
-            (pricing recorded {PRICING_RETRIEVED_AT}); cache hit rate is
-            token-only and always available.
+            signals.
           </p>
         </div>
       </header>
-
-      <SignalBand insights={insights} />
 
       <HeroStrip insights={insights} />
 
       <div className="insights-grid">
         <CacheCard insights={insights} />
         <CostCard insights={insights} />
-        <div id="insight-capability">
+        <div id="insight-capability" className="insight-capability-wrap">
           <CapabilityUsageCard capabilities={insights.capabilities} />
         </div>
       </div>
@@ -71,12 +66,16 @@ function Signal({ signal }: { signal: InsightSignal }) {
   );
 }
 
-export function SignalBand({ insights }: { insights: Insights }) {
-  const signals = [insights.cache.signal, insights.cost.signal]
+function heroSignals(insights: Insights): InsightSignal[] {
+  return [insights.cache.signal, insights.cost.signal]
     .filter((s): s is InsightSignal => s !== null)
     .sort(
       (a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1),
     );
+}
+
+export function SignalBand({ insights }: { insights: Insights }) {
+  const signals = heroSignals(insights);
 
   if (signals.length === 0) return null;
 
@@ -115,18 +114,15 @@ function KpiTile({
   href,
   label,
   value,
-  children,
 }: {
   href: string;
   label: string;
   value: string;
-  children?: ReactNode;
 }) {
   return (
     <a className="insight-kpi" href={href}>
       <span className="insight-kpi-label">{label}</span>
       <span className="insight-kpi-value">{value}</span>
-      <span className="insight-kpi-trend">{children}</span>
     </a>
   );
 }
@@ -145,36 +141,25 @@ export function HeroStrip({ insights }: { insights: Insights }) {
     capabilities.installedCount > 0
       ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
       : `${capabilities.used.length} used`;
-  const adoptionLevel =
-    capabilities.installedCount > 0
-      ? level(capabilities.installedUsedCount, capabilities.installedCount)
-      : 0;
+
+  const signals = heroSignals(insights);
 
   return (
     <div className="insight-hero">
-      <KpiTile href="#insight-cost" label="Week cost" value={costValue}>
-        <InsightSparkline
-          values={cost.trend.map((d) => d.costUsd)}
-          label="Cost per day this week"
-        />
-      </KpiTile>
-      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue}>
-        <InsightSparkline
-          values={cache.trend.map((d) => d.hitRate)}
-          label="Cache hit rate per day this week"
-        />
-      </KpiTile>
+      <KpiTile href="#insight-cost" label="Week cost" value={costValue} />
+      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue} />
       <KpiTile
         href="#insight-capability"
         label="Capability adoption"
         value={adoptionValue}
-      >
-        {capabilities.installedCount > 0 ? (
-          <span className="meter" aria-hidden>
-            <i className={`meter-fill-${adoptionLevel}`} />
-          </span>
-        ) : null}
-      </KpiTile>
+      />
+      {signals.length > 0 && (
+        <div className="insight-hero-signals">
+          {signals.map((signal, i) => (
+            <Signal key={`${signal.tone}-${i}`} signal={signal} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -268,9 +253,9 @@ function CostCard({ insights }: { insights: Insights }) {
 
       <div>
         <div className="insight-headline">
-          {cost.week.top5SharePct === null
+          {cost.week.paretoSharePct === null
             ? "—"
-            : `Top 5 = ${Math.round(cost.week.top5SharePct)}%`}
+            : `3 sessions = ${Math.round(cost.week.paretoSharePct)}% of cost`}
         </div>
         <div className="insight-sub">
           {cost.week.totalUsd === null

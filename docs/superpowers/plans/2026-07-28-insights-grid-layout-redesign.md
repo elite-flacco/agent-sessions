@@ -24,23 +24,44 @@
 The layout fix hinges on the `grid-column: 1 / -1` span landing on the grid's direct child (the `#insight-capability` wrapper div), not the inner section. jsdom does not compute CSS layout, so we assert the DOM hook that carries the span: the wrapper div gets a class (`insight-capability-wrap`) that the CSS targets. This test pins that hook so a refactor can't silently drop it.
 
 **Files:**
+
 - Test: `src/components/insights-view.test.tsx`
 
 **Interfaces:**
-- Consumes: `InsightsView` is not currently exported (the test file imports `HeroStrip`, `InsightSparkline`, `SignalBand`). To test the grid wrapper we either export `InsightsView` or render the whole view. This task exports `InsightsView` from `insights-view.tsx` (Task 2 makes the class change; the export is needed for the test to compile). Add `InsightsView` to the import in the test.
+
+- Consumes: `InsightsView` is already exported from `insights-view.tsx` (line 22). This task imports it in the test. `CapabilityUsageCard` (rendered inside `InsightsView`) uses `usePathname`/`useSearchParams` from `next/navigation`; the test must mock `./capability-usage-card` so the assertion runs instead of crashing on the missing nav hooks.
 - Produces: a failing test asserting the `#insight-capability` wrapper div carries class `insight-capability-wrap`.
 
 - [ ] **Step 1: Add `InsightsView` to the test's import and write the failing test**
 
-Append to the import on line 7 of `src/components/insights-view.test.tsx` and add a new `describe` block at the end of the file.
+Append to the import on line 7 of `src/components/insights-view.test.tsx` and add a new `describe` block at the end of the file. Also add a mock for `./capability-usage-card` so the assertion runs instead of crashing on `CapabilityUsageCard`'s `usePathname`/`useSearchParams` calls.
 
 Change the import (line 7) from:
+
 ```ts
 import { HeroStrip, InsightSparkline, SignalBand } from "./insights-view";
 ```
+
 to:
+
 ```ts
-import { HeroStrip, InsightsView, InsightSparkline, SignalBand } from "./insights-view";
+import {
+  HeroStrip,
+  InsightsView,
+  InsightSparkline,
+  SignalBand,
+} from "./insights-view";
+```
+
+Add the capability-usage-card mock immediately after the existing `vi.mock("next/navigation", ...)` block:
+
+```ts
+// The InsightsView wrapper-hook test isolates grid structure; it doesn't need
+// CapabilityUsageCard's real nav/param behavior. Stubbing it keeps the test a
+// true unit of the insights-view grid wiring (and lets the assertion run).
+vi.mock("./capability-usage-card", () => ({
+  CapabilityUsageCard: () => null,
+}));
 ```
 
 Append this `describe` block at the end of the file (after the closing `});` of the `HeroStrip` block, line 134):
@@ -77,26 +98,31 @@ git commit -m "test(insights): pin the capability wrapper grid hook"
 This is the core layout change: the wrapper div gets the hook class, `.insights-grid` switches to 2 explicit columns that fill the container, `.capability-insight` loses its dead `grid-column` rule, and a media query collapses to one column at 900px.
 
 **Files:**
+
 - Modify: `src/components/insights-view.tsx:54` (add class to wrapper div; export `InsightsView`)
 - Modify: `src/app/globals.css:1246-1251` (`.insights-grid` column template)
 - Modify: `src/app/globals.css:1351-1354` (`.capability-insight` — drop dead `grid-column`)
 - Add class rule for `.insight-capability-wrap` and a `@media (max-width: 900px)` rule for `.insights-grid`.
 
 **Interfaces:**
+
 - Consumes: the test hook from Task 1 (`insight-capability-wrap` on `#insight-capability`).
 - Produces: the 2-on-top / full-width-below grid layout; `InsightsView` exported for testing.
 
-- [ ] **Step 1: Export `InsightsView` and add the wrapper class**
+- [ ] **Step 1: Add the wrapper class**
 
 In `src/components/insights-view.tsx`:
 
-1. Find the `InsightsView` function declaration (the component that returns `<section className="relay-content">`). It is currently NOT exported. Add `export` to its declaration. (Do not change any other export — `SignalBand`, `InsightSparkline`, `HeroStrip` stay as they are.)
+1. `InsightsView` is already exported (line 22 — `export function InsightsView`). Do not change its export status; do not change any other export (`SignalBand`, `InsightSparkline`, `HeroStrip` stay as they are).
 
 2. On line 54, change:
+
 ```tsx
         <div id="insight-capability">
 ```
+
 to:
+
 ```tsx
         <div id="insight-capability" className="insight-capability-wrap">
 ```
@@ -106,22 +132,25 @@ No other JSX changes. The `CacheCard`, `CostCard`, and `CapabilityUsageCard` int
 - [ ] **Step 2: Switch `.insights-grid` to 2 explicit columns**
 
 In `src/app/globals.css`, replace the `.insights-grid` rule at lines 1246–1251. Change:
+
 ```css
-  .insights-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 26rem));
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-  }
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 26rem));
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
 ```
+
 to:
+
 ```css
-  .insights-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-  }
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
 ```
 
 This fills the container width with two equal columns. No `max-width` is added (content fills the container per the spec).
@@ -129,21 +158,24 @@ This fills the container width with two equal columns. No `max-width` is added (
 - [ ] **Step 3: Move the full-width span off `.capability-insight` onto the wrapper**
 
 In `src/app/globals.css`, the `.capability-insight` rule at lines 1351–1354 currently reads:
+
 ```css
-  .capability-insight {
-    grid-column: 1 / -1;
-    min-inline-size: 0;
-  }
+.capability-insight {
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
 ```
-The `grid-column: 1 / -1` here is dead CSS: `.capability-insight` is the *inner* section, not the grid's direct child, so the span never applied (this is why all three cards landed in one row). Replace the block with a rule for the wrapper and a trimmed inner-section rule:
+
+The `grid-column: 1 / -1` here is dead CSS: `.capability-insight` is the _inner_ section, not the grid's direct child, so the span never applied (this is why all three cards landed in one row). Replace the block with a rule for the wrapper and a trimmed inner-section rule:
+
 ```css
-  .insight-capability-wrap {
-    grid-column: 1 / -1;
-    min-inline-size: 0;
-  }
-  .capability-insight {
-    min-inline-size: 0;
-  }
+.insight-capability-wrap {
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
+.capability-insight {
+  min-inline-size: 0;
+}
 ```
 
 - [ ] **Step 4: Add the single-column fallback at the 900px breakpoint**
@@ -151,9 +183,9 @@ The `grid-column: 1 / -1` here is dead CSS: `.capability-insight` is the *inner*
 The `auto-fit` template used to drop columns automatically; the fixed 2-column grid will not, so add an explicit fallback. Find the existing `@media (max-width: 900px)` block (it starts at line 2769) and add a rule for `.insights-grid` inside its `@layer components` block. After the existing `.relay-sidebar` rules in that block, add:
 
 ```css
-    .insights-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
+.insights-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
 ```
 
 Place it inside the existing `@media (max-width: 900px) { @layer components { ... } }` block — do not create a second `@media (max-width: 900px)` block. At ≤900px the sidebar already stacks (`.relay-shell` becomes `1fr`), so one column for the grid matches.
@@ -188,12 +220,15 @@ Expected: `200`. If it returns connection refused, start it: `npm run dev` in th
 - [ ] **Step 2: Open the page at a wide viewport and assert the layout**
 
 Using `agent-browser` (or a manual browser check):
+
 ```bash
 agent-browser open http://127.0.0.1:3000/insights
 agent-browser set viewport 1600 1000
 agent-browser wait --load networkidle
 ```
+
 Then assert the structure via eval:
+
 ```bash
 cat <<'EOF' | agent-browser eval --stdin --json
 const grid = document.querySelector(".insights-grid");
@@ -206,7 +241,9 @@ const kids = Array.from(grid.children).map(c => ({
 ({ gridCols: cs.gridTemplateColumns, children: kids });
 EOF
 ```
+
 Expected:
+
 - `gridCols` is `"1fr 1fr"` (two equal columns filling the container).
 - The cache and cost children have `gridColumn: "auto"` and their heights differ from the capability wrapper (no longer all equal — cards size to own content).
 - The `#insight-capability` wrapper has `gridColumn: "1 / -1"`.
@@ -216,6 +253,7 @@ Expected:
 ```bash
 agent-browser screenshot /tmp/insights-redesign-wide.png
 ```
+
 Visually confirm: Cache and Cost sit side-by-side in row 1; Capability spans full width in row 2; no card has a large empty lower region.
 
 - [ ] **Step 4: Resize to the 900px breakpoint and confirm single-column stack**
@@ -224,6 +262,7 @@ Visually confirm: Cache and Cost sit side-by-side in row 1; Capability spans ful
 agent-browser set viewport 760 1000
 agent-browser wait --load networkidle
 ```
+
 Re-run the eval from Step 2. Expected: `gridCols` is now `"minmax(0, 1fr)"` (single column) and all three cards stack vertically.
 
 - [ ] **Step 5: Confirm the KPI hero anchors still jump-link**
@@ -232,6 +271,7 @@ Re-run the eval from Step 2. Expected: `gridCols` is now `"minmax(0, 1fr)"` (sin
 agent-browser set viewport 1600 1000
 agent-browser click 'a[href="#insight-capability"]'
 ```
+
 Expected: the page scrolls to / focuses the capability card. Repeat for `#insight-cache` and `#insight-cost`.
 
 - [ ] **Step 6: Run the full project check suite**
@@ -242,10 +282,12 @@ This runs lint, typecheck, format:check, test, and build. Expected: all pass. If
 - [ ] **Step 7: Commit if formatting changed**
 
 If `npm run format` rewrote anything in Step 6:
+
 ```bash
 git add -A
 git commit -m "💄 style(insights): apply prettier to grid layout changes"
 ```
+
 Otherwise skip — no empty commits.
 
 ---
@@ -255,6 +297,7 @@ Otherwise skip — no empty commits.
 Per the plan-authoring rules, the final task reviews user-facing and architecture docs. This change shifts the Insights card layout from a single 3-up row to 2-up + full-width, which is an architecture/convention detail documented in AGENTS.md.
 
 **Files:**
+
 - Review: `README.md` (user-facing behavior)
 - Modify: `AGENTS.md` (the Insights page layout description in the Relay architecture section)
 
@@ -267,9 +310,11 @@ Read `README.md`. If it describes the Insights card layout (e.g. "three cards in
 - [ ] **Step 2: Update the AGENTS.md Insights architecture description**
 
 In `AGENTS.md` (the "Pages:" bullet, line 17), the `/insights` paragraph contains this exact sentence:
+
 > The detail cards keep all their content; the strip only adds anchors and the band relocates their signals.
 
 Append a new sentence immediately after it describing the new grid layout:
+
 > The detail cards lay out as a 2-column top row (Cache, Cost) that fills the container width, with the Capability adoption card spanning full width beneath; the full-width span lives on the `#insight-capability` wrapper (the grid's direct child), not the inner `.capability-insight` section, and the grid collapses to one column at the 900px breakpoint.
 
 Use `Edit` with the existing sentence as `old_string` (it is unique in the file) and the existing sentence + the new sentence as `new_string`. Match the surrounding prose density — no headings, no bullet lists.
@@ -280,4 +325,5 @@ Use `Edit` with the existing sentence as `old_string` (it is unique in the file)
 git add README.md AGENTS.md
 git commit -m "📝 docs(insights): document the 2-up + full-width card grid layout"
 ```
+
 If neither file needed changes after review, skip the commit — note "no doc changes required" in the session summary instead.

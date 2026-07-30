@@ -278,7 +278,7 @@ export function CapabilityUsageCard({
         </div>
         <div className="capability-range" aria-label="Capability usage range">
           <button
-            className="capability-range-option"
+            className={`btn ${capabilities.range === "7d" ? "btn-accent" : "btn-outline"}`}
             type="button"
             aria-pressed={capabilities.range === "7d"}
             onClick={() => selectRange("7d")}
@@ -286,7 +286,7 @@ export function CapabilityUsageCard({
             7 days
           </button>
           <button
-            className="capability-range-option"
+            className={`btn ${capabilities.range === "30d" ? "btn-accent" : "btn-outline"}`}
             type="button"
             aria-pressed={capabilities.range === "30d"}
             onClick={() => selectRange("30d")}
