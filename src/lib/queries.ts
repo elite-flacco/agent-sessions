@@ -592,6 +592,10 @@ export interface OverviewData {
   daily: { date: string; count: number }[];
 }
 
+// URL-backed overview range. 7d is the default and preserves the page's
+// original "this week" behavior; 30d widens every time-windowed metric.
+export type OverviewRange = "7d" | "30d";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function startOfToday(): string {
@@ -600,9 +604,15 @@ function startOfToday(): string {
   return today.toISOString();
 }
 
-export function getOverview(): OverviewData {
+export function parseOverviewRange(value: unknown): OverviewRange {
+  return value === "30d" ? "30d" : "7d";
+}
+
+export function getOverview(range: OverviewRange = "7d"): OverviewData {
   const todayStart = startOfToday();
-  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const weekStart = new Date(
+    Date.now() - (range === "7d" ? 7 : 30) * DAY_MS,
+  ).toISOString();
   const status = statusExpression("status", "updated_at");
 
   const windowStats = (since: string) =>
@@ -1136,16 +1146,22 @@ const LENGTH_BUCKETS = [
 
 /**
  * Derives the three overview "pattern" views from existing session and
- * usage tables. The heatmap counts session starts per 3-hour time-of-day
- * band per calendar day over the actual trailing 30 days in America/New_York
- * time; the length
- * histogram buckets the runtime expression over the trailing 7 days; the week
- * cost reuses the pricing-trust rule (null when any usage row is unpriced).
+ * usage tables. The heatmap always spans the trailing 30 days in
+ * America/New_York time (a week is too sparse for a useful day x band grid);
+ * the length histogram and week cost follow the selected range (7d default,
+ * 30d). The week cost reuses the pricing-trust rule (null when any usage row
+ * is unpriced).
  */
-export function getOverviewPatterns(): OverviewPatterns {
-  // --- heatmap: session starts per day x 3-hour band over the last 30 days ---
+export function getOverviewPatterns(
+  range: OverviewRange = "7d",
+): OverviewPatterns {
+  // Length and cost windows track the selected range; the heatmap is always
+  // 30 days because a 7-cell-wide grid is too sparse to read.
+  const windowDays = range === "7d" ? 7 : PATTERNS_HEATMAP_DAYS;
+
+  // --- heatmap: session starts per day x 3-hour band, always 30 days ---
   // Fetch one extra day so timezone offsets never clip the oldest cell, then
-  // keep only starts that fall on one of the 30 tracked local dates.
+  // keep only starts that fall on one of the tracked local dates.
   const heatStart = new Date(
     Date.now() - (PATTERNS_HEATMAP_DAYS + 1) * DAY_MS,
   ).toISOString();
@@ -1178,8 +1194,8 @@ export function getOverviewPatterns(): OverviewPatterns {
     })),
   );
 
-  // --- length histogram: bucket runtime over 7 days ---
-  const lengthStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  // --- length histogram: bucket runtime over the window ---
+  const lengthStart = new Date(Date.now() - windowDays * DAY_MS).toISOString();
   const lengthRows = sqlite
     .prepare(
       `SELECT
@@ -1203,8 +1219,8 @@ export function getOverviewPatterns(): OverviewPatterns {
   const longTailShare =
     totalRuntimeMs > 0 ? longRuntimeMs / totalRuntimeMs : null;
 
-  // --- week cost: reuse pricing-trust rule over 7-day window ---
-  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  // --- week cost: reuse pricing-trust rule over the window ---
+  const weekStart = new Date(Date.now() - windowDays * DAY_MS).toISOString();
   const usageRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
     .all(weekStart) as UsageJoinRow[];

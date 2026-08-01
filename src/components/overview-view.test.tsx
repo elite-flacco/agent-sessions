@@ -1,19 +1,27 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import type { ProjectSummary, SessionListItem } from "@/lib/queries";
+import type {
+  OverviewRange,
+  ProjectSummary,
+  SessionListItem,
+} from "@/lib/queries";
 import { OverviewView } from "./overview-view";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  usePathname: () => "/",
+  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 function renderOverview(
   running: SessionListItem[] = [],
   recentProjects: ProjectSummary[] = [],
+  range: OverviewRange = "7d",
 ): string {
   return renderToStaticMarkup(
     <OverviewView
+      range={range}
       overview={{
         today: { sessions: 0, runtimeMs: 0, events: 0 },
         week: { sessions: 0, runtimeMs: 0, events: 0, failures: 0 },
@@ -21,6 +29,7 @@ function renderOverview(
         daily: [],
       }}
       patterns={{
+        // The heatmap always spans 30 days regardless of the selected range.
         heatmap: Array.from({ length: 30 * 8 }, (_, index) => ({
           day: new Date(Date.UTC(2026, 5, 19 + Math.floor(index / 8)))
             .toISOString()
@@ -151,7 +160,8 @@ describe("OverviewView", () => {
   });
 
   test("renders the heatmap as actual dates by time of day", () => {
-    const html = renderOverview();
+    // The 30-day heatmap fixture spans Jun 19 – Jul 18.
+    const html = renderOverview([], [], "30d");
 
     expect(html).toContain('class="heatmap-cal"');
     // Range label and per-cell tooltips use real dates plus a 3-hour band.
@@ -162,6 +172,47 @@ describe("OverviewView", () => {
     expect(html).toContain('class="heat-date-label"');
     expect(html).toContain(">12a<");
     expect(html).toContain(">9p<");
+  });
+
+  test("keeps the heatmap on a 30-day span at every range", () => {
+    // The heatmap is always 30 days — a week is too sparse for the grid —
+    // so it must read the same regardless of the selected range toggle.
+    const sevenDayHtml = renderOverview([], [], "7d");
+    const thirtyDayHtml = renderOverview([], [], "30d");
+
+    const span = "Jun 19 – Jul 18";
+    const aria =
+      'aria-label="Sessions by day and time of day over the last 30 days"';
+    expect(sevenDayHtml).toContain(span);
+    expect(sevenDayHtml).toContain(aria);
+    expect(thirtyDayHtml).toContain(span);
+    expect(thirtyDayHtml).toContain(aria);
+  });
+
+  test("mounts a 7/30-day range toggle with the active option selected", () => {
+    const sevenDayHtml = renderOverview([], [], "7d");
+    const thirtyDayHtml = renderOverview([], [], "30d");
+
+    // Both buttons render with aria-pressed reflecting the active range.
+    expect(sevenDayHtml).toContain('aria-pressed="true">7 days');
+    expect(sevenDayHtml).toContain('aria-pressed="false">30 days');
+    expect(thirtyDayHtml).toContain('aria-pressed="false">7 days');
+    expect(thirtyDayHtml).toContain('aria-pressed="true">30 days');
+    // Active button carries the accent class.
+    expect(sevenDayHtml).toContain("btn btn-accent");
+    expect(sevenDayHtml).toContain("btn btn-outline");
+  });
+
+  test("labels the summary and cost card with the active range", () => {
+    const sevenDayHtml = renderOverview([], [], "7d");
+    const thirtyDayHtml = renderOverview([], [], "30d");
+
+    expect(sevenDayHtml).toContain("Sessions this week");
+    expect(sevenDayHtml).toContain("Cost this week");
+    expect(sevenDayHtml).toContain("last seven days");
+    expect(thirtyDayHtml).toContain("Sessions last 30 days");
+    expect(thirtyDayHtml).toContain("Cost last 30 days");
+    expect(thirtyDayHtml).toContain("last thirty days");
   });
 
   test("does not render a heatmap intensity legend", () => {

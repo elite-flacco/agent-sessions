@@ -64,6 +64,7 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 - Keep generated migrations in `drizzle/`. For every migration, append the matching ordered `alreadyPresent` predicate in `src/db/migrate.ts` so bootstrap-created databases can establish the correct baseline.
 - Client components may import only types from `src/lib/queries.ts`. Put client-safe runtime values in `src/lib/types.ts`, `src/lib/labels.ts`, or `src/lib/format.ts`.
 - Never expose `sessions.source_path` through client-side session list data. Allowlisted inventory and scheduled-task source paths are intentionally displayable.
+- The `/` Overview page takes a URL-backed `range` (`?range=30d`, default `7d`) parsed by `parseOverviewRange`; `getOverview(range)` and `getOverviewPatterns(range)` narrow the week KPIs, session-length histogram, and cost-at-a-glance to that window. The activity heatmap always spans 30 days regardless of range (a week is too sparse for the day x band grid). "Today", running, needs-attention, and recent-projects queries stay range-independent because they are inherently now-scoped.
 
 ## Usage and cost invariants
 

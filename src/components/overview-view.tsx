@@ -9,7 +9,7 @@ import {
   FolderKanban,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect } from "react";
 import {
   absoluteTime,
@@ -25,11 +25,13 @@ import { providerLabels, statusDisplay } from "@/lib/labels";
 import type {
   OverviewData,
   OverviewPatterns,
+  OverviewRange,
   ProjectSummary,
   SessionListItem,
 } from "@/lib/queries";
 
 interface OverviewViewProps {
+  range: OverviewRange;
   overview: OverviewData;
   patterns: OverviewPatterns;
   running: SessionListItem[];
@@ -43,6 +45,7 @@ function level(value: number, max: number): number {
 }
 
 export function OverviewView({
+  range,
   overview,
   patterns,
   running,
@@ -50,6 +53,14 @@ export function OverviewView({
   recentProjects,
 }: OverviewViewProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // The summary label follows the active range: "this week" at the default
+  // 7-day view, "last 30 days" when widened. The toggle defaults to 7d, so an
+  // absent param is treated as 7d rather than persisted.
+  const rangeLabel = range === "7d" ? "this week" : "last 30 days";
+  const rangeDaysLabel = range === "7d" ? "7 days" : "30 days";
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -59,18 +70,50 @@ export function OverviewView({
     return () => window.clearInterval(timer);
   }, [router]);
 
+  function selectRange(next: OverviewRange) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "7d") params.delete("range");
+    else params.set("range", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }
+
   return (
     <section className="relay-content">
       <header className="page-header">
         <div>
           <h1>Overview</h1>
-          <p>Today and the last seven days across every agent.</p>
+          <p>
+            {range === "7d"
+              ? "Today and the last seven days across every agent."
+              : "Today and the last thirty days across every agent."}
+          </p>
+        </div>
+        <div className="overview-range" aria-label="Overview range">
+          <button
+            className={`btn ${range === "7d" ? "btn-accent" : "btn-outline"}`}
+            type="button"
+            aria-pressed={range === "7d"}
+            onClick={() => selectRange("7d")}
+          >
+            7 days
+          </button>
+          <button
+            className={`btn ${range === "30d" ? "btn-accent" : "btn-outline"}`}
+            type="button"
+            aria-pressed={range === "30d"}
+            onClick={() => selectRange("30d")}
+          >
+            30 days
+          </button>
         </div>
       </header>
 
       <div className="summary-grid" aria-label="Daily and weekly summary">
         <Link className="metric metric-link" href="/sessions">
-          <span className="eyebrow">Sessions this week</span>
+          <span className="eyebrow">{`Sessions ${rangeLabel}`}</span>
           <strong>{overview.week.sessions}</strong>
           <span>{runtime(overview.week.runtimeMs)} total runtime</span>
         </Link>
@@ -88,7 +131,7 @@ export function OverviewView({
           </span>
         </Link>
         <Link className="metric metric-link" href="/usage">
-          <span className="eyebrow">Cost this week</span>
+          <span className="eyebrow">{`Cost ${rangeLabel}`}</span>
           <strong className="mono">
             {patterns.costWeek.costUsd === null
               ? "—"
@@ -105,8 +148,11 @@ export function OverviewView({
       <div className="overview-grid">
         <div className="overview-column">
           <ActivityHeatmap cells={patterns.heatmap} />
-          <SessionLength length={patterns.length} />
-          <CostAtAGlance cost={patterns.costWeek} />
+          <SessionLength
+            length={patterns.length}
+            rangeDaysLabel={rangeDaysLabel}
+          />
+          <CostAtAGlance cost={patterns.costWeek} rangeLabel={rangeLabel} />
         </div>
 
         <div className="overview-column">
@@ -264,6 +310,9 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
     .map((cell) => cell.day);
   const first = days[0];
   const last = days.at(-1);
+  // The heatmap always spans 30 days; label every 5th so the x-axis stays
+  // readable.
+  const labelStep = 5;
   return (
     <section className="card overview-card" aria-label="Activity heatmap">
       <div className="overview-card-head">
@@ -297,7 +346,7 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
         <span aria-hidden />
         {days.map((day, dayIndex) => (
           <span key={`label-${day}`} className="heat-date-label">
-            {dayIndex % 5 === 0 ? heatDayLabel(day) : ""}
+            {dayIndex % labelStep === 0 ? heatDayLabel(day) : ""}
           </span>
         ))}
       </div>
@@ -305,7 +354,13 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
   );
 }
 
-function SessionLength({ length }: { length: OverviewPatterns["length"] }) {
+function SessionLength({
+  length,
+  rangeDaysLabel,
+}: {
+  length: OverviewPatterns["length"];
+  rangeDaysLabel: string;
+}) {
   const maxBucket = Math.max(
     1,
     ...length.buckets.map((bucket) => bucket.count),
@@ -316,7 +371,7 @@ function SessionLength({ length }: { length: OverviewPatterns["length"] }) {
         <h3>
           <Clock3 size={14} className="inline-icon" /> Session length
         </h3>
-        <span>last 7 days · {length.sessionCount} sessions</span>
+        <span>{`last ${rangeDaysLabel} · ${length.sessionCount} sessions`}</span>
       </div>
       <div className="hist-list">
         {length.buckets.map((bucket) => (
@@ -351,12 +406,18 @@ function SessionLength({ length }: { length: OverviewPatterns["length"] }) {
   );
 }
 
-function CostAtAGlance({ cost }: { cost: OverviewPatterns["costWeek"] }) {
+function CostAtAGlance({
+  cost,
+  rangeLabel,
+}: {
+  cost: OverviewPatterns["costWeek"];
+  rangeLabel: string;
+}) {
   const maxModel = Math.max(1, ...cost.topModels.map((model) => model.costUsd));
   return (
     <section className="card overview-card" aria-label="Cost this week">
       <div className="overview-card-head">
-        <h3>Cost this week</h3>
+        <h3>{`Cost ${rangeLabel}`}</h3>
         <Link href="/usage">
           Full breakdown{" "}
           <ArrowRight aria-hidden="true" className="inline-icon" size={12} />
