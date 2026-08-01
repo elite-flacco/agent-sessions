@@ -31,11 +31,13 @@ The three detail cards (`CacheCard`, `CostCard`, `CapabilityUsageCard`) keep all
 ### Task 1: Signals band, moved out of the cards
 
 **Files:**
+
 - Modify: `src/components/insights-view.tsx`
 - Modify: `src/app/globals.css`
 - Test: `src/components/insights-view.test.tsx` (create)
 
 **Interfaces:**
+
 - Consumes: `Insights` (`insights.cache.signal`, `insights.cost.signal`), existing `InsightSignal` type and `Signal` component, `Sparkles` icon (all already in the file).
 - Produces: `SignalBand({ insights }: { insights: Insights })` — a React component that renders collected signals; exported for test.
 
@@ -69,7 +71,13 @@ function baseInsights(overrides: Partial<Insights> = {}): Insights {
       coverage: [],
     },
     cache: {
-      week: { hitRate: null, hitRateDeltaPts: null, savedUsd: null, savedSharePct: null, byModel: [] },
+      week: {
+        hitRate: null,
+        hitRateDeltaPts: null,
+        savedUsd: null,
+        savedSharePct: null,
+        byModel: [],
+      },
       trend: [],
       signal: null,
     },
@@ -115,7 +123,9 @@ In `src/components/insights-view.tsx`, add (place it just after the existing `Si
 export function SignalBand({ insights }: { insights: Insights }) {
   const signals = [insights.cache.signal, insights.cost.signal]
     .filter((s): s is InsightSignal => s !== null)
-    .sort((a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1));
+    .sort(
+      (a, b) => (a.tone === "warning" ? 0 : 1) - (b.tone === "warning" ? 0 : 1),
+    );
 
   if (signals.length === 0) return null;
 
@@ -151,11 +161,11 @@ In `CostCard`, delete the line `{cost.signal && <Signal signal={cost.signal} />}
 In `src/app/globals.css`, immediately before the `.insight-signal {` rule (around line 1292), add:
 
 ```css
-  .insight-signal-band {
-    display: grid;
-    gap: 0.4rem;
-    margin-top: 0.9rem;
-  }
+.insight-signal-band {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -175,11 +185,13 @@ git commit -m "✨ feat(insights): hoist card signals into a unified band"
 ### Task 2: Compact sparkline component
 
 **Files:**
+
 - Modify: `src/components/insights-view.tsx`
 - Modify: `src/app/globals.css`
 - Test: `src/components/insights-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: existing module-scope `level(value, max)` helper in `insights-view.tsx`.
 - Produces: `InsightSparkline({ values, label }: { values: (number | null)[]; label: string })` — renders a compact bar sparkline, or `null` when there is no non-null data. Exported for test.
 
@@ -251,11 +263,11 @@ export function InsightSparkline({
 In `src/app/globals.css`, immediately after the `.spark {` rule block (after its closing brace, around line 1721), add:
 
 ```css
-  .insight-spark {
-    height: 1.6rem;
-    gap: 0.12rem;
-    padding-top: 0;
-  }
+.insight-spark {
+  height: 1.6rem;
+  gap: 0.12rem;
+  padding-top: 0;
+}
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -275,11 +287,13 @@ git commit -m "✨ feat(insights): add compact sparkline for KPI tiles"
 ### Task 3: KPI hero strip and card anchors
 
 **Files:**
+
 - Modify: `src/components/insights-view.tsx`
 - Modify: `src/app/globals.css`
 - Test: `src/components/insights-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `InsightSparkline` (Task 2); `formatCostUsd` (already imported); `level` helper; `Insights`.
 - Produces: `HeroStrip({ insights }: { insights: Insights })`, exported for test. Renders three `<a>` tiles linking to `#insight-cost`, `#insight-cache`, `#insight-capability`.
 
@@ -309,9 +323,7 @@ describe("HeroStrip", () => {
     const { container } = render(<HeroStrip insights={insights} />);
     expect(screen.getByText("54%")).toBeInTheDocument();
     expect(screen.getByText("9 / 14")).toBeInTheDocument();
-    expect(
-      container.querySelector('a[href="#insight-cost"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('a[href="#insight-cost"]')).not.toBeNull();
     expect(
       container.querySelector('a[href="#insight-capability"]'),
     ).not.toBeNull();
@@ -379,7 +391,9 @@ export function HeroStrip({ insights }: { insights: Insights }) {
   const costValue =
     cost.week.totalUsd === null ? "—" : formatCostUsd(cost.week.totalUsd);
   const hitValue =
-    cache.week.hitRate === null ? "—" : `${Math.round(cache.week.hitRate * 100)}%`;
+    cache.week.hitRate === null
+      ? "—"
+      : `${Math.round(cache.week.hitRate * 100)}%`;
 
   const adoptionValue =
     capabilities.installedCount > 0
@@ -447,14 +461,15 @@ In `InsightsView`, insert the strip between the band and the grid:
 ```
 
 Add `id` to each card's root `<section>`:
+
 - `CacheCard`: `<section className="card insight-card" id="insight-cache" aria-label="Cache effectiveness">`
 - `CostCard`: `<section className="card insight-card" id="insight-cost" aria-label="Cost outliers">`
 - `CapabilityUsageCard` call site: wrap or pass an id. In `insights-view.tsx` wrap it:
 
 ```tsx
-        <div id="insight-capability">
-          <CapabilityUsageCard capabilities={insights.capabilities} />
-        </div>
+<div id="insight-capability">
+  <CapabilityUsageCard capabilities={insights.capabilities} />
+</div>
 ```
 
 - [ ] **Step 5: Add the hero + tile styles**
@@ -462,38 +477,38 @@ Add `id` to each card's root `<section>`:
 In `src/app/globals.css`, immediately after the `.insights-grid { ... }` rule (after its closing brace, around line 1249), add:
 
 ```css
-  .insight-hero {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 12rem));
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-  }
-  .insight-kpi {
-    display: grid;
-    gap: 0.35rem;
-    align-content: start;
-    padding: 0.85rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--card);
-    color: inherit;
-    text-decoration: none;
-  }
-  .insight-kpi:hover {
-    border-color: var(--border-hover);
-    background: var(--card-hover);
-  }
-  .insight-kpi-label {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
-  .insight-kpi-value {
-    font-size: var(--text-xl);
-    letter-spacing: -0.03em;
-  }
-  .insight-kpi-trend {
-    min-height: 1.6rem;
-  }
+.insight-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 12rem));
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+.insight-kpi {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: inherit;
+  text-decoration: none;
+}
+.insight-kpi:hover {
+  border-color: var(--border-hover);
+  background: var(--card-hover);
+}
+.insight-kpi-label {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.insight-kpi-value {
+  font-size: var(--text-xl);
+  letter-spacing: -0.03em;
+}
+.insight-kpi-trend {
+  min-height: 1.6rem;
+}
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -513,10 +528,12 @@ git commit -m "✨ feat(insights): add KPI hero strip above the detail cards"
 ### Task 4: Verification and documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 
 **Interfaces:**
+
 - Consumes: nothing new. This task validates the whole change and updates docs.
 
 - [ ] **Step 1: Run the full check suite**

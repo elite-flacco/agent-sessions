@@ -7,7 +7,7 @@ Status: Approved for planning
 
 The `/insights` tab is a flat three-tile grid — Cache effectiveness, Cost
 outliers, and the redesigned Capability adoption card. Every tile competes
-equally and the page has no summary layer: there is nothing to read *before*
+equally and the page has no summary layer: there is nothing to read _before_
 dropping into a card's detail. Two consequences:
 
 1. **No orientation.** A user cannot glance at the tab and know "cost is up,
@@ -99,7 +99,7 @@ real information carried by the adjacent value and label.
 
 - **CacheCard**: remove the inline `{cache.signal && <Signal/>}`. Keep the
   headline, `hitRateDeltaPts` line, saved-$ block, and by-model rows. The tile
-  carries the *shape*; the card keeps the *specifics*. Add `id="insight-cache"`.
+  carries the _shape_; the card keeps the _specifics_. Add `id="insight-cache"`.
 - **CostCard**: remove the inline `{cost.signal && <Signal/>}`. Keep the "Top 5 =
   X%" headline and the ranked outlier list. Add `id="insight-cost"`.
 - **CapabilityUsageCard**: add `id="insight-capability"` on its outer section
