@@ -1667,9 +1667,24 @@
     font-size: inherit;
   }
   .overview-column {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 0.8rem;
-    align-content: start;
+  }
+  /* The first card in each column grows to absorb any slack, so the last
+     cards stay bottom-aligned across columns without leaving a gap between
+     a column's own cards. */
+  .overview-column > .overview-card:first-child {
+    flex: 1 0 auto;
+  }
+  .overview-card[aria-label="Daily cost"] {
+    display: flex;
+    flex-direction: column;
+  }
+  .overview-card[aria-label="Daily cost"] .spark {
+    flex: 1;
+    height: auto;
+    min-height: 4.5rem;
   }
   .overview-card {
     padding: 1rem 1.1rem;
