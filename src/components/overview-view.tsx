@@ -68,10 +68,7 @@ export function OverviewView({
         </div>
       </header>
 
-      <div
-        className="summary-grid overview-summary-grid"
-        aria-label="Daily and weekly summary"
-      >
+      <div className="summary-grid" aria-label="Daily and weekly summary">
         <Link className="metric metric-link" href="/sessions">
           <span className="eyebrow">Sessions this week</span>
           <strong>{overview.week.sessions}</strong>
@@ -88,6 +85,19 @@ export function OverviewView({
           <span className={running.length ? "metric-accent" : ""}>
             {running.length > 0 && <CircleDot size={10} />}
             {running.length ? "Live from local files" : "Nothing in flight"}
+          </span>
+        </Link>
+        <Link className="metric metric-link" href="/usage">
+          <span className="eyebrow">Cost this week</span>
+          <strong className="mono">
+            {patterns.costWeek.costUsd === null
+              ? "—"
+              : formatCostUsd(patterns.costWeek.costUsd)}
+          </strong>
+          <span>
+            {patterns.costWeek.costUsd === null
+              ? `Unavailable · ${formatTokens(patterns.costWeek.tokens)}`
+              : `estimated · ${formatTokens(patterns.costWeek.tokens)}`}
           </span>
         </Link>
       </div>

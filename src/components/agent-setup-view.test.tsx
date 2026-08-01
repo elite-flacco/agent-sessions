@@ -788,25 +788,32 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain('class="agent-status-tag badge-1"');
-    expect(html).toContain('class="agent-status-tag badge-4"');
+    // Active states render as a filled chip; muted states render as a bare
+    // icon-only glyph, and missing keeps its own hook class.
     expect(html).toContain(
-      'class="agent-missing agent-status-tag agent-status-missing"',
+      'class="agent-status-tag agent-status-tag--chip badge-1"',
     );
-    const disabledLabel = html.indexOf("Disabled</summary>");
-    const disabledSummary = html.lastIndexOf("<summary", disabledLabel);
+    expect(html).toContain('class="agent-missing agent-status-tag--bare"');
 
-    expect(disabledLabel).toBeGreaterThanOrEqual(0);
-    expect(html.slice(disabledSummary, disabledLabel)).toContain(
-      "lucide-circle-slash-2",
-    );
-    const unavailableLabel = html.indexOf("Unavailable</summary>");
-    const unavailableSummary = html.lastIndexOf("<summary", unavailableLabel);
+    // The status word is no longer rendered as visible text — the meaning
+    // lives in the icon plus the title/aria-label.
+    expect(html).not.toContain("Disabled</summary>");
+    expect(html).not.toContain("Unavailable</summary>");
 
-    expect(unavailableLabel).toBeGreaterThanOrEqual(0);
-    expect(html.slice(unavailableSummary, unavailableLabel)).toContain(
-      "lucide-circle-x",
-    );
+    const disabledStart = html.indexOf('title="Disabled"');
+    expect(disabledStart).toBeGreaterThanOrEqual(0);
+    expect(
+      html.slice(disabledStart, html.indexOf("</summary>", disabledStart)),
+    ).toContain("lucide-circle-slash-2");
+
+    const unavailableStart = html.indexOf('title="Unavailable"');
+    expect(unavailableStart).toBeGreaterThanOrEqual(0);
+    expect(
+      html.slice(
+        unavailableStart,
+        html.indexOf("</summary>", unavailableStart),
+      ),
+    ).toContain("lucide-circle-x");
   });
 
   test("applies select filters when their value changes", () => {
@@ -921,7 +928,7 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain("Disabled</summary>");
+    expect(html).toContain('title="Disabled"');
   });
 
   test("does not render a redundant filter submit button", () => {

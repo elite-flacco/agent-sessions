@@ -445,9 +445,6 @@
     border-radius: 0.5rem;
     overflow: hidden;
   }
-  .overview-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
   .metric {
     display: grid;
     min-height: 6.9rem;
@@ -2550,6 +2547,7 @@
     justify-content: space-between;
     gap: 0.75rem;
     margin-top: 0.9rem;
+    margin-bottom: 1.25rem;
   }
   .agent-comparison-switcher {
     width: fit-content;
@@ -2680,7 +2678,7 @@
     color: var(--muted-foreground);
   }
   .agent-row-discrepancy {
-    background: color-mix(in srgb, var(--warning) 7%, var(--card));
+    background: var(--card);
   }
   .agent-compare-detail summary {
     gap: var(--tag-icon-gap);
@@ -2714,9 +2712,18 @@
     font-size: var(--text-xs);
     white-space: nowrap;
   }
-  .agent-status-missing {
-    background: var(--card-hover);
+  .agent-status-tag--chip {
+    padding: 0.25rem;
+    gap: 0;
+  }
+  .agent-status-tag--bare {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
     color: var(--muted-foreground);
+  }
+  .agent-status-tag--disabled {
+    color: var(--warning);
   }
   .agent-compare-detail > span,
   .agent-compare-detail > code {
@@ -2739,9 +2746,6 @@
     max-height: 18rem;
     margin-top: 0.55rem;
     border: 1px solid var(--border);
-  }
-  .agent-all-agents-cell {
-    background: color-mix(in srgb, var(--accent) 3%, var(--card));
   }
   .agent-all-agents-detail {
     width: fit-content;
@@ -2867,9 +2871,6 @@
     }
     .metric:nth-child(4) {
       border-top: 1px solid var(--border);
-    }
-    .overview-summary-grid .metric:last-child {
-      grid-column: 1 / -1;
     }
     .filter-row {
       grid-template-columns: repeat(2, minmax(0, 1fr));

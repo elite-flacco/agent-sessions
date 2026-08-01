@@ -629,7 +629,7 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
         // every row already spans all providers, and narrowing to one would
         // drop the missing-from-that-provider rows that drift analysis is for.
         <label className="agent-filter">
-          <span>Type</span>
+          <span className="sr-only">Type</span>
           <select
             className="select"
             name="kind"
@@ -656,7 +656,7 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
         </>
       )}
       <label className="agent-filter">
-        <span>Status</span>
+        <span className="sr-only">Status</span>
         <select
           className="select"
           name="status"
@@ -1408,9 +1408,16 @@ function ComparisonTableRow({
                 <>
                   <details className="agent-compare-detail">
                     <summary
-                      className={`agent-status-tag ${statusBadges[capability.status]}`}
+                      className={
+                        capability.status === "enabled" ||
+                        capability.status === "installed"
+                          ? `agent-status-tag agent-status-tag--chip ${statusBadges[capability.status]}`
+                          : `agent-status-tag--bare agent-status-tag--${capability.status}`
+                      }
+                      title={statusLabels[capability.status]}
+                      aria-label={statusLabels[capability.status]}
                     >
-                      <StatusIcon size={13} /> {statusLabels[capability.status]}
+                      <StatusIcon size={13} />
                     </summary>
                     <span>{originLabels[capability.origin]}</span>
                     <span>{capability.packaging.replace("_", " ")}</span>
@@ -1429,8 +1436,12 @@ function ComparisonTableRow({
                   ) : null}
                 </>
               ) : (
-                <span className="agent-missing agent-status-tag agent-status-missing">
-                  <Minus size={13} /> Missing
+                <span
+                  className="agent-missing agent-status-tag--bare"
+                  title="Missing"
+                  aria-label="Missing"
+                >
+                  <Minus size={13} />
                 </span>
               )}
             </td>

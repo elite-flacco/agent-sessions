@@ -52,29 +52,42 @@ describe("OverviewView", () => {
       html.indexOf('<div class="overview-grid">'),
     );
 
-    expect(summary).toContain('class="summary-grid overview-summary-grid"');
-    expect(summary.match(/class="metric metric-link"/g)).toHaveLength(3);
+    expect(summary).toContain('class="summary-grid"');
+    expect(summary.match(/class="metric metric-link"/g)).toHaveLength(4);
     expect(summary.indexOf("Sessions this week")).toBeLessThan(
       summary.indexOf("Sessions today"),
     );
     expect(summary.indexOf("Sessions today")).toBeLessThan(
       summary.indexOf("Running now"),
     );
+    expect(summary.indexOf("Running now")).toBeLessThan(
+      summary.indexOf("Cost this week"),
+    );
     expect(summary).not.toContain("Failures this week");
   });
 
-  test("uses three overview metrics and lets the last one span mobile", () => {
+  test("surfaces a week-cost metric that links to the usage breakdown", () => {
+    const html = renderOverview();
+    const summary = html.slice(
+      html.indexOf('<div class="summary-grid'),
+      html.indexOf('<div class="overview-grid">'),
+    );
+
+    // Unpriced weeks render an em dash with an "Unavailable" caveat.
+    expect(summary).toContain("Cost this week");
+    expect(summary).toContain(">—<");
+    expect(summary).toContain("Unavailable · ");
+    // The cost tile is the summary's only link into the usage breakdown.
+    expect(summary).toContain('href="/usage"');
+  });
+
+  test("uses the default four-up summary grid with no overview override", () => {
     const styles = readFileSync(
       new URL("../app/globals.css", import.meta.url),
       "utf8",
     );
 
-    expect(styles).toContain(`.overview-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }`);
-    expect(styles).toContain(`.overview-summary-grid .metric:last-child {
-      grid-column: 1 / -1;
-    }`);
+    expect(styles).not.toContain(".overview-summary-grid");
   });
 
   test("uses neutral bullets for recent projects", () => {
