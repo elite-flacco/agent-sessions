@@ -549,7 +549,7 @@ describe("usage and cost queries", () => {
 
 describe("overview patterns", () => {
   it("builds a day-by-time heatmap covering the actual last 30 days", () => {
-    const patterns = queries.getOverviewPatterns();
+    const patterns = queries.getOverviewPatterns("30d");
     // One cell per 3-hour band per actual calendar day, day-major.
     expect(patterns.heatmap).toHaveLength(30 * 8);
     for (const cell of patterns.heatmap) {
@@ -611,7 +611,7 @@ describe("overview patterns", () => {
     const instant = "2026-07-14T00:30:00.000Z"; // Monday 20:30 EDT
     const easternDay = "2026-07-13";
     const easternBand = 6; // 20:30 falls in the 6–9 PM band
-    const before = queries.getOverviewPatterns();
+    const before = queries.getOverviewPatterns("30d");
     const beforeCount =
       before.heatmap.find(
         (cell) => cell.day === easternDay && cell.band === easternBand,
@@ -623,7 +623,7 @@ describe("overview patterns", () => {
       )
       .run(instant, instant);
     try {
-      const patterns = queries.getOverviewPatterns();
+      const patterns = queries.getOverviewPatterns("30d");
       const easternCell = patterns.heatmap.find(
         (cell) => cell.day === easternDay && cell.band === easternBand,
       );
@@ -631,6 +631,51 @@ describe("overview patterns", () => {
     } finally {
       sqlite
         .prepare("DELETE FROM sessions WHERE external_id = 'heat-eastern'")
+        .run();
+    }
+  });
+
+  it("narrows the heatmap and windows to 7 days and widens them to 30", () => {
+    // A session started ~10 days ago is outside the 7-day window but inside 30.
+    const now = new Date();
+    const instant = new Date(
+      now.getTime() - 10 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const baselineWeek = queries.getOverview("7d").week.sessions;
+    const baselineMonth = queries.getOverview("30d").week.sessions;
+    sqlite
+      .prepare(
+        `INSERT INTO sessions (external_id, provider, title, status, started_at, updated_at)
+         VALUES ('range-span', 'codex', 'Range span check', 'completed', ?, ?)`,
+      )
+      .run(instant, instant);
+    try {
+      // overview week window: excluded at 7d, included at 30d.
+      expect(queries.getOverview("7d").week.sessions).toBe(baselineWeek);
+      expect(queries.getOverview("30d").week.sessions).toBe(baselineMonth + 1);
+      // heatmap: always 30 days (30*8 cells) regardless of range, so the
+      // 10-day-old session appears in the heatmap total at both ranges.
+      const patterns7 = queries.getOverviewPatterns("7d");
+      const patterns30 = queries.getOverviewPatterns("30d");
+      expect(patterns7.heatmap).toHaveLength(30 * 8);
+      expect(patterns30.heatmap).toHaveLength(30 * 8);
+      const total7 = patterns7.heatmap.reduce(
+        (sum, cell) => sum + cell.count,
+        0,
+      );
+      const total30 = patterns30.heatmap.reduce(
+        (sum, cell) => sum + cell.count,
+        0,
+      );
+      expect(total30 - total7).toBe(0);
+      // length histogram follows the range: the 7-day window excludes a
+      // 10-day-old session's runtime, the 30-day window includes it.
+      expect(patterns7.length.sessionCount).toBeLessThan(
+        patterns30.length.sessionCount,
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = 'range-span'")
         .run();
     }
   });

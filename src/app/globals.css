@@ -445,6 +445,10 @@
     border-radius: 0.5rem;
     overflow: hidden;
   }
+  .overview-range {
+    display: inline-flex;
+    gap: 0.25rem;
+  }
   .metric {
     display: grid;
     min-height: 6.9rem;
@@ -2860,14 +2864,14 @@
     .page-header {
       align-items: center;
     }
-    .page-header .btn {
+    .page-header > .btn {
       width: 2.75rem;
       overflow: hidden;
       padding: 0;
       color: transparent;
       gap: 0;
     }
-    .page-header .btn svg {
+    .page-header > .btn svg {
       flex: 0 0 auto;
       color: var(--muted-foreground);
     }
