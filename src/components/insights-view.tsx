@@ -151,10 +151,10 @@ function KpiTile({
   detail: string;
 }) {
   return (
-    <a className="insight-kpi" href={href}>
-      <span className="insight-kpi-label">{label}</span>
-      <span className="insight-kpi-value">{value}</span>
-      <span className="insight-kpi-detail">{detail}</span>
+    <a className="metric metric-link" href={href}>
+      <span className="eyebrow">{label}</span>
+      <strong>{value}</strong>
+      <span>{detail}</span>
     </a>
   );
 }
@@ -187,7 +187,7 @@ export function HeroStrip({
       : `${capabilities.used.length} capabilities used in ${capabilityRange}; no complete inventory denominator`;
 
   return (
-    <div className="insight-hero">
+    <div className="summary-grid insight-hero">
       <KpiTile
         href="#insight-cost"
         label="Cost"

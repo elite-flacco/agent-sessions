@@ -1261,28 +1261,7 @@
     margin-top: 0.9rem;
   }
   .insight-hero {
-    display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 0.9rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--card);
-    overflow: hidden;
-  }
-  .insight-kpi {
-    display: grid;
-    gap: 0.2rem;
-    align-content: center;
-    min-width: 0;
-    padding: 0.85rem 1rem;
-    color: inherit;
-    text-decoration: none;
-  }
-  .insight-kpi + .insight-kpi {
-    border-left: 1px solid var(--border);
-  }
-  .insight-kpi:hover .insight-kpi-label {
-    color: var(--foreground);
   }
   .insight-hero-signals {
     margin-left: auto;
@@ -1291,18 +1270,6 @@
     align-items: center;
     gap: 0.5rem;
     border-color: var(--border);
-  }
-  .insight-kpi-label {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
-  .insight-kpi-value {
-    font-size: var(--text-xl);
-    letter-spacing: -0.03em;
-  }
-  .insight-kpi-detail {
-    color: var(--muted-foreground);
-    line-height: var(--leading-normal);
   }
   .insight-card {
     display: grid;
@@ -3301,7 +3268,7 @@
     .insight-hero {
       grid-template-columns: minmax(0, 1fr);
     }
-    .insight-kpi + .insight-kpi {
+    .insight-hero .metric + .metric {
       border-top: 1px solid var(--border);
       border-left: 0;
     }
