@@ -1332,11 +1332,6 @@
     align-items: baseline;
     gap: 0.25rem;
   }
-  .insight-estimate-note {
-    flex-basis: 100%;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
   .insight-sub {
     color: var(--muted-foreground);
     font-size: var(--text-xs);
@@ -1400,59 +1395,6 @@
     margin-top: 0.35rem;
     color: var(--muted-foreground);
     font-size: var(--text-xs);
-  }
-  .capability-segments {
-    display: flex;
-    gap: 2px;
-    height: 0.45rem;
-    margin-block: 0.7rem 0.2rem;
-  }
-  /* The unused segment needs to read against the card, not the page, so it
-     uses the hover border tone rather than --muted. */
-  .capability-segment {
-    flex: 1 1 0;
-    border-radius: 0.2rem;
-    background: var(--border-hover);
-    transition: opacity 150ms ease;
-  }
-  .capability-segment.is-dim {
-    opacity: 0.35;
-  }
-  .capability-segment.is-skills {
-    background: var(--badge-2-foreground);
-  }
-  .capability-segment.is-mcps {
-    background: var(--badge-3-foreground);
-  }
-  .capability-seg-1 {
-    flex-grow: 1;
-  }
-  .capability-seg-2 {
-    flex-grow: 2;
-  }
-  .capability-seg-3 {
-    flex-grow: 3;
-  }
-  .capability-seg-4 {
-    flex-grow: 4;
-  }
-  .capability-seg-5 {
-    flex-grow: 5;
-  }
-  .capability-seg-6 {
-    flex-grow: 6;
-  }
-  .capability-seg-7 {
-    flex-grow: 7;
-  }
-  .capability-seg-8 {
-    flex-grow: 8;
-  }
-  .capability-seg-9 {
-    flex-grow: 9;
-  }
-  .capability-seg-10 {
-    flex-grow: 10;
   }
   .capability-tabs {
     display: flex;
@@ -2693,14 +2635,16 @@
   .agent-plugin-group > summary::before {
     content: "›";
     position: absolute;
-    left: 0.2rem;
+    top: 50%;
+    left: 1rem;
     color: var(--muted-foreground);
     font-size: var(--text-lg);
     line-height: 1;
+    transform: translateY(-50%);
     transition: transform 150ms ease;
   }
   .agent-plugin-group[open] > summary::before {
-    transform: rotate(90deg);
+    transform: translateY(-50%) rotate(90deg);
   }
   .agent-plugin-group > summary:hover {
     background: var(--card-hover);
@@ -2710,7 +2654,7 @@
     min-width: 0;
     align-items: center;
     gap: 0.45rem;
-    padding-left: 0.35rem;
+    padding-left: 1rem;
   }
   .agent-plugin-group-name > svg {
     flex: 0 0 auto;

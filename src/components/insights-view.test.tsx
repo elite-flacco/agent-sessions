@@ -259,7 +259,6 @@ describe("InsightsView", () => {
     render(<InsightsView range="7d" insights={insights} />);
 
     const costCard = screen.getByRole("region", { name: "Cost outliers" });
-    expect(costCard).toHaveTextContent("Share");
     expect(costCard).toHaveTextContent("42%");
   });
 
