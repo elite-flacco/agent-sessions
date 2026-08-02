@@ -1,14 +1,18 @@
 import {
   AlertTriangle,
+  Boxes,
   Check,
   CircleSlash2,
   CircleX,
   FileText,
   Minus,
+  PackageOpen,
   Plug,
   Search,
+  UserRound,
   WandSparkles,
   Waypoints,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +37,8 @@ import { agentProviders, type AgentProvider } from "@/lib/types";
 
 export type AgentSetupViewMode = "inventory" | "compare" | "tasks";
 type AgentSetupKind = CapabilityKind | "instruction";
+type InventorySource =
+  "standalone" | "plugin" | "built_in" | "marketplace" | "personal";
 
 export interface AgentSetupFilters {
   view: AgentSetupViewMode;
@@ -40,7 +46,9 @@ export interface AgentSetupFilters {
   q?: string;
   provider?: AgentProvider;
   kind?: AgentSetupKind;
+  source?: InventorySource;
   status?: CapabilityStatus;
+  selected?: string;
   discrepanciesOnly?: boolean;
 }
 
@@ -54,12 +62,6 @@ const kindLabels: Record<AgentSetupKind, string> = {
   skill: "Skills",
   mcp: "MCPs",
   instruction: "Instructions",
-};
-
-const kindSortOrder: Record<CapabilityKind, number> = {
-  plugin: 0,
-  skill: 1,
-  mcp: 2,
 };
 
 const comparisonKindSortOrder: Record<ComparisonRow["kind"], number> = {
@@ -141,20 +143,43 @@ const reviewSections: readonly {
   },
 ];
 
-const originSortOrder: Record<AgentCapability["origin"], number> = {
-  built_in: 0,
-  marketplace: 1,
-  skills_sh: 2,
-  personal: 3,
-  unknown: 4,
-};
+const inventorySources: InventorySource[] = [
+  "standalone",
+  "plugin",
+  "built_in",
+  "marketplace",
+  "personal",
+];
 
-const originBadges: Record<AgentCapability["origin"], string> = {
-  personal: "badge-1",
-  skills_sh: "badge-2",
-  marketplace: "badge-3",
-  built_in: "badge-4",
-  unknown: "badge-5",
+const inventorySourceMeta: Record<
+  InventorySource,
+  { label: string; description: string; icon: LucideIcon }
+> = {
+  standalone: {
+    label: "Standalone",
+    description: "Installed directly, not supplied by a plugin",
+    icon: WandSparkles,
+  },
+  plugin: {
+    label: "Plugin-provided",
+    description: "Bundled with enabled plugins",
+    icon: Plug,
+  },
+  built_in: {
+    label: "Built-in",
+    description: "Included with the agent runtime",
+    icon: Boxes,
+  },
+  marketplace: {
+    label: "Marketplace",
+    description: "Installed through a marketplace or skills manager",
+    icon: PackageOpen,
+  },
+  personal: {
+    label: "Personal",
+    description: "Maintained in the user’s personal skill collection",
+    icon: UserRound,
+  },
 };
 
 function countLabel(
@@ -174,6 +199,7 @@ export function parseAgentSetupFilters(
 ): AgentSetupFilters {
   const provider = first(params.provider);
   const kind = first(params.kind);
+  const source = first(params.source);
   const status = first(params.status);
   const view =
     first(params.view) === "compare"
@@ -196,11 +222,17 @@ export function parseAgentSetupFilters(
     kind: ["plugin", "skill", "mcp", "instruction"].includes(kind ?? "")
       ? (kind as AgentSetupKind)
       : undefined,
+    source:
+      view === "inventory" &&
+      inventorySources.includes(source as InventorySource)
+        ? (source as InventorySource)
+        : undefined,
     status: ["enabled", "installed", "disabled", "unavailable"].includes(
       status ?? "",
     )
       ? (status as CapabilityStatus)
       : undefined,
+    selected: view === "inventory" ? first(params.selected) : undefined,
     discrepanciesOnly: first(params.discrepancies) === "1" || undefined,
   };
 }
@@ -219,7 +251,13 @@ function setupHref(
   if (next.q) params.set("q", next.q);
   if (next.provider) params.set("provider", next.provider);
   if (next.kind) params.set("kind", next.kind);
+  if (next.view === "inventory" && next.source) {
+    params.set("source", next.source);
+  }
   if (next.status) params.set("status", next.status);
+  if (next.view === "inventory" && next.selected) {
+    params.set("selected", next.selected);
+  }
   if (next.discrepanciesOnly) params.set("discrepancies", "1");
   const query = params.toString();
   return query ? `/agents?${query}` : "/agents";
@@ -267,171 +305,31 @@ function capabilitySourceLabel(
   return undefined;
 }
 
-function compareInventoryCapabilities(
+function inventorySourceFor(capability: AgentCapability): InventorySource {
+  if (capability.packaging === "plugin" || capability.sourcePlugin) {
+    return "plugin";
+  }
+  if (capability.packaging === "built_in" || capability.origin === "built_in") {
+    return "built_in";
+  }
+  if (
+    capability.origin === "marketplace" ||
+    capability.origin === "skills_sh"
+  ) {
+    return "marketplace";
+  }
+  if (capability.origin === "personal") return "personal";
+  return "standalone";
+}
+
+function compareCatalogCapabilities(
   left: AgentCapability,
   right: AgentCapability,
 ): number {
-  // Skills that share a group key (same plugin or same skills.sh repo) must
-  // land in a contiguous run so buildInventoryItems can collapse them.
-  // Inserting the group key between origin and name keeps the existing
-  // kind/origin/name ordering for everything else; non-groupable
-  // capabilities return undefined and fall through to the name phase.
-  const leftGroup = skillGroupKey(left) ?? "";
-  const rightGroup = skillGroupKey(right) ?? "";
-  return (
-    kindSortOrder[left.kind] - kindSortOrder[right.kind] ||
-    originSortOrder[left.origin] - originSortOrder[right.origin] ||
-    leftGroup.localeCompare(rightGroup) ||
-    left.name.localeCompare(right.name) ||
-    left.id.localeCompare(right.id)
-  );
-}
-
-/**
- * Comparator for render items: collapsed groups sort before flat rows within
- * the same kind/origin bucket (derived from the group's first member or the
- * flat row's capability), then by name. This puts the collapsed <details>
- * summaries at the top of each provider section and pushes flat singletons
- * (personal/built_in/unknown skills, lone skills.sh installs, single-skill
- * plugins) below them, while keeping relative order stable within each tier.
- */
-function compareInventoryItems(
-  left: InventoryItem,
-  right: InventoryItem,
-): number {
-  const leftCapability =
-    left.kind === "group" ? left.members[0]! : left.capability;
-  const rightCapability =
-    right.kind === "group" ? right.members[0]! : right.capability;
-  const leftRank = left.kind === "group" ? 0 : 1;
-  const rightRank = right.kind === "group" ? 0 : 1;
-  return (
-    kindSortOrder[leftCapability.kind] - kindSortOrder[rightCapability.kind] ||
-    originSortOrder[leftCapability.origin] -
-      originSortOrder[rightCapability.origin] ||
-    leftRank - rightRank ||
-    leftCapability.name.localeCompare(rightCapability.name) ||
-    leftCapability.id.localeCompare(rightCapability.id)
-  );
-}
-
-/**
- * The optional group key for a capability in the inventory view. Skills
- * cluster under their contributing plugin (marketplace + sourcePlugin) or
- * skills.sh repository (skills_sh + sourceRepository); everything else —
- * plugins, MCPs, and personal/built_in/unknown-origin skills — returns
- * undefined and renders flat.
- */
-function skillGroupKey(capability: AgentCapability): string | undefined {
-  if (capability.kind !== "skill") return undefined;
-  if (capability.origin === "marketplace" && capability.sourcePlugin) {
-    return `plugin:${capability.sourcePlugin}`;
-  }
-  if (capability.origin === "skills_sh" && capability.sourceRepository) {
-    return `skillssh:${capability.sourceRepository}`;
-  }
-  return undefined;
-}
-
-interface SkillGroupSummary {
-  key: string;
-  kind: "plugin" | "skills_sh";
-  name: string;
-  memberCount: number;
-}
-
-/**
- * Build the summary that `CapabilityGroup` renders in its <summary>. Members
- * must share a group key (caller's responsibility). Name and kind are derived
- * from the first member.
- */
-function summarizeSkillGroup(members: AgentCapability[]): SkillGroupSummary {
-  const first = members[0]!;
-  const key = skillGroupKey(first)!;
-  if (first.origin === "marketplace" && first.sourcePlugin) {
-    return {
-      key,
-      kind: "plugin",
-      name: first.sourcePlugin,
-      memberCount: members.length,
-    };
-  }
-  return {
-    key,
-    kind: "skills_sh",
-    name: first.sourceRepository!,
-    memberCount: members.length,
-  };
-}
-
-type InventoryItem =
-  | { kind: "row"; capability: AgentCapability }
-  | { kind: "group"; summary: SkillGroupSummary; members: AgentCapability[] };
-
-/**
- * Partition capabilities by origin, ordered via originSortOrder so the source
- * groups read in the same order used elsewhere in the view.
- */
-function partitionByOrigin(
-  capabilities: AgentCapability[],
-): { origin: AgentCapability["origin"]; capabilities: AgentCapability[] }[] {
-  const byOrigin = new Map<AgentCapability["origin"], AgentCapability[]>();
-  for (const capability of capabilities) {
-    const list = byOrigin.get(capability.origin) ?? [];
-    list.push(capability);
-    byOrigin.set(capability.origin, list);
-  }
-  return [...byOrigin.entries()]
-    .sort(([left], [right]) => originSortOrder[left] - originSortOrder[right])
-    .map(([origin, members]) => ({ origin, capabilities: members }));
-}
-
-/**
- * Walk the sorted capability list and emit render items, collapsing runs of
- * two or more consecutive same-key skills into a single group item. Runs of
- * fewer than two (including all non-skill capabilities) emit one row item
- * each so single-skill plugins and personal/built_in/unknown skills render
- * flat.
- */
-function buildInventoryItems(capabilities: AgentCapability[]): InventoryItem[] {
-  const items: InventoryItem[] = [];
-  let currentKey: string | undefined;
-  let pending: AgentCapability[] = [];
-  const flush = () => {
-    if (pending.length === 0) return;
-    if (currentKey === undefined || pending.length < 2) {
-      for (const capability of pending) {
-        items.push({ kind: "row", capability });
-      }
-    } else {
-      items.push({
-        kind: "group",
-        summary: summarizeSkillGroup(pending),
-        members: pending,
-      });
-    }
-    pending = [];
-  };
-  for (const capability of capabilities) {
-    const key = skillGroupKey(capability);
-    if (key === currentKey) {
-      pending.push(capability);
-    } else {
-      flush();
-      pending = [capability];
-      currentKey = key;
-    }
-  }
-  flush();
-  return items;
+  return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
 }
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
-  // Inventory shows one provider at a time and defaults to the first when none
-  // is chosen, so the summary cards act as a single-select provider control.
-  const effectiveProvider =
-    filters.provider ??
-    (filters.view === "inventory" ? inventories[0]?.provider : undefined);
   return (
     <section className="relay-content agent-setup-page">
       <header className="page-header">
@@ -444,35 +342,14 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
         </div>
       </header>
 
-      <div className="agent-summary-grid" aria-label="Agent setup summaries">
-        {inventories.map((inventory) => (
-          <ProviderSummary
-            key={inventory.provider}
-            inventory={inventory}
-            active={effectiveProvider === inventory.provider}
-            // Compare has no provider dimension, so a card there is a way into
-            // that provider's Inventory rather than a filter on the matrix.
-            href={setupHref(
-              filters,
-              filters.view === "compare"
-                ? {
-                    provider: inventory.provider,
-                    view: "inventory",
-                    comparisonMode: undefined,
-                    discrepanciesOnly: undefined,
-                  }
-                : { provider: inventory.provider },
-            )}
-          />
-        ))}
-      </div>
-
       <nav className="workspace-switcher" aria-label="Agent setup view">
         <Link
           href={setupHref(filters, {
             view: "inventory",
             comparisonMode: undefined,
             discrepanciesOnly: undefined,
+            source: undefined,
+            selected: undefined,
           })}
           className={
             filters.view === "inventory"
@@ -488,6 +365,8 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             view: "compare",
             comparisonMode: "attention",
             discrepanciesOnly: undefined,
+            source: undefined,
+            selected: undefined,
           })}
           className={
             filters.view === "compare"
@@ -503,6 +382,8 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             view: "tasks",
             comparisonMode: undefined,
             discrepanciesOnly: undefined,
+            source: undefined,
+            selected: undefined,
           })}
           className={
             filters.view === "tasks"
@@ -515,6 +396,7 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
         </Link>
       </nav>
 
+      <AgentSetupContextSummary inventories={inventories} filters={filters} />
       <FilterForm filters={filters} />
 
       {filters.view === "compare" ? (
@@ -528,59 +410,168 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
   );
 }
 
-function ProviderSummary({
-  inventory,
-  active,
-  href,
+interface ContextSummaryMetric {
+  value: string;
+  label: string;
+  tone?: "success" | "warning" | "danger";
+}
+
+function ContextSummary({
+  ariaLabel,
+  title,
+  metrics,
 }: {
-  inventory: AgentInventory;
-  active: boolean;
-  href: string;
+  ariaLabel: string;
+  title: string;
+  metrics: ContextSummaryMetric[];
 }) {
-  // Summary counts describe what is in effect; deliberately disabled
-  // capabilities only appear in the Compare view.
-  const activeCapabilities = inventory.capabilities.filter(
-    (capability) => capability.status !== "disabled",
-  );
-  const counts = Object.fromEntries(
-    (["plugin", "skill", "mcp"] as const).map((kind) => [
-      kind,
-      activeCapabilities.filter((capability) => capability.kind === kind)
-        .length,
-    ]),
-  );
   return (
-    <Link
-      href={href}
-      className={
-        active
-          ? "card agent-summary agent-summary-active"
-          : "card agent-summary"
-      }
-      aria-current={active ? "true" : undefined}
-    >
-      <div className="agent-summary-heading">
-        <span className={`badge ${providerBadges[inventory.provider]}`}>
-          {providerLabels[inventory.provider]}
-        </span>
-        {inventory.warnings.length > 0 ? (
-          <span className="agent-warning-count">
-            <AlertTriangle size={13} /> {inventory.warnings.length}
-          </span>
-        ) : null}
-      </div>
-      <strong>{activeCapabilities.length} capabilities</strong>
-      <span>
-        {countLabel(counts.plugin ?? 0, "plugin")} ·{" "}
-        {countLabel(counts.skill ?? 0, "skill")} ·{" "}
-        {countLabel(counts.mcp ?? 0, "MCP")}
-      </span>
-      <span>
-        {inventory.instructionFile
-          ? inventory.instructionFile.filename
-          : "Instructions not found"}
-      </span>
-    </Link>
+    <section className="agent-context-summary" aria-label={ariaLabel}>
+      <strong>{title}</strong>
+      <ul className="agent-context-metrics" aria-label={`${title} metrics`}>
+        {metrics.map((metric) => (
+          <li
+            key={`${metric.value}:${metric.label}`}
+            className={
+              metric.tone
+                ? `agent-context-metric is-${metric.tone}`
+                : "agent-context-metric"
+            }
+          >
+            <strong>{metric.value}</strong> <span>{metric.label}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function metricLabel(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return count === 1 ? singular : plural;
+}
+
+function AgentSetupContextSummary({
+  inventories,
+  filters,
+}: AgentSetupViewProps) {
+  if (filters.view === "inventory") {
+    const inventory =
+      inventories.find((entry) => entry.provider === filters.provider) ??
+      inventories[0];
+    if (!inventory) return null;
+    const activeCapabilities = inventory.capabilities.filter(
+      (capability) => capability.status !== "disabled",
+    );
+    const activeSkills = activeCapabilities.filter(
+      (capability) => capability.kind === "skill",
+    );
+    const skillSourceCount = new Set(activeSkills.map(inventorySourceFor)).size;
+    return (
+      <ContextSummary
+        ariaLabel="Inventory summary"
+        title={`${providerLabels[inventory.provider]} inventory`}
+        metrics={[
+          {
+            value: String(activeCapabilities.length),
+            label: metricLabel(
+              activeCapabilities.length,
+              "capability",
+              "capabilities",
+            ),
+          },
+          {
+            value: String(activeSkills.length),
+            label: metricLabel(activeSkills.length, "skill"),
+          },
+          {
+            value: String(skillSourceCount),
+            label: metricLabel(skillSourceCount, "source"),
+          },
+          {
+            value: inventory.instructionFile?.filename ?? "Unavailable",
+            label: "instructions",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (filters.view === "compare") {
+    const rows = filteredComparisonRows(inventories, filters);
+    const fixCount = rows.filter(
+      (row) => row.assessment.level === "fix",
+    ).length;
+    const reviewCount = rows.filter(
+      (row) => row.assessment.level === "review",
+    ).length;
+    const duplicateCount = findComparisonDuplicates(inventories).length;
+    return (
+      <ContextSummary
+        ariaLabel="Comparison summary"
+        title="Setup comparison"
+        metrics={[
+          {
+            value: String(inventories.length),
+            label: metricLabel(inventories.length, "agent"),
+          },
+          {
+            value: String(fixCount),
+            label: metricLabel(fixCount, "fix", "fixes"),
+            tone: fixCount > 0 ? "danger" : undefined,
+          },
+          {
+            value: String(reviewCount),
+            label: metricLabel(reviewCount, "review"),
+            tone: reviewCount > 0 ? "warning" : undefined,
+          },
+          {
+            value: String(duplicateCount),
+            label: metricLabel(duplicateCount, "duplicate install"),
+            tone: duplicateCount > 0 ? "warning" : undefined,
+          },
+        ]}
+      />
+    );
+  }
+
+  const tasks = scheduledTasksFor(inventories);
+  const activeCount = tasks.filter((task) => task.status === "active").length;
+  const inactiveCount = tasks.filter(
+    (task) => task.status === "paused" || task.status === "disabled",
+  ).length;
+  const orphanedCount = tasks.filter((task) =>
+    task.warnings.some((warning) => warning.code === "orphaned"),
+  ).length;
+  return (
+    <ContextSummary
+      ariaLabel="Scheduled tasks summary"
+      title="Task health"
+      metrics={[
+        {
+          value: String(tasks.length),
+          label: metricLabel(tasks.length, "task"),
+        },
+        {
+          value: String(activeCount),
+          label: "active",
+          tone: activeCount > 0 ? "success" : undefined,
+        },
+        {
+          value: String(inactiveCount),
+          label: "paused or disabled",
+          tone: inactiveCount > 0 ? "warning" : undefined,
+        },
+        {
+          value: String(orphanedCount),
+          label: `${metricLabel(orphanedCount, "target")} missing`,
+          tone: orphanedCount > 0 ? "danger" : undefined,
+        },
+      ]}
+    />
   );
 }
 
@@ -645,7 +636,7 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
         </label>
       ) : (
         <>
-          {/* Inventory selects provider (cards) and kind (rail); preserve both
+          {/* Inventory selects provider and kind in the rail; preserve both
               so a Status change or search keeps the current view. */}
           {filters.provider ? (
             <input type="hidden" name="provider" value={filters.provider} />
@@ -653,6 +644,21 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
           {filters.kind ? (
             <input type="hidden" name="kind" value={filters.kind} />
           ) : null}
+          <label className="agent-filter">
+            <span className="sr-only">Source</span>
+            <select
+              className="select"
+              name="source"
+              defaultValue={filters.source ?? ""}
+            >
+              <option value="">All sources</option>
+              {inventorySources.map((source) => (
+                <option key={source} value={source}>
+                  {inventorySourceMeta[source].label}
+                </option>
+              ))}
+            </select>
+          </label>
         </>
       )}
       <label className="agent-filter">
@@ -689,9 +695,9 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
   );
 }
 
-// The Inventory view shows one provider at a time; kind is chosen from a
-// vertical rail rather than stacked buckets. Instructions ride along as a
-// fourth rail entry when the provider ships an instruction file.
+// The Inventory view shows one provider at a time. Provider and kind stay in a
+// compact browsing rail while source, status, and search remain in the stable
+// toolbar above the catalog.
 const RAIL_KINDS: Exclude<AgentSetupKind, "instruction">[] = [
   "skill",
   "plugin",
@@ -717,10 +723,15 @@ function InventoryView({
     );
   }
 
-  // Status + search filtered, but NOT kind — the rail owns kind selection.
+  // Status + search + source filtered, but NOT kind — the rail owns kind
+  // selection and therefore remains visible while the catalog changes.
   const matched = inventory.capabilities
     .filter((capability) => matchesCapability(capability, filters, true))
-    .sort(compareInventoryCapabilities);
+    .filter(
+      (capability) =>
+        !filters.source || inventorySourceFor(capability) === filters.source,
+    )
+    .sort(compareCatalogCapabilities);
 
   const kindCounts = Object.fromEntries(
     RAIL_KINDS.map((kind) => [
@@ -734,24 +745,14 @@ function InventoryView({
   // whether it can stand in as a result when nothing else does.
   const hasInstruction = Boolean(inventory.instructionFile);
   const instructionMatches = showsInstruction(inventory, filters);
-  const onInstruction = filters.kind === "instruction" && hasInstruction;
 
-  if (matched.length === 0 && !onInstruction && !instructionMatches) {
-    return (
-      <div className="card empty-state agent-empty-state">
-        <h3>No capabilities match these filters.</h3>
-        <p>Adjust the search or status selection.</p>
-      </div>
-    );
-  }
-
-  // Default to the first populated kind so the rail never opens on an empty
-  // pane; honour an explicit rail selection (including "instruction").
+  // Honour explicit rail selections even when the active filters produce an
+  // empty pane. Without that, filtering Skills could unexpectedly jump to MCPs.
   const requested = filters.kind;
   const selectedKind: AgentSetupKind =
     requested === "instruction" && hasInstruction
       ? "instruction"
-      : requested && requested !== "instruction" && kindCounts[requested]
+      : requested && requested !== "instruction"
         ? requested
         : (RAIL_KINDS.find((kind) => kindCounts[kind] > 0) ??
           (instructionMatches ? "instruction" : "skill"));
@@ -774,17 +775,17 @@ function InventoryView({
     if (count > 1) duplicateNames.add(name);
   }
 
+  const selectedCapability = filters.selected
+    ? inventory.capabilities.find(
+        (capability) =>
+          capability.id === filters.selected &&
+          capability.status !== "disabled",
+      )
+    : undefined;
+  const sourceGroups = partitionByCatalogSource(selected);
+
   return (
-    <div className="agent-inventory-single">
-      <header className="agent-provider-heading">
-        <div>
-          <span className={`badge ${providerBadges[inventory.provider]}`}>
-            {providerLabels[inventory.provider]}
-          </span>
-          <strong>{matched.length} shown</strong>
-        </div>
-        <span>Global configuration</span>
-      </header>
+    <div className="agent-inventory-region">
       {inventory.warnings.length > 0 ? (
         <div className="agent-warning-list">
           {inventory.warnings.map((warning) => (
@@ -799,27 +800,83 @@ function InventoryView({
           ))}
         </div>
       ) : null}
-      <div className="agent-kind-rail-layout">
-        <nav className="agent-kind-rail" aria-label="Capability kind">
-          {RAIL_KINDS.map((kind) => (
-            <KindRailItem
-              key={kind}
-              kind={kind}
-              count={kindCounts[kind]}
-              active={selectedKind === kind}
-              href={setupHref(filters, { kind })}
-            />
-          ))}
-          {hasInstruction ? (
-            <KindRailItem
-              kind="instruction"
-              count={1}
-              active={selectedKind === "instruction"}
-              href={setupHref(filters, { kind: "instruction" })}
-            />
-          ) : null}
-        </nav>
-        <div className="agent-kind-rail-content">
+      <div
+        className={
+          selectedCapability
+            ? "agent-inventory-layout has-inspector"
+            : "agent-inventory-layout"
+        }
+      >
+        <aside className="agent-inventory-rail" aria-label="Inventory browsing">
+          <nav className="agent-rail-section" aria-label="Agent provider">
+            <div className="agent-rail-heading">Provider</div>
+            {inventories.map((entry) => {
+              const count = entry.capabilities.filter(
+                (capability) => capability.status !== "disabled",
+              ).length;
+              return (
+                <Link
+                  key={entry.provider}
+                  href={setupHref(filters, {
+                    provider: entry.provider,
+                    selected: undefined,
+                  })}
+                  className={
+                    entry.provider === inventory.provider
+                      ? "agent-provider-rail-item is-active"
+                      : "agent-provider-rail-item"
+                  }
+                  aria-current={
+                    entry.provider === inventory.provider ? "true" : undefined
+                  }
+                >
+                  <span
+                    className={`agent-provider-dot ${providerBadges[entry.provider]}`}
+                    aria-hidden="true"
+                  />
+                  <span>{providerLabels[entry.provider]}</span>
+                  <span className="agent-kind-rail-count">{count}</span>
+                </Link>
+              );
+            })}
+          </nav>
+          <nav className="agent-rail-section" aria-label="Capability kind">
+            <div className="agent-rail-heading">Kind</div>
+            {RAIL_KINDS.map((kind) => (
+              <KindRailItem
+                key={kind}
+                kind={kind}
+                count={kindCounts[kind]}
+                active={selectedKind === kind}
+                href={setupHref(filters, {
+                  kind,
+                  selected: undefined,
+                })}
+              />
+            ))}
+            {hasInstruction ? (
+              <KindRailItem
+                kind="instruction"
+                count={1}
+                active={selectedKind === "instruction"}
+                href={setupHref(filters, {
+                  kind: "instruction",
+                  selected: undefined,
+                })}
+              />
+            ) : null}
+          </nav>
+        </aside>
+        <section className="agent-catalog" aria-label="Capability catalog">
+          <header className="agent-catalog-heading">
+            <div>
+              <strong>{kindLabels[selectedKind]}</strong>
+              <span>{countLabel(selected.length, "item")}</span>
+            </div>
+            <span className={`badge ${providerBadges[inventory.provider]}`}>
+              {providerLabels[inventory.provider]}
+            </span>
+          </header>
           {selectedKind === "instruction" && inventory.instructionFile ? (
             <details className="agent-instruction" open>
               <summary>
@@ -830,23 +887,41 @@ function InventoryView({
               </summary>
               <pre>{inventory.instructionFile.content}</pre>
             </details>
-          ) : selected.length > 0 ? (
-            <div className="agent-capability-list">
-              {partitionByOrigin(selected).map((group) => (
-                <SourceGroup
-                  key={group.origin}
-                  origin={group.origin}
-                  capabilities={group.capabilities}
-                  duplicateNames={duplicateNames}
-                />
-              ))}
-            </div>
+          ) : sourceGroups.length > 0 ? (
+            <>
+              <div className="agent-catalog-columns" aria-hidden="true">
+                <span>Name</span>
+                <span>Package / source</span>
+                <span>Status</span>
+                <span>Location / detail</span>
+              </div>
+              <div className="agent-capability-list">
+                {sourceGroups.map((group) => (
+                  <CatalogSourceGroup
+                    key={group.source}
+                    source={group.source}
+                    capabilities={group.capabilities}
+                    filters={filters}
+                    duplicateNames={duplicateNames}
+                    selectedId={selectedCapability?.id}
+                  />
+                ))}
+              </div>
+            </>
           ) : (
-            <p className="agent-kind-empty">
-              No {kindLabels[selectedKind].toLowerCase()} for this agent.
-            </p>
+            <div className="agent-kind-empty">
+              <strong>No capabilities match these filters.</strong>
+              <p>Adjust the search, source, or status selection.</p>
+            </div>
           )}
-        </div>
+        </section>
+        {selectedCapability ? (
+          <CapabilityInspector
+            capability={selectedCapability}
+            inventory={inventory}
+            filters={filters}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -896,124 +971,328 @@ function showsInstruction(
   ].some((value) => value.toLocaleLowerCase().includes(query));
 }
 
-function SourceGroup({
-  origin,
+function partitionByCatalogSource(
+  capabilities: AgentCapability[],
+): { source: InventorySource; capabilities: AgentCapability[] }[] {
+  const groups = new Map<InventorySource, AgentCapability[]>();
+  for (const capability of capabilities) {
+    const source = inventorySourceFor(capability);
+    const members = groups.get(source) ?? [];
+    members.push(capability);
+    groups.set(source, members);
+  }
+  return inventorySources.flatMap((source) => {
+    const members = groups.get(source);
+    return members ? [{ source, capabilities: members }] : [];
+  });
+}
+
+function catalogSourceTitle(
+  source: InventorySource,
+  capabilities: AgentCapability[],
+): string {
+  const label = inventorySourceMeta[source].label;
+  const kind = capabilities[0]?.kind;
+  return kind === "skill" ? `${label} skills` : label;
+}
+
+function catalogPackageSource(capability: AgentCapability): string {
+  if (capability.sourcePlugin) return capability.sourcePlugin;
+  if (capability.sourceRepository) return capability.sourceRepository;
+  if (inventorySourceFor(capability) === "built_in") return "Agent runtime";
+  if (inventorySourceFor(capability) === "personal") return "Personal install";
+  return "Direct install";
+}
+
+function catalogLocationDetail(capability: AgentCapability): string {
+  if (capability.sourcePath) return shortenHomePath(capability.sourcePath);
+  const source = inventorySourceFor(capability);
+  if (source === "plugin") return "Bundled with plugin";
+  if (source === "built_in") return "Included with runtime";
+  if (source === "marketplace") return "Managed install";
+  return "Installed globally";
+}
+
+function CatalogSourceGroup({
+  source,
   capabilities,
+  filters,
   duplicateNames,
+  selectedId,
 }: {
-  origin: AgentCapability["origin"];
+  source: InventorySource;
   capabilities: AgentCapability[];
+  filters: AgentSetupFilters;
   duplicateNames: Set<string>;
+  selectedId?: string;
 }) {
-  const items = buildInventoryItems(capabilities).sort(compareInventoryItems);
+  const meta = inventorySourceMeta[source];
+  const SourceIcon = meta.icon;
+  const sorted = [...capabilities].sort(compareCatalogCapabilities);
+  const shouldGroupPlugins =
+    source === "plugin" && capabilities[0]?.kind === "skill";
+  const pluginGroups = new Map<string, AgentCapability[]>();
+  if (shouldGroupPlugins) {
+    for (const capability of sorted) {
+      const plugin = capability.sourcePlugin ?? "Plugin source unavailable";
+      const members = pluginGroups.get(plugin) ?? [];
+      members.push(capability);
+      pluginGroups.set(plugin, members);
+    }
+  }
+
   return (
-    <details className="agent-source-group" open>
-      <summary>
-        <span className="agent-source-group-primary">
-          <span className={`badge ${originBadges[origin]} agent-origin-tag`}>
-            {originLabels[origin]}
+    <section className="agent-source-group">
+      <header className="agent-source-group-heading">
+        <div>
+          <SourceIcon aria-hidden="true" size={15} />
+          <strong>{catalogSourceTitle(source, capabilities)}</strong>
+          <span>{meta.description}</span>
+        </div>
+        <span>{countLabel(capabilities.length, "item")}</span>
+      </header>
+      <div className="agent-source-group-body">
+        {shouldGroupPlugins
+          ? [...pluginGroups.entries()].map(([plugin, members]) => (
+              <PluginSkillGroup
+                key={plugin}
+                plugin={plugin}
+                members={members}
+                filters={filters}
+                duplicateNames={duplicateNames}
+                selectedId={selectedId}
+              />
+            ))
+          : sorted.map((capability) => (
+              <CatalogCapabilityRow
+                key={capability.id}
+                capability={capability}
+                filters={filters}
+                duplicateNames={duplicateNames}
+                selected={selectedId === capability.id}
+              />
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function pluginGroupStatus(members: AgentCapability[]): CapabilityStatus {
+  if (members.some((capability) => capability.status === "unavailable")) {
+    return "unavailable";
+  }
+  return members.every((capability) => capability.status === "enabled")
+    ? "enabled"
+    : "installed";
+}
+
+function PluginSkillGroup({
+  plugin,
+  members,
+  filters,
+  duplicateNames,
+  selectedId,
+}: {
+  plugin: string;
+  members: AgentCapability[];
+  filters: AgentSetupFilters;
+  duplicateNames: Set<string>;
+  selectedId?: string;
+}) {
+  const status = pluginGroupStatus(members);
+  const source = members[0]?.sourceRepository ?? "Plugin package";
+  return (
+    <details className="agent-plugin-group">
+      <summary className="agent-catalog-grid">
+        <span className="agent-plugin-group-name">
+          <Plug aria-hidden="true" size={14} />
+          <span>
+            <strong>{plugin}</strong>
+            <span>Plugin</span>
           </span>
         </span>
-        <span>{countLabel(capabilities.length, "item")}</span>
-      </summary>
-      <div className="agent-source-group-body">
-        {items.map((item) =>
-          item.kind === "row" ? (
-            <CapabilityRow
-              key={`row:${item.capability.id}`}
-              capability={item.capability}
-              duplicateNames={duplicateNames}
-            />
-          ) : (
-            <CapabilityGroup
-              key={`group:${item.summary.key}`}
-              summary={item.summary}
-              members={item.members}
-              duplicateNames={duplicateNames}
-            />
-          ),
-        )}
-      </div>
-    </details>
-  );
-}
-
-function CapabilityRow({
-  capability,
-  duplicateNames,
-  withinGroup,
-}: {
-  capability: AgentCapability;
-  duplicateNames?: Set<string>;
-  withinGroup?: boolean;
-}) {
-  // When the same capability name appears more than once in the visible
-  // inventory, the source line alone can't tell the rows apart (e.g. two
-  // ai-sdk installs both reclassified to skills.sh/vercel/ai). Surface the
-  // shortened install path so the user can identify and clean up duplicates.
-  const showPathHint =
-    duplicateNames?.has(capability.name) && !!capability.sourcePath;
-  // Inside a repo/plugin sub-group the header already names the source, so a
-  // per-row source line just repeats it. For standalone rows the source line
-  // is the row's only locator — but only when it carries information the name
-  // does not. Plugin/MCP rows are published as "<name>@<marketplace>" with
-  // sourceRepository === "<marketplace>", so the repository line just repeats
-  // the @-suffix; skills.sh rows keep their line because the repository
-  // (e.g. "vercel/ai") is a real locator the skill name doesn't convey.
-  const repository = capability.sourceRepository;
-  const nameSuffix = capability.name.includes("@")
-    ? capability.name.slice(capability.name.lastIndexOf("@") + 1)
-    : undefined;
-  const redundantRepository =
-    withinGroup || (nameSuffix !== undefined && repository === nameSuffix);
-  const sourceLine = redundantRepository
-    ? undefined
-    : (repository ?? capability.sourcePlugin);
-
-  return (
-    <div className="agent-capability-row">
-      <div className="agent-capability-primary">
-        <strong>{capability.name}</strong>
-        {sourceLine ? <span>{sourceLine}</span> : null}
-        {showPathHint ? (
-          <code className="agent-capability-path-hint">
-            {shortenHomePath(capability.sourcePath!)}
-          </code>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function CapabilityGroup({
-  summary,
-  members,
-  duplicateNames,
-}: {
-  summary: SkillGroupSummary;
-  members: AgentCapability[];
-  duplicateNames?: Set<string>;
-}) {
-  return (
-    <details className="agent-capability-group">
-      <summary>
-        <span className="agent-capability-group-primary">
-          <strong>{summary.name}</strong>
+        <span className="agent-catalog-source">{source}</span>
+        <span>
+          <span className={`badge ${statusBadges[status]}`}>
+            {statusLabels[status]}
+          </span>
         </span>
-        <span>{countLabel(summary.memberCount, "skill")}</span>
+        <span className="agent-catalog-detail">
+          {countLabel(members.length, "skill")}
+        </span>
       </summary>
-      <div className="agent-capability-group-members">
+      <div className="agent-plugin-group-members">
         {members.map((capability) => (
-          <CapabilityRow
+          <CatalogCapabilityRow
             key={capability.id}
             capability={capability}
+            filters={filters}
             duplicateNames={duplicateNames}
-            withinGroup
+            selected={selectedId === capability.id}
+            withinPlugin
           />
         ))}
       </div>
     </details>
   );
+}
+
+function CatalogCapabilityRow({
+  capability,
+  filters,
+  duplicateNames,
+  selected,
+  withinPlugin,
+}: {
+  capability: AgentCapability;
+  filters: AgentSetupFilters;
+  duplicateNames: Set<string>;
+  selected: boolean;
+  withinPlugin?: boolean;
+}) {
+  const source = inventorySourceFor(capability);
+  const sourceLabel = inventorySourceMeta[source].label;
+  return (
+    <Link
+      href={setupHref(filters, { selected: capability.id })}
+      prefetch={false}
+      className={
+        withinPlugin
+          ? "agent-catalog-row agent-catalog-grid agent-catalog-row-child"
+          : "agent-catalog-row agent-catalog-grid"
+      }
+      aria-current={selected ? "true" : undefined}
+    >
+      <span className="agent-catalog-name">
+        <strong>{capability.name}</strong>
+        <span className="agent-row-source">{sourceLabel}</span>
+      </span>
+      <span className="agent-catalog-source">
+        {catalogPackageSource(capability)}
+      </span>
+      <span>
+        <span className={`badge ${statusBadges[capability.status]}`}>
+          {statusLabels[capability.status]}
+        </span>
+      </span>
+      <span className="agent-catalog-detail">
+        {capability.sourcePath ? (
+          <code>{catalogLocationDetail(capability)}</code>
+        ) : (
+          catalogLocationDetail(capability)
+        )}
+        {duplicateNames.has(capability.name) ? (
+          <span className="agent-duplicate-inline">Duplicate install</span>
+        ) : null}
+      </span>
+    </Link>
+  );
+}
+
+function CapabilityInspector({
+  capability,
+  inventory,
+  filters,
+}: {
+  capability: AgentCapability;
+  inventory: AgentInventory;
+  filters: AgentSetupFilters;
+}) {
+  const KindIcon = kindIcons[capability.kind];
+  const source = inventorySourceFor(capability);
+  const duplicate = findComparisonDuplicates([inventory]).find(
+    (entry) => entry.kind === capability.kind && entry.name === capability.name,
+  );
+  return (
+    <aside className="agent-catalog-inspector" aria-label="Selected capability">
+      <header className="agent-inspector-heading">
+        <div>
+          <KindIcon aria-hidden="true" size={16} />
+          <div>
+            <strong>{capability.name}</strong>
+            <span>{capabilityKindLabels[capability.kind]}</span>
+          </div>
+        </div>
+        <Link
+          href={setupHref(filters, { selected: undefined })}
+          className="agent-inspector-close"
+          aria-label="Close inspector"
+        >
+          <X aria-hidden="true" size={15} />
+        </Link>
+      </header>
+      <dl className="agent-inspector-details">
+        <div>
+          <dt>Provider</dt>
+          <dd>{providerLabels[inventory.provider]}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{inventorySourceMeta[source].label}</dd>
+        </div>
+        {capability.sourcePlugin ? (
+          <div>
+            <dt>Parent plugin</dt>
+            <dd>{capability.sourcePlugin}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Package / source</dt>
+          <dd>{catalogPackageSource(capability)}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{statusLabels[capability.status]}</dd>
+        </div>
+        <div>
+          <dt>Location</dt>
+          <dd>
+            <code>{catalogLocationDetail(capability)}</code>
+          </dd>
+        </div>
+      </dl>
+      {duplicate ? (
+        <section className="agent-inspector-duplicates">
+          <header>
+            <strong>Duplicate installs</strong>
+            <span>{countLabel(duplicate.copies.length, "location")}</span>
+          </header>
+          <p>
+            {duplicate.identicalContent
+              ? "Copies have matching content."
+              : "Copies may differ; review which install should take precedence."}
+          </p>
+          <div>
+            {duplicate.copies.map((copy) =>
+              copy.sourcePath ? (
+                <code key={copy.id}>{shortenHomePath(copy.sourcePath)}</code>
+              ) : null,
+            )}
+          </div>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function filteredComparisonRows(
+  inventories: AgentInventory[],
+  filters: AgentSetupFilters,
+): ComparisonRow[] {
+  let rows = buildComparisonRows(inventories);
+  if (filters.q) {
+    const query = filters.q.toLocaleLowerCase();
+    rows = rows.filter((row) => row.name.toLocaleLowerCase().includes(query));
+  }
+  if (filters.kind) rows = rows.filter((row) => row.kind === filters.kind);
+  if (filters.status) {
+    rows = rows.filter((row) =>
+      Object.values(row.cells).some(
+        (capability) => capability.status === filters.status,
+      ),
+    );
+  }
+  return rows;
 }
 
 function ComparisonView({
@@ -1023,26 +1302,9 @@ function ComparisonView({
   inventories: AgentInventory[];
   filters: AgentSetupFilters;
 }) {
-  let rows = buildComparisonRows(inventories);
-  if (filters.q) {
-    const query = filters.q.toLocaleLowerCase();
-    rows = rows.filter((row) => row.name.toLocaleLowerCase().includes(query));
-  }
-  if (filters.kind) rows = rows.filter((row) => row.kind === filters.kind);
+  let rows = filteredComparisonRows(inventories, filters);
   // No provider narrowing here — see FilterForm: Compare always spans every
   // provider so drift stays visible.
-  if (filters.status) {
-    rows = rows.filter((row) =>
-      Object.values(row.cells).some(
-        (capability) => capability.status === filters.status,
-      ),
-    );
-  }
-  const fixCount = rows.filter((row) => row.assessment.level === "fix").length;
-  const reviewCount = rows.filter(
-    (row) => row.assessment.level === "review",
-  ).length;
-
   if (filters.comparisonMode === "attention") {
     rows = rows
       .filter((row) => row.assessment.level !== "context")
@@ -1142,14 +1404,6 @@ function ComparisonView({
             Complete matrix
           </Link>
         </nav>
-        <div className="agent-attention-summary" aria-label="Attention summary">
-          <span className="badge badge-5">
-            {countLabel(fixCount, "fix", "fixes")}
-          </span>
-          <span className="badge badge-4">
-            {countLabel(reviewCount, "review")}
-          </span>
-        </div>
       </div>
 
       {attentionWarnings.length > 0 ? (
@@ -1499,6 +1753,12 @@ const scheduledStatusBadges: Record<ScheduledTask["status"], string> = {
   unknown: "badge-5",
 };
 
+function scheduledTasksFor(inventories: AgentInventory[]): ScheduledTask[] {
+  return inventories
+    .flatMap((inventory) => inventory.scheduledTasks ?? [])
+    .sort(compareScheduledTasks);
+}
+
 /**
  * Third `/agents` tab. Renders all discovered scheduled/recurring tasks in a
  * single schedule-first table (sorted by cadence, active tasks first). Empty
@@ -1512,9 +1772,7 @@ function ScheduledTasksView({
 }: {
   inventories: AgentInventory[];
 }) {
-  const tasks = inventories
-    .flatMap((inventory) => inventory.scheduledTasks ?? [])
-    .sort(compareScheduledTasks);
+  const tasks = scheduledTasksFor(inventories);
   const total = tasks.length;
   return (
     <div className="agent-inventory-list">
