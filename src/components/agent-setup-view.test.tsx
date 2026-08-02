@@ -167,10 +167,220 @@ describe("parseAgentSetupFilters", () => {
       comparisonMode: "attention",
     });
   });
+
+  test("accepts inventory source filters and drops them outside inventory", () => {
+    expect(parseAgentSetupFilters({ source: "plugin" })).toMatchObject({
+      view: "inventory",
+      source: "plugin",
+    });
+    expect(
+      parseAgentSetupFilters({ source: "not-a-source" }).source,
+    ).toBeUndefined();
+    expect(
+      parseAgentSetupFilters({ view: "compare", source: "plugin" }).source,
+    ).toBeUndefined();
+  });
 });
 
 describe("AgentSetupView", () => {
-  test("inventory nests rail → source → repo and hoists badges off rows", () => {
+  test("skills inventory renders semantic source groups and compact aligned rows", () => {
+    const sourceAware: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [
+          skill("codex", "direct-skill", {
+            origin: "unknown",
+          }),
+          skill("codex", "plugin-skill", {
+            origin: "marketplace",
+            packaging: "plugin",
+            sourcePlugin: "superpowers@openai-curated",
+            status: "enabled",
+          }),
+          skill("codex", "runtime-skill", {
+            origin: "built_in",
+            packaging: "built_in",
+            status: "enabled",
+          }),
+          skill("codex", "managed-skill", {
+            origin: "skills_sh",
+            sourceRepository: "vercel-labs/skills",
+          }),
+          skill("codex", "personal-skill", {
+            origin: "personal",
+          }),
+        ],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={sourceAware}
+        filters={{ view: "inventory", provider: "codex", kind: "skill" }}
+      />,
+    );
+
+    expect(screen.queryByText("Standalone skills")).not.toBeNull();
+    expect(screen.queryByText("Plugin-provided skills")).not.toBeNull();
+    expect(screen.queryByText("Built-in skills")).not.toBeNull();
+    expect(screen.queryByText("Marketplace skills")).not.toBeNull();
+    expect(screen.queryByText("Personal skills")).not.toBeNull();
+    expect(
+      screen.queryByText("Installed directly, not supplied by a plugin"),
+    ).not.toBeNull();
+
+    expect(screen.queryByText("Package / source")).not.toBeNull();
+    expect(screen.queryAllByText("Status").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Location / detail")).not.toBeNull();
+    expect(container.querySelectorAll(".agent-catalog-row")).toHaveLength(5);
+    expect(
+      container.querySelectorAll(".agent-catalog-row .agent-kind-label"),
+    ).toHaveLength(0);
+    expect(
+      container.querySelectorAll(".agent-catalog-row .agent-row-source"),
+    ).toHaveLength(5);
+  });
+
+  test("plugin-provided skills always stay under a collapsible plugin parent", () => {
+    const singlePluginSkill: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [
+          skill("codex", "only-skill", {
+            origin: "marketplace",
+            packaging: "plugin",
+            sourcePlugin: "skill-creator@openai-curated",
+            sourceRepository: "openai-curated",
+            status: "enabled",
+          }),
+        ],
+      },
+    ];
+    const { container } = render(
+      <AgentSetupView
+        inventories={singlePluginSkill}
+        filters={{ view: "inventory", provider: "codex", kind: "skill" }}
+      />,
+    );
+
+    const group = container.querySelector(".agent-plugin-group");
+    expect(group).not.toBeNull();
+    expect(group?.textContent).toContain("skill-creator@openai-curated");
+    expect(group?.textContent).toContain("1 skill");
+    expect(group?.textContent).toContain("Enabled");
+    expect(group?.querySelector(".agent-catalog-row")?.textContent).toContain(
+      "only-skill",
+    );
+  });
+
+  test("inventory source filter narrows the catalog without removing source context", () => {
+    const sourceFiltered: AgentInventory[] = [
+      {
+        provider: "codex",
+        scope: "global",
+        warnings: [],
+        capabilities: [
+          skill("codex", "direct-skill", { origin: "unknown" }),
+          skill("codex", "managed-skill", {
+            origin: "skills_sh",
+            sourceRepository: "vercel-labs/skills",
+          }),
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={sourceFiltered}
+        filters={{
+          view: "inventory",
+          provider: "codex",
+          kind: "skill",
+          source: "marketplace",
+        }}
+      />,
+    );
+
+    expect(html).toContain('name="source"');
+    expect(html).toContain("Marketplace skills");
+    expect(html).toContain("managed-skill");
+    expect(html).toContain("Marketplace</span>");
+    expect(html).not.toContain("Standalone skills");
+    expect(html).not.toContain("direct-skill");
+  });
+
+  test("selected skill inspector names its parent plugin and duplicate installs", () => {
+    vi.stubEnv("HOME", "/Users/example");
+    try {
+      const selectedInventory: AgentInventory[] = [
+        {
+          provider: "codex",
+          scope: "global",
+          warnings: [],
+          capabilities: [
+            skill("codex", "duplicate-skill", {
+              id: "codex:skill:duplicate-skill:plugin",
+              origin: "marketplace",
+              packaging: "plugin",
+              sourcePlugin: "superpowers@openai-curated",
+              sourcePath:
+                "/Users/example/.codex/plugins/cache/superpowers/skills/duplicate-skill",
+              canonicalSourcePath:
+                "/Users/example/.codex/plugins/cache/superpowers/skills/duplicate-skill",
+              contentFingerprint: "same",
+              status: "enabled",
+            }),
+            skill("codex", "duplicate-skill", {
+              id: "codex:skill:duplicate-skill:direct",
+              origin: "skills_sh",
+              sourceRepository: "obra/superpowers",
+              sourcePath: "/Users/example/.agents/skills/duplicate-skill",
+              canonicalSourcePath:
+                "/Users/example/.agents/skills/duplicate-skill",
+              contentFingerprint: "same",
+              status: "enabled",
+            }),
+          ],
+        },
+      ];
+      const { container } = render(
+        <AgentSetupView
+          inventories={selectedInventory}
+          filters={{
+            view: "inventory",
+            provider: "codex",
+            kind: "skill",
+            selected: "codex:skill:duplicate-skill:plugin",
+          }}
+        />,
+      );
+
+      const inspector = screen.getByRole("complementary", {
+        name: "Selected capability",
+      });
+      expect(inspector.textContent).toContain("duplicate-skill");
+      expect(inspector.textContent).toContain("Parent plugin");
+      expect(inspector.textContent).toContain("superpowers@openai-curated");
+      expect(inspector.textContent).toContain("Duplicate installs");
+      expect(inspector.textContent).toContain("2 locations");
+      expect(inspector.textContent).toContain(
+        "~/.codex/plugins/cache/superpowers/skills/duplicate-skill",
+      );
+      expect(inspector.textContent).toContain(
+        "~/.agents/skills/duplicate-skill",
+      );
+      expect(
+        container.querySelector('.agent-catalog-row[aria-current="true"]')
+          ?.textContent,
+      ).toContain("duplicate-skill");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("inventory nests rail → source and keeps managed skills as direct rows", () => {
     const nested: AgentInventory[] = [
       {
         provider: "codex",
@@ -198,23 +408,18 @@ describe("AgentSetupView", () => {
     // No kind bucket — the vertical rail owns kind selection.
     expect(container.querySelectorAll(".agent-kind-bucket")).toHaveLength(0);
 
-    // One source group, open by default so its repo sub-groups are visible.
+    // One semantic source section; non-plugin marketplace skills stay direct.
     const sources = container.querySelectorAll(".agent-source-group");
     expect(sources).toHaveLength(1);
-    expect(sources[0]!.hasAttribute("open")).toBe(true);
 
     // Type badge never lands on a row.
     expect(container.querySelectorAll(".agent-kind-label")).toHaveLength(0);
 
-    // Origin badge appears once, on the source header.
-    expect(
-      container.querySelectorAll(".agent-source-group .agent-origin-tag"),
-    ).toHaveLength(1);
-
-    // Full three-level nesting under the rail content for the 2-skill run.
+    // Marketplace installs are not plugins, so they remain compact direct rows.
+    expect(container.querySelectorAll(".agent-plugin-group")).toHaveLength(0);
     expect(
       container.querySelectorAll(
-        ".agent-kind-rail-content .agent-source-group .agent-capability-group .agent-capability-row",
+        ".agent-catalog .agent-source-group > .agent-source-group-body > .agent-catalog-row",
       ),
     ).toHaveLength(2);
   });
@@ -235,21 +440,16 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // No repo/plugin sub-group is forced for a lone skill.
-    expect(container.querySelectorAll(".agent-capability-group")).toHaveLength(
-      0,
-    );
+    // No plugin parent is forced for a personal skill.
+    expect(container.querySelectorAll(".agent-plugin-group")).toHaveLength(0);
     // The row sits directly in the source group body.
     expect(
       container.querySelectorAll(
-        ".agent-source-group-body > .agent-capability-row",
+        ".agent-source-group-body > .agent-catalog-row",
       ),
     ).toHaveLength(1);
-    // Row carries neither badge.
+    // Row carries no redundant item-kind icon.
     expect(container.querySelectorAll(".agent-kind-label")).toHaveLength(0);
-    expect(
-      container.querySelectorAll(".agent-capability-row .agent-origin-tag"),
-    ).toHaveLength(0);
   });
 
   test("opens the primary Compare tab in Needs attention mode", () => {
@@ -266,19 +466,22 @@ describe("AgentSetupView", () => {
   });
 
   test("Needs attention includes fixes and reviews but excludes context rows", () => {
-    const html = renderToStaticMarkup(
+    const view = (
       <AgentSetupView
         inventories={inventories}
         filters={{ view: "compare", comparisonMode: "attention" }}
-      />,
+      />
     );
+    const html = renderToStaticMarkup(view);
+    render(view);
+    const summary = screen.getByLabelText("Comparison summary");
 
     expect(html).toContain("Global instructions");
     expect(html).toContain("agent-browser");
     expect(html).not.toContain(">frontend-rules<");
     expect(html).not.toContain(">langsmith<");
-    expect(html).toContain("1 fix");
-    expect(html).toContain("1 review");
+    expect(summary.textContent).toContain("1 fix");
+    expect(summary.textContent).toContain("1 review");
     expect(html.indexOf("agent-browser")).toBeLessThan(
       html.indexOf("Global instructions"),
     );
@@ -455,15 +658,16 @@ describe("AgentSetupView", () => {
         }),
       ],
     }));
-    const html = renderToStaticMarkup(
+    render(
       <AgentSetupView
         inventories={multipleFixInventories}
         filters={{ view: "compare", comparisonMode: "attention" }}
       />,
     );
+    const summary = screen.getByLabelText("Comparison summary");
 
-    expect(html).toContain("2 fixes");
-    expect(html).not.toContain("2 fixs");
+    expect(summary.textContent).toContain("2 fixes");
+    expect(summary.textContent).not.toContain("2 fixs");
   });
 
   test("Complete matrix preserves context rows and legacy discrepancies", () => {
@@ -859,7 +1063,7 @@ describe("AgentSetupView", () => {
     requestSubmit.mockRestore();
   });
 
-  test("inventory mode hides disabled capabilities and excludes them from counts", () => {
+  test("inventory mode hides disabled capabilities and excludes them from catalog counts", () => {
     const withDisabled: AgentInventory[] = [
       {
         provider: "codex",
@@ -883,7 +1087,7 @@ describe("AgentSetupView", () => {
 
     expect(html).toContain("active-skill");
     expect(html).not.toContain("dormant-skill");
-    expect(html).toContain("1 capabilities");
+    expect(html).toContain("1 item");
   });
 
   test("offers the Disabled status filter only in compare mode", () => {
@@ -942,10 +1146,9 @@ describe("AgentSetupView", () => {
     expect(html).not.toContain("Apply filters");
   });
 
-  test("inventory mode renders provider counts, provenance, warnings, and instructions", () => {
-    // Summary cards span every provider; the body shows one at a time. The
-    // default pane is the first non-empty kind (Skills), so instructions render
-    // only when the Instructions rail entry is selected.
+  test("inventory mode renders provider browsing, provenance, warnings, and instructions", () => {
+    // The compact provider rail spans every provider; the body shows one at a
+    // time. Instructions render only when that rail entry is selected.
     const html = renderToStaticMarkup(
       <AgentSetupView
         inventories={inventories}
@@ -955,8 +1158,8 @@ describe("AgentSetupView", () => {
 
     expect(html).toContain("Agent setup");
     expect(html).toContain("Codex");
-    expect(html).toContain("3 capabilities");
-    expect(html).toContain("skills.sh");
+    expect(html).toContain("2 items");
+    expect(html).toContain("Marketplace skills");
     expect(html).toContain("vercel-labs/agent-browser");
     // The selected provider (codex, the default) shows the Instructions rail
     // entry but not the instruction body on the default Skills pane; the zcode
@@ -1008,18 +1211,35 @@ describe("AgentSetupView", () => {
     expect(parseAgentSetupFilters({ provider: "pi" }).provider).toBe("pi");
   });
 
-  test("compare summary cards link into that provider's inventory", () => {
-    const html = renderToStaticMarkup(
+  test("compare replaces provider cards with a slim contextual summary", () => {
+    const { container } = render(
       <AgentSetupView
         inventories={inventories}
         filters={{ view: "compare" }}
       />,
     );
-    // No card should point back at compare with a provider attached, and none
-    // should render as the active selection.
-    expect(html).not.toContain("view=compare&amp;provider=");
-    expect(html).not.toContain("agent-summary-active");
-    expect(html).toContain('href="/agents?provider=codex"');
+    expect(container.querySelector(".agent-summary-grid")).toBeNull();
+    const summary = screen.getByLabelText("Comparison summary");
+    expect(summary.textContent).toContain("4 agents");
+    expect(summary.textContent).toContain("1 fix");
+    expect(summary.textContent).toContain("1 review");
+    expect(summary.textContent).toContain("0 duplicate installs");
+  });
+
+  test("inventory shows selected-provider capability and source context", () => {
+    const { container } = render(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "codex" }}
+      />,
+    );
+    expect(container.querySelector(".agent-summary-grid")).toBeNull();
+    const summary = screen.getByLabelText("Inventory summary");
+    expect(summary.textContent).toContain("Codex inventory");
+    expect(summary.textContent).toContain("3 capabilities");
+    expect(summary.textContent).toContain("2 skills");
+    expect(summary.textContent).toContain("2 sources");
+    expect(summary.textContent).toContain("AGENTS.md");
   });
 
   test("keeps the Instructions rail entry when another kind is selected", () => {
@@ -1123,9 +1343,8 @@ describe("AgentSetupView", () => {
       warnings: [],
     };
 
-    // The rail shows one kind per render, so verify ordering within each kind
-    // pane separately. Plugins: built-in → personal(a, z) → unknown; skills
-    // and MCPs each have a single personal member.
+    // The rail shows one kind per render, so verify the semantic source order
+    // within each kind pane: Standalone → Built-in → Personal, then name.
     const pluginHtml = renderToStaticMarkup(
       <AgentSetupView
         inventories={[unsortedInventory]}
@@ -1133,10 +1352,10 @@ describe("AgentSetupView", () => {
       />,
     );
     const pluginOrder = [
+      "plugin-unknown",
       "plugin-built-in",
       "a-plugin-personal",
       "z-plugin-personal",
-      "plugin-unknown",
     ];
     const pluginPositions = pluginOrder.map((name) =>
       pluginHtml.indexOf(`<strong>${name}</strong>`),
@@ -1164,7 +1383,7 @@ describe("AgentSetupView", () => {
     expect(mcpHtml).toContain("<strong>mcp-personal</strong>");
   });
 
-  test("renders capability types as dot labels and sources as outlined tags", () => {
+  test("keeps type icons in the rail and source labels in catalog rows", () => {
     const typeInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1195,12 +1414,12 @@ describe("AgentSetupView", () => {
     expect(html).toContain(
       'class="lucide lucide-waypoints" aria-hidden="true"',
     );
-    expect(html).toContain(
-      '<span class="badge badge-1 agent-origin-tag">Personal</span>',
-    );
+    expect(html).toContain("Personal skills");
+    expect(html).toContain('<span class="agent-row-source">Personal</span>');
+    expect(html).not.toContain("agent-catalog-row .agent-kind-label");
   });
 
-  test("omits status tags in inventory rows", () => {
+  test("shows compact status tags in inventory rows", () => {
     const statusInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1227,12 +1446,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // The inventory hides disabled capabilities, so a per-row status tag adds
-    // no signal; status stays a Compare-view and Needs Attention concern.
+    // Disabled capabilities remain hidden, while active and unavailable rows
+    // expose status in the aligned status column.
     expect(html).toContain("<strong>enabled-example</strong>");
-    expect(html).not.toContain("agent-status-tag");
-    expect(html).not.toContain("Unavailable</span>");
-    expect(html).not.toContain("status-label");
+    expect(html).toContain(">Enabled</span>");
+    expect(html).toContain(">Unavailable</span>");
+    expect(html).not.toContain("disabled-example");
   });
 
   test("renders an explicit empty state for a filtered inventory", () => {
@@ -1282,21 +1501,19 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Summary contains the plugin name, member count, and origin.
+    // Summary contains the plugin name, member count, source, and status.
     expect(html).toContain(
       "<strong>superpowers@claude-plugins-official</strong>",
     );
     expect(html).toContain("3 skills");
-    expect(html).toContain(
-      '<span class="badge badge-3 agent-origin-tag">Marketplace</span>',
-    );
-    expect(html).not.toContain("agent-status-tag");
-    expect(html).toContain('<details class="agent-capability-group">');
+    expect(html).toContain("Plugin-provided skills");
+    expect(html).toContain(">Enabled</span>");
+    expect(html).toContain('<details class="agent-plugin-group">');
 
     // Member rows are nested inside the group body container.
-    const groupStart = html.indexOf('class="agent-capability-group"');
+    const groupStart = html.indexOf('class="agent-plugin-group"');
     const membersStart = html.indexOf(
-      'class="agent-capability-group-members"',
+      'class="agent-plugin-group-members"',
       groupStart,
     );
     expect(membersStart).toBeGreaterThan(groupStart);
@@ -1361,7 +1578,7 @@ describe("AgentSetupView", () => {
 
     // Two separate collapsed <details> groups, one per plugin.
     const groupCount = (
-      html.match(/<details class="agent-capability-group">/g) ?? []
+      html.match(/<details class="agent-plugin-group">/g) ?? []
     ).length;
     expect(groupCount).toBe(2);
 
@@ -1376,7 +1593,7 @@ describe("AgentSetupView", () => {
     // banana and date.
     const vercelGroupStart = html.indexOf("vercel@openai-curated");
     const vercelMembersStart = html.indexOf(
-      'class="agent-capability-group-members"',
+      'class="agent-plugin-group-members"',
       vercelGroupStart,
     );
     const vercelMembersEnd = html.indexOf("</details>", vercelMembersStart);
@@ -1388,7 +1605,7 @@ describe("AgentSetupView", () => {
 
     const openaiGroupStart = html.indexOf("openai-developers@openai-curated");
     const openaiMembersStart = html.indexOf(
-      'class="agent-capability-group-members"',
+      'class="agent-plugin-group-members"',
       openaiGroupStart,
     );
     const openaiMembersEnd = html.indexOf("</details>", openaiMembersStart);
@@ -1399,7 +1616,7 @@ describe("AgentSetupView", () => {
     expect(openaiBody).not.toContain("<strong>cherry</strong>");
   });
 
-  test("inventory keeps single-skill plugins as flat rows", () => {
+  test("inventory keeps single-skill plugins as collapsible parents", () => {
     const flatInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1421,11 +1638,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).not.toContain("agent-capability-group");
+    expect(html).toContain('<details class="agent-plugin-group">');
+    expect(html).toContain("1 skill");
     expect(html).toContain("<strong>only-one</strong>");
   });
 
-  test("inventory groups skills.sh skills by repository", () => {
+  test("inventory lists managed skills directly with their repository source", () => {
     const groupedInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1450,14 +1668,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain("<strong>vercel-labs/skills</strong>");
-    expect(html).toContain("2 skills");
-    expect(html).toContain(
-      '<span class="badge badge-2 agent-origin-tag">skills.sh</span>',
-    );
+    expect(html).toContain("Marketplace skills");
+    expect(html.match(/vercel-labs\/skills/g)).toHaveLength(2);
+    expect(html).not.toContain("agent-plugin-group");
   });
 
-  test("inventory group summary reports no status for mixed members", () => {
+  test("inventory plugin summary reports the conservative overall status", () => {
     const groupedInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1493,8 +1709,7 @@ describe("AgentSetupView", () => {
     );
 
     expect(html).toContain("3 skills");
-    expect(html).not.toContain("Mixed");
-    expect(html).not.toContain("agent-status-tag");
+    expect(html).toContain(">Installed</span>");
   });
 
   test("inventory keeps personal/built_in/unknown skills flat even when several share an origin", () => {
@@ -1516,12 +1731,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).not.toContain("agent-capability-group");
+    expect(html).not.toContain("agent-plugin-group");
     expect(html).toContain("<strong>personal-1</strong>");
     expect(html).toContain("<strong>unknown-2</strong>");
   });
 
-  test("inventory collapses a group below threshold when a search filter narrows it", () => {
+  test("inventory keeps the plugin parent when search narrows it to one skill", () => {
     const groupedInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1548,9 +1763,9 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Only the matching member survives the filter; with one survivor it
-    // renders flat rather than as a one-row group.
-    expect(html).not.toContain("agent-capability-group");
+    // The plugin remains the management unit even with one matching child.
+    expect(html).toContain('<details class="agent-plugin-group">');
+    expect(html).toContain("1 skill");
     expect(html).toContain("<strong>beta-skill</strong>");
     expect(html).not.toContain("<strong>alpha-skill</strong>");
   });
@@ -1592,15 +1807,14 @@ describe("AgentSetupView", () => {
       warnings: [],
     };
 
-    // The rail renders one kind at a time; each pane lists its members flat,
-    // never collapsed into a capability group.
+    // The rail renders one kind at a time; only Skills use plugin parents.
     const pluginHtml = renderToStaticMarkup(
       <AgentSetupView
         inventories={[inventory]}
         filters={{ view: "inventory", kind: "plugin" }}
       />,
     );
-    expect(pluginHtml).not.toContain("agent-capability-group");
+    expect(pluginHtml).not.toContain("agent-plugin-group");
     expect(pluginHtml).toContain("<strong>plugin-1</strong>");
     expect(pluginHtml).toContain("<strong>plugin-2</strong>");
 
@@ -1610,16 +1824,12 @@ describe("AgentSetupView", () => {
         filters={{ view: "inventory", kind: "mcp" }}
       />,
     );
-    expect(mcpHtml).not.toContain("agent-capability-group");
+    expect(mcpHtml).not.toContain("agent-plugin-group");
     expect(mcpHtml).toContain("<strong>mcp-1</strong>");
     expect(mcpHtml).toContain("<strong>mcp-2</strong>");
   });
 
-  test("inventory renders collapsed groups before flat rows", () => {
-    // The flat single-skill plugin "alpha-singleton" sorts ahead of the
-    // grouped "zeta-bundle" plugin by group key, so without the grouped-first
-    // item sort the flat row would render first. The item sort lifts the
-    // collapsed group above flat singletons within the same origin bucket.
+  test("inventory sorts plugin parents by name", () => {
     const inventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1655,20 +1865,19 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // The zeta-bundle group should render before the alpha-singleton flat row.
+    // Both installs remain plugin parents; alphabetical order keeps scanning
+    // deterministic regardless of child count.
     const zetaGroupPosition = html.indexOf("zeta-bundle@mp");
-    const alphaFlatPosition = html.indexOf("<strong>alpha-only</strong>");
+    const alphaGroupPosition = html.indexOf("alpha-singleton@mp");
     expect(zetaGroupPosition).toBeGreaterThanOrEqual(0);
-    expect(alphaFlatPosition).toBeGreaterThanOrEqual(0);
-    expect(zetaGroupPosition).toBeLessThan(alphaFlatPosition);
+    expect(alphaGroupPosition).toBeGreaterThanOrEqual(0);
+    expect(alphaGroupPosition).toBeLessThan(zetaGroupPosition);
+    expect(html.match(/<details class="agent-plugin-group">/g)).toHaveLength(2);
   });
 
-  test("inventory surfaces a shortened sourcePath only for duplicate-name skills", () => {
-    // Two same-name skills from different install paths. Both get the path
-    // hint so the user can tell them apart; a third singleton skill with a
-    // unique name does not get a hint even though it has a sourcePath. HOME
-    // is stubbed so the home-substitution is deterministic regardless of the
-    // machine running the test.
+  test("inventory shows safe locations and flags duplicate-name skills", () => {
+    // Every row has a useful location column; same-name installs additionally
+    // carry duplicate context. HOME is stubbed for deterministic shortening.
     vi.stubEnv("HOME", "/Users/example");
     try {
       const inventory: AgentInventory = {
@@ -1705,16 +1914,12 @@ describe("AgentSetupView", () => {
         />,
       );
 
-      // Both ai-sdk rows show a path hint; the singleton does not.
+      expect(html).toContain("<code>~/.agents/skills/ai-sdk</code>");
       expect(html).toContain(
-        '<code class="agent-capability-path-hint">~/.agents/skills/ai-sdk</code>',
+        "<code>~/.codex/plugins/cache/openai-curated/vercel/skills/ai-sdk</code>",
       );
-      expect(html).toContain(
-        '<code class="agent-capability-path-hint">~/.codex/plugins/cache/openai-curated/vercel/skills/ai-sdk</code>',
-      );
-      expect(html).not.toContain(
-        '<code class="agent-capability-path-hint">~/.agents/skills/unique-skill</code>',
-      );
+      expect(html).toContain("<code>~/.agents/skills/unique-skill</code>");
+      expect(html.match(/agent-duplicate-inline/g)).toHaveLength(2);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -1765,9 +1970,9 @@ describe("AgentSetupView", () => {
       );
 
       expect(pluginHtml).toContain("<strong>github</strong>");
-      expect(pluginHtml).not.toContain("agent-capability-path-hint");
+      expect(pluginHtml).not.toContain("agent-duplicate-inline");
       expect(mcpHtml).toContain("<strong>github</strong>");
-      expect(mcpHtml).not.toContain("agent-capability-path-hint");
+      expect(mcpHtml).not.toContain("agent-duplicate-inline");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -1856,6 +2061,48 @@ describe("Scheduled tasks view", () => {
     screen.getByText("Nightly cleanup");
     screen.getByText("Daily at 02:00");
     screen.getByText("Monthly report");
+  });
+
+  test("replaces provider cards with scheduled task health context", () => {
+    const { container } = render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    expect(container.querySelector(".agent-summary-grid")).toBeNull();
+    const summary = screen.getByLabelText("Scheduled tasks summary");
+    expect(summary.textContent).toContain("3 tasks");
+    expect(summary.textContent).toContain("2 active");
+    expect(summary.textContent).toContain("1 paused or disabled");
+    expect(summary.textContent).toContain("0 targets missing");
+  });
+
+  test("presents task health as a structured view-level summary before filters", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    const tabsIndex = html.indexOf('aria-label="Agent setup view"');
+    const summaryIndex = html.indexOf('aria-label="Scheduled tasks summary"');
+    const filterIndex = html.indexOf("<form");
+    expect(tabsIndex).toBeGreaterThanOrEqual(0);
+    expect(summaryIndex).toBeGreaterThan(tabsIndex);
+    expect(summaryIndex).toBeLessThan(filterIndex);
+
+    render(
+      <AgentSetupView
+        inventories={taskInventories}
+        filters={parseAgentSetupFilters({ view: "tasks" })}
+      />,
+    );
+    const summary = screen.getByLabelText("Scheduled tasks summary");
+    const metrics = summary.querySelector('[aria-label="Task health metrics"]');
+    expect(metrics?.tagName).toBe("UL");
+    expect(metrics?.querySelectorAll("li")).toHaveLength(4);
+    expect(metrics?.querySelector("strong")?.textContent).toBe("3");
   });
 
   test("sorts by cadence: active daily before active weekly before paused", () => {
