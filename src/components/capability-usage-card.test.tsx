@@ -198,28 +198,12 @@ describe("CapabilityUsageCard", () => {
     expect(screen.queryByText(/Pi coverage partial/)).not.toBeInTheDocument();
   });
 
-  test("writes only non-default range selection to the URL", () => {
-    query = "provider=codex";
+  test("displays the selected page range without a second range control", () => {
     render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
-    expect(replace).toHaveBeenCalledWith(
-      "/insights?provider=codex&capabilityRange=7d",
-      { scroll: false },
-    );
-  });
-
-  test("removes the default range from the URL", () => {
-    query = "provider=codex&capabilityRange=7d";
-    render(
-      <CapabilityUsageCard
-        capabilities={{ ...fixtureCapabilities, range: "7d" }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "30 days" }));
-    expect(replace).toHaveBeenCalledWith("/insights?provider=codex", {
-      scroll: false,
-    });
+    expect(screen.queryByLabelText("Capability usage range")).toBeNull();
+    expect(
+      screen.getByText(/of 11 installed capabilities used · 30 days/),
+    ).toBeVisible();
   });
 });

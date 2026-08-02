@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Insights } from "@/lib/queries";
 import {
@@ -11,8 +11,13 @@ import {
   SignalBand,
 } from "./insights-view";
 
+const replace = vi.fn();
+let query = "";
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  usePathname: () => "/insights",
+  useRouter: () => ({ refresh: vi.fn(), replace }),
+  useSearchParams: () => new URLSearchParams(query),
 }));
 
 // The InsightsView wrapper-hook test isolates grid structure; it doesn't need
@@ -22,7 +27,11 @@ vi.mock("./capability-usage-card", () => ({
   CapabilityUsageCard: () => null,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  replace.mockReset();
+  query = "";
+});
 
 function baseInsights(overrides: Partial<Insights> = {}): Insights {
   return {
@@ -111,7 +120,7 @@ describe("HeroStrip", () => {
     insights.capabilities.installedCount = 14;
     insights.capabilities.installedUsedCount = 9;
 
-    const { container } = render(<HeroStrip insights={insights} />);
+    const { container } = render(<HeroStrip range="7d" insights={insights} />);
     expect(screen.getByText("54%")).toBeInTheDocument();
     expect(screen.getByText("9 / 14")).toBeInTheDocument();
     expect(container.querySelector('a[href="#insight-cost"]')).not.toBeNull();
@@ -135,12 +144,12 @@ describe("HeroStrip", () => {
         byProvider: {},
       },
     ];
-    render(<HeroStrip insights={insights} />);
+    render(<HeroStrip range="7d" insights={insights} />);
     expect(screen.getByText("1 used")).toBeInTheDocument();
   });
 
   test("renders em dash for null cost and cache headlines", () => {
-    render(<HeroStrip insights={baseInsights()} />);
+    render(<HeroStrip range="7d" insights={baseInsights()} />);
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -157,7 +166,7 @@ describe("InsightsView", () => {
       text: "Three sessions drove 74% of this week's cost.",
     };
 
-    render(<InsightsView insights={insights} />);
+    render(<InsightsView range="7d" insights={insights} />);
 
     expect(
       screen.queryByRole("region", { name: "Top insight" }),
@@ -169,18 +178,33 @@ describe("InsightsView", () => {
     insights.cache.week.savedUsd = 120.4;
     insights.cache.week.savedSharePct = 64;
 
-    render(<InsightsView insights={insights} />);
+    render(<InsightsView range="7d" insights={insights} />);
 
     const cacheCard = screen.getByRole("region", {
       name: "Cache effectiveness",
     });
+    expect(cacheCard).toHaveTextContent("$120.40");
     expect(cacheCard).toHaveTextContent(
-      "$120.40 estimated spend avoided by cached input",
+      "estimated spend avoided by cached input",
+    );
+    expect(cacheCard.querySelector("strong")).toHaveTextContent("$120.40");
+    expect(cacheCard.querySelector("strong")).not.toHaveTextContent(
+      "estimated spend avoided by cached input",
     );
     expect(cacheCard).toHaveTextContent("not an amount charged");
     expect(cacheCard).toHaveTextContent(
       "64% of estimated model cost without cached reads",
     );
+  });
+
+  test("does not show a cache week-over-week delta", () => {
+    const insights = baseInsights();
+    insights.cache.week.hitRateDeltaPts = -2;
+
+    render(<InsightsView range="7d" insights={insights} />);
+
+    expect(screen.queryByText(/wk-over-wk/i)).not.toBeInTheDocument();
+    expect(document.querySelector(".insight-delta")).toBeNull();
   });
 
   test("labels capability adoption as usage in the selected range", () => {
@@ -189,7 +213,7 @@ describe("InsightsView", () => {
     insights.capabilities.installedCount = 14;
     insights.capabilities.installedUsedCount = 9;
 
-    render(<InsightsView insights={insights} />);
+    render(<InsightsView range="7d" insights={insights} />);
 
     expect(screen.getByText("Capability adoption")).toBeVisible();
     expect(
@@ -200,7 +224,9 @@ describe("InsightsView", () => {
   });
 
   test("the capability wrapper div carries the full-width grid hook", () => {
-    const { container } = render(<InsightsView insights={baseInsights()} />);
+    const { container } = render(
+      <InsightsView range="7d" insights={baseInsights()} />,
+    );
     // The grid's direct child for capability must carry the span class so
     // grid-column: 1 / -1 targets the grid item, not the inner section.
     const wrap = container.querySelector("#insight-capability");
@@ -212,15 +238,85 @@ describe("InsightsView", () => {
     const insights = baseInsights();
     insights.cost.week.totalUsd = 100;
     insights.cost.week.paretoSharePct = 81;
-    render(<InsightsView insights={insights} />);
+    render(<InsightsView range="7d" insights={insights} />);
     expect(screen.getByText("3 sessions = 81% of cost")).toBeInTheDocument();
   });
 
+  test("shows each outlier's share of the selected period total", () => {
+    const insights = baseInsights();
+    insights.cost.week.totalUsd = 100;
+    insights.cost.outliers = [
+      {
+        id: 1,
+        title: "Expensive session",
+        model: null,
+        costUsd: 42,
+        shareOfPeriodPct: Number.NaN,
+        runtimeMs: 60_000,
+        usdPerMin: 42,
+      },
+    ];
+
+    render(<InsightsView range="7d" insights={insights} />);
+
+    const costCard = screen.getByRole("region", { name: "Cost outliers" });
+    expect(costCard).toHaveTextContent("Share");
+    expect(costCard).toHaveTextContent("42%");
+  });
+
+  test("never renders a non-finite outlier share", () => {
+    const insights = baseInsights();
+    insights.cost.outliers = [
+      {
+        id: 1,
+        title: "Unavailable share",
+        model: null,
+        costUsd: 42,
+        shareOfPeriodPct: Number.NaN,
+        runtimeMs: 60_000,
+        usdPerMin: 42,
+      },
+    ];
+
+    render(<InsightsView range="7d" insights={insights} />);
+
+    expect(screen.queryByText("NaN%")).not.toBeInTheDocument();
+    expect(document.querySelector(".cost-outlier-share")).toHaveTextContent(
+      "—",
+    );
+  });
+
   test("cost card headline is an em dash when the week is unpriced", () => {
-    render(<InsightsView insights={baseInsights()} />);
+    render(<InsightsView range="7d" insights={baseInsights()} />);
     // baseInsights has paretoSharePct: null — headline must fall back, not
     // render a misleading "3 sessions = NaN%" or "0%".
     const costCard = document.getElementById("insight-cost");
     expect(costCard?.querySelector(".insight-headline")).toHaveTextContent("—");
+  });
+
+  test("writes the shared 30-day range without discarding capability tab state", () => {
+    query = "capabilityTab=unused";
+    render(<InsightsView range="7d" insights={baseInsights()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "30 days" }));
+
+    expect(replace).toHaveBeenCalledWith(
+      "/insights?capabilityTab=unused&range=30d",
+      { scroll: false },
+    );
+  });
+
+  test("uses the shared range in all card labels", () => {
+    render(<InsightsView range="30d" insights={baseInsights()} />);
+
+    expect(screen.getByLabelText("Insights range")).toBeVisible();
+    expect(screen.getAllByText("last 30 days").length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(
+      screen.getByText(
+        /Cost, cache, and capability usage for the last 30 days/,
+      ),
+    ).toBeVisible();
   });
 });

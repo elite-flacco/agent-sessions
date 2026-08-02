@@ -65,6 +65,7 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 - Client components may import only types from `src/lib/queries.ts`. Put client-safe runtime values in `src/lib/types.ts`, `src/lib/labels.ts`, or `src/lib/format.ts`.
 - Never expose `sessions.source_path` through client-side session list data. Allowlisted inventory and scheduled-task source paths are intentionally displayable.
 - The `/` Overview page takes a URL-backed `range` (`?range=30d`, default `7d`) parsed by `parseOverviewRange`; `getOverview(range)` and `getOverviewPatterns(range)` narrow the week KPIs, session-length histogram, and cost-at-a-glance to that window. The activity heatmap always spans 30 days regardless of range (a week is too sparse for the day x band grid). "Today", running, needs-attention, and recent-projects queries stay range-independent because they are inherently now-scoped.
+- The `/insights` page uses the same URL-backed `range` and default. Pass it to `getInsights(range, inventories)` so cache effectiveness, cost outliers, and capability adoption always describe one selected period; capability tabs remain separately URL-backed through `capabilityTab`.
 
 ## Usage and cost invariants
 

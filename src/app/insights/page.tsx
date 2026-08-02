@@ -4,7 +4,7 @@ import { getAgentInventories } from "@/lib/agent-inventory";
 import {
   getCollectorHealth,
   getInsights,
-  parseCapabilityRange,
+  parseOverviewRange,
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function InsightsPage({
   searchParams,
 }: InsightsPageProps) {
   const params = await searchParams;
-  const range = parseCapabilityRange(first(params.capabilityRange));
+  const range = parseOverviewRange(first(params.range));
   const inventories = await getAgentInventories({ kind: "global" });
   const health = getCollectorHealth();
   return (
@@ -30,7 +30,7 @@ export default async function InsightsPage({
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}
       />
-      <InsightsView insights={getInsights(range, inventories)} />
+      <InsightsView range={range} insights={getInsights(range, inventories)} />
     </main>
   );
 }

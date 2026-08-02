@@ -219,13 +219,6 @@ export function CapabilityUsageCard({
     });
   }
 
-  function selectRange(range: CapabilitiesInsight["range"]) {
-    replaceParams((params) => {
-      if (range === "30d") params.delete("capabilityRange");
-      else params.set("capabilityRange", range);
-    });
-  }
-
   function selectTab(tab: CapabilityTab) {
     replaceParams((params) => {
       if (tab === "skills") params.delete("capabilityTab");
@@ -281,24 +274,6 @@ export function CapabilityUsageCard({
             that period. Results include only providers with complete scan
             coverage.
           </p>
-        </div>
-        <div className="capability-range" aria-label="Capability usage range">
-          <button
-            className={`btn ${capabilities.range === "7d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={capabilities.range === "7d"}
-            onClick={() => selectRange("7d")}
-          >
-            7 days
-          </button>
-          <button
-            className={`btn ${capabilities.range === "30d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={capabilities.range === "30d"}
-            onClick={() => selectRange("30d")}
-          >
-            30 days
-          </button>
         </div>
       </div>
 

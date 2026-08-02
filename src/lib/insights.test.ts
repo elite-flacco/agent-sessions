@@ -265,10 +265,10 @@ afterAll(async () => {
 });
 
 describe("getInsights — capability usage", () => {
-  it("parses supported capability ranges and defaults invalid values", () => {
-    expect(queries.parseCapabilityRange(undefined)).toBe("30d");
-    expect(queries.parseCapabilityRange("7d")).toBe("7d");
-    expect(queries.parseCapabilityRange("all")).toBe("30d");
+  it("uses the shared Insights range parser", () => {
+    expect(queries.parseOverviewRange(undefined)).toBe("7d");
+    expect(queries.parseOverviewRange("30d")).toBe("30d");
+    expect(queries.parseOverviewRange("all")).toBe("7d");
   });
 
   it("ranks canonical capability usage and derives unused installations", () => {
@@ -754,6 +754,14 @@ describe("getInsights — cache effectiveness", () => {
     expect(cache.week.hitRate).toBeCloseTo(4 / 11, 5);
   });
 
+  it("widens cache effectiveness to the shared 30-day range", () => {
+    const { cache } = queries.getInsights("30d");
+
+    // Includes s3 from nine days ago: 1,390 cached reads across 2,100 input
+    // tokens after cache writes are counted as misses.
+    expect(cache.week.hitRate).toBeCloseTo(1390 / 2100, 5);
+  });
+
   it("returns a by-model hit-rate breakdown", () => {
     const { cache } = queries.getInsights();
     const gpt = cache.week.byModel.find((m) => m.model === "gpt-5.5");
@@ -906,6 +914,7 @@ describe("getInsights — cost outliers", () => {
     const big = cost.outliers.find((o) => o.title === "Big spend");
     expect(big).toBeDefined();
     expect(big!.costUsd).toBe(1.0);
+    expect(big!.shareOfPeriodPct).toBeNull();
     expect(big!.usdPerMin).toBeGreaterThanOrEqual(0);
   });
 

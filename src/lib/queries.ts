@@ -1281,8 +1281,6 @@ export type InsightSignal = {
   text: string;
 };
 
-export type CapabilityRange = "7d" | "30d";
-
 export interface CapabilityInsight {
   kind: "skill" | "mcp";
   name: string;
@@ -1311,7 +1309,7 @@ export interface CapabilityCoverage {
 }
 
 export interface CapabilitiesInsight {
-  range: CapabilityRange;
+  range: OverviewRange;
   used: CapabilityInsight[];
   unused: UnusedCapabilityInsight[];
   // Adoption denominator: distinct active installations across providers with
@@ -1321,10 +1319,6 @@ export interface CapabilitiesInsight {
   installedCount: number;
   installedUsedCount: number;
   coverage: CapabilityCoverage[];
-}
-
-export function parseCapabilityRange(value: unknown): CapabilityRange {
-  return value === "7d" ? "7d" : "30d";
 }
 
 export interface Insights {
@@ -1352,6 +1346,7 @@ export interface Insights {
       title: string;
       model: string | null;
       costUsd: number;
+      shareOfPeriodPct: number | null;
       runtimeMs: number;
       usdPerMin: number;
     }[];
@@ -1408,7 +1403,7 @@ function capabilityHistoryKey(
 }
 
 function capabilityInsights(
-  range: CapabilityRange,
+  range: OverviewRange,
   inventories: AgentInventory[],
 ): CapabilitiesInsight {
   const rangeStart = new Date(
@@ -1685,26 +1680,29 @@ function aggregateCache(rows: UsageJoinRow[]) {
  * Signals are curated and rule-based.
  */
 export function getInsights(
-  capabilityRange: CapabilityRange = "30d",
+  range: OverviewRange = "7d",
   inventories: AgentInventory[] = [],
 ): Insights {
-  const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
-  const priorWeekStart = new Date(Date.now() - 14 * DAY_MS).toISOString();
+  const rangeDays = range === "7d" ? 7 : 30;
+  const rangeStart = new Date(Date.now() - rangeDays * DAY_MS).toISOString();
+  const priorRangeStart = new Date(
+    Date.now() - rangeDays * 2 * DAY_MS,
+  ).toISOString();
   const trendStart = new Date(
     Date.now() - INSIGHTS_TREND_DAYS * DAY_MS,
   ).toISOString();
 
   const weekRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
-    .all(weekStart) as UsageJoinRow[];
+    .all(rangeStart) as UsageJoinRow[];
   const priorRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ? AND s.started_at < ?`)
-    .all(priorWeekStart, weekStart) as UsageJoinRow[];
+    .all(priorRangeStart, rangeStart) as UsageJoinRow[];
   const trendRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
     .all(trendStart) as UsageJoinRow[];
 
-  // --- cost outliers: per-session cost + runtime over the week window ---
+  // --- cost outliers: per-session cost + runtime over the selected window ---
   interface CostRow {
     id: number;
     externalId: string;
@@ -1722,7 +1720,7 @@ export function getInsights(
         CAST((julianday(COALESCE(s.ended_at, s.updated_at)) - julianday(s.started_at)) * 86400000 AS INTEGER) AS runtimeMs
        FROM sessions s WHERE s.started_at >= ?`,
     )
-    .all(weekStart) as CostRow[];
+    .all(rangeStart) as CostRow[];
 
   // --- cache effectiveness ---
   const weekCache = aggregateCache(weekRows);
@@ -1735,7 +1733,7 @@ export function getInsights(
     hitRateDeltaPts !== null && hitRateDeltaPts <= -CACHE_DROP_THRESHOLD_PTS
       ? {
           tone: "warning",
-          text: `Cache hit rate dropped ${Math.round(Math.abs(hitRateDeltaPts))} points week-over-week — long sessions may be losing context.`,
+          text: `Cache hit rate dropped ${Math.round(Math.abs(hitRateDeltaPts))} points ${range === "7d" ? "week-over-week" : "vs. the previous 30 days"} — long sessions may be losing context.`,
         }
       : null;
 
@@ -1772,8 +1770,8 @@ export function getInsights(
   // Spend rolls up to the session that delegated it, matching the per-session
   // cost shown everywhere else: a main session's figure is its own priced
   // usage plus every descendant subagent's. Attribution is resolved *within
-  // the week window* — a session whose parent started before the window is
-  // its own root here — so the roll-ups still sum to exactly weekTotalUsd and
+  // selected window* — a session whose parent started before the window is
+  // its own root here — so the roll-ups still sum to exactly periodTotalUsd and
   // Pareto shares stay bounded. Unpriced rows contribute nothing to a
   // session's cost. runtimeMs comes from costSessionRows.
   const runtimeById = new Map(costSessionRows.map((row) => [row.id, row]));
@@ -1828,12 +1826,20 @@ export function getInsights(
         title: meta?.title ?? "Untitled",
         model: meta?.model ?? null,
         costUsd,
+        shareOfPeriodPct: null as number | null,
         runtimeMs,
         usdPerMin: costUsd / minutes,
       };
     })
     .sort((a, b) => b.costUsd - a.costUsd)
     .slice(0, 5);
+
+  for (const outlier of outliers) {
+    outlier.shareOfPeriodPct =
+      weekTotalUsd !== null && weekTotalUsd > 0
+        ? (outlier.costUsd / weekTotalUsd) * 100
+        : null;
+  }
 
   // Pareto: share of week cost held by the top 3 sessions. Null when the
   // week total is unpriced (trust rule) or there is no priced spend.
@@ -1854,7 +1860,7 @@ export function getInsights(
     paretoSharePct !== null && paretoSharePct >= 50
       ? {
           tone: "warning",
-          text: `Three sessions drove ${Math.round(paretoSharePct)}% of this week's cost — inspect them for loops or retries.`,
+          text: `Three sessions drove ${Math.round(paretoSharePct)}% of ${range === "7d" ? "this week's" : "the last 30 days'"} cost — inspect them for loops or retries.`,
         }
       : null;
 
@@ -1868,7 +1874,7 @@ export function getInsights(
   }));
 
   return {
-    capabilities: capabilityInsights(capabilityRange, inventories),
+    capabilities: capabilityInsights(range, inventories),
     cache: {
       week: {
         hitRate: weekCache.hitRate,

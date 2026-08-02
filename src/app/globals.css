@@ -1335,16 +1335,6 @@
     color: var(--muted-foreground);
     font-size: var(--text-xs);
   }
-  .insight-delta {
-    font-size: var(--text-xs);
-    color: var(--muted-foreground);
-  }
-  .insight-delta.is-up {
-    color: var(--success);
-  }
-  .insight-delta.is-down {
-    color: var(--destructive);
-  }
   .insight-signal-band {
     display: grid;
     gap: 0.4rem;
@@ -1755,6 +1745,25 @@
   }
   .dist-row-wide {
     grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr) 4.5rem;
+  }
+  .cost-outlier-column-head,
+  .cost-outlier-row {
+    grid-template-columns:
+      minmax(6rem, 12rem) minmax(0, 1fr) minmax(2.75rem, 3.5rem)
+      minmax(3.75rem, 4.5rem);
+  }
+  .cost-outlier-column-head {
+    display: grid;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--muted-foreground);
+  }
+  .cost-outlier-column-head span:nth-child(n + 3) {
+    text-align: right;
+  }
+  .cost-outlier-share,
+  .cost-outlier-cost {
+    white-space: nowrap;
   }
   .dist-label {
     overflow: hidden;
