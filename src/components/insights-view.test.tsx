@@ -146,6 +146,59 @@ describe("HeroStrip", () => {
 });
 
 describe("InsightsView", () => {
+  test("does not add a page-level recommendation when metric signals exist", () => {
+    const insights = baseInsights();
+    insights.cache.signal = {
+      tone: "warning",
+      text: "Cache hit rate dropped 12 points week-over-week.",
+    };
+    insights.cost.signal = {
+      tone: "warning",
+      text: "Three sessions drove 74% of this week's cost.",
+    };
+
+    render(<InsightsView insights={insights} />);
+
+    expect(
+      screen.queryByRole("region", { name: "Top insight" }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("explains estimated cache savings as avoided spend rather than a charge", () => {
+    const insights = baseInsights();
+    insights.cache.week.savedUsd = 120.4;
+    insights.cache.week.savedSharePct = 64;
+
+    render(<InsightsView insights={insights} />);
+
+    const cacheCard = screen.getByRole("region", {
+      name: "Cache effectiveness",
+    });
+    expect(cacheCard).toHaveTextContent(
+      "$120.40 estimated spend avoided by cached input",
+    );
+    expect(cacheCard).toHaveTextContent("not an amount charged");
+    expect(cacheCard).toHaveTextContent(
+      "64% of estimated model cost without cached reads",
+    );
+  });
+
+  test("labels capability adoption as usage in the selected range", () => {
+    const insights = baseInsights();
+    insights.capabilities.range = "30d";
+    insights.capabilities.installedCount = 14;
+    insights.capabilities.installedUsedCount = 9;
+
+    render(<InsightsView insights={insights} />);
+
+    expect(screen.getByText("Capability adoption")).toBeVisible();
+    expect(
+      screen.getByText(
+        /9 of 14 installed capabilities used in 30 days; complete providers only/i,
+      ),
+    ).toBeVisible();
+  });
+
   test("the capability wrapper div carries the full-width grid hook", () => {
     const { container } = render(<InsightsView insights={baseInsights()} />);
     // The grid's direct child for capability must carry the span class so

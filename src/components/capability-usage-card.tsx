@@ -112,7 +112,7 @@ function UnusedCapabilityRow({
         </span>
         <span>
           {capability.neverObserved || capability.lastUsedAt === null
-            ? "Never observed"
+            ? "No recorded use in available history"
             : `Last used ${relativeTime(capability.lastUsedAt)}`}
         </span>
         <ProviderBadges providers={capability.providers} />
@@ -275,6 +275,12 @@ export function CapabilityUsageCard({
               <small> capabilities used · {rangeLabel}</small>
             </p>
           )}
+          <p className="capability-evidence-note">
+            Used means Relay recorded at least one matching call in the selected
+            period. Unused means installed but no matching call was recorded in
+            that period. Results include only providers with complete scan
+            coverage.
+          </p>
         </div>
         <div className="capability-range" aria-label="Capability usage range">
           <button
@@ -414,8 +420,8 @@ export function CapabilityUsageCard({
           {capabilities.unused.length === 0 ? (
             <p className="overview-empty">
               {hasCompleteCoverage
-                ? "Every installed capability with complete coverage was observed in this range."
-                : "No installed-but-unused results are available until a provider has complete coverage."}
+                ? "Every installed capability with complete coverage was used in this range."
+                : "No unused results are available until a provider has complete coverage."}
             </p>
           ) : (
             <>
@@ -454,7 +460,7 @@ export function CapabilityUsageCard({
                 <p key={provider}>
                   {providerLabels[provider]} coverage {state}:{" "}
                   {message ??
-                    "Installed-but-unused results omit this provider because its session history is incomplete."}
+                    "Unused results omit this provider because its session history is incomplete."}
                 </p>
               ))}
             </div>

@@ -137,7 +137,14 @@ describe("CapabilityUsageCard", () => {
     expect(tab(/Unused/)).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("frontend-rules")).not.toBeInTheDocument();
 
-    const neverObserved = screen.getAllByText("Never observed");
+    expect(
+      screen.getByText(
+        /unused means installed but no matching call was recorded in that period/i,
+      ),
+    ).toBeVisible();
+    const neverObserved = screen.getAllByText(
+      "No recorded use in available history",
+    );
     expect(neverObserved).toHaveLength(9);
     expect(neverObserved[0]).toBeVisible();
     expect(neverObserved[8]).not.toBeVisible();
