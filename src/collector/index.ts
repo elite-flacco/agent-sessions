@@ -36,6 +36,7 @@ import {
 } from "./capabilities";
 import { acquireLease, releaseLease } from "./lock";
 import {
+  codexDelegationInput,
   homePath,
   record,
   repositoryFromCwd,
@@ -323,7 +324,11 @@ function reconcileCodexTitles(): void {
   const write = sqlite.transaction(() => {
     for (const session of sessions) {
       const title = getCodexThreadTitle(session.externalId);
-      if (title) update.run(safeTitle(title, session.title), session.id);
+      if (title)
+        update.run(
+          safeTitle(codexDelegationInput(title) ?? title, session.title),
+          session.id,
+        );
     }
   });
   write();

@@ -88,9 +88,11 @@ function applySkillOverrides(
       return capability;
     }
     const shortPlugin = capability.sourcePlugin?.split("@")[0];
-    const key = (
-      shortPlugin ? `${shortPlugin}:${capability.name}` : capability.name
-    ).toLocaleLowerCase();
+    const canonicalName = capability.name.toLocaleLowerCase();
+    const key =
+      shortPlugin && !canonicalName.startsWith(`${shortPlugin}:`)
+        ? `${shortPlugin}:${canonicalName}`
+        : canonicalName;
     return overrides.get(key) === false
       ? { ...capability, status: "disabled" }
       : capability;

@@ -78,7 +78,9 @@ describe("CapabilityUsageCard", () => {
     expect(
       screen.getByText(/of 11 installed capabilities used · 30 days/),
     ).toBeVisible();
-    expect(tab(/Skills/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/Used skills/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/Used skills/)).toBeVisible();
+    expect(tab(/Used MCPs/)).toBeVisible();
     expect(screen.getByText("frontend-rules")).toBeVisible();
     expect(screen.queryByText("github")).not.toBeInTheDocument();
     expect(screen.queryByText("unused-1")).not.toBeInTheDocument();
@@ -104,9 +106,12 @@ describe("CapabilityUsageCard", () => {
   test("counts each tab and scales bars against that tab's own peak", () => {
     render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
 
-    expect(tab(/Skills/)).toHaveTextContent("1");
-    expect(tab(/MCPs/)).toHaveTextContent("1");
+    expect(tab(/Used skills/)).toHaveTextContent("1");
+    expect(tab(/Used MCPs/)).toHaveTextContent("1");
     expect(tab(/Unused/)).toHaveTextContent("9");
+    expect(
+      fixtureCapabilities.used.length + fixtureCapabilities.unused.length,
+    ).toBe(fixtureCapabilities.installedCount);
 
     // frontend-rules (2) tops the skills tab and fills it, even though the
     // MCP tab's github (4) is the larger number.
@@ -124,7 +129,7 @@ describe("CapabilityUsageCard", () => {
     );
 
     replace.mockReset();
-    fireEvent.click(tab(/Skills/));
+    fireEvent.click(tab(/Used skills/));
     expect(replace).toHaveBeenCalledWith("/insights?provider=codex", {
       scroll: false,
     });
@@ -139,7 +144,7 @@ describe("CapabilityUsageCard", () => {
 
     expect(
       screen.getByText(
-        /unused means installed but no matching call was recorded in that period/i,
+        /used skills plus used MCPs plus unused equals the installed total/i,
       ),
     ).toBeVisible();
     const neverObserved = screen.getAllByText(

@@ -51,6 +51,14 @@ export function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+export function codexDelegationInput(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  const match = raw?.match(
+    /<codex_delegation\b[^>]*>[\s\S]*?<input>([\s\S]*?)<\/input>[\s\S]*?<\/codex_delegation>/i,
+  );
+  return stringValue(match?.[1]);
+}
+
 export function safeTitle(value: unknown, fallback: string): string {
   const raw = stringValue(value);
   const text = raw

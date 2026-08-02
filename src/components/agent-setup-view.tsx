@@ -1105,10 +1105,8 @@ function PluginSkillGroup({
     <details className="agent-plugin-group">
       <summary className="agent-catalog-grid">
         <span className="agent-plugin-group-name">
-          <Plug aria-hidden="true" size={14} />
           <span>
             <strong>{plugin}</strong>
-            <span>Plugin</span>
           </span>
         </span>
         <span className="agent-catalog-source">{source}</span>

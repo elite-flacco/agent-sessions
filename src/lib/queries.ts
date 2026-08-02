@@ -1424,43 +1424,6 @@ function capabilityInsights(
     )
     .all(rangeStart) as CapabilityAggregateRow[];
 
-  const folded = new Map<string, CapabilityInsight>();
-  for (const row of aggregateRows) {
-    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
-    const name = canonicalCapabilityName(row.name);
-    const key = `${row.kind}:${name}`;
-    const current = folded.get(key) ?? {
-      kind: row.kind,
-      name,
-      invocations: 0,
-      sessionCount: 0,
-      lastUsedAt: row.lastUsedAt,
-      providers: [],
-      byProvider: {},
-    };
-    current.invocations += row.invocations;
-    current.sessionCount += row.sessionCount;
-    if (row.lastUsedAt > current.lastUsedAt)
-      current.lastUsedAt = row.lastUsedAt;
-    current.byProvider[row.provider as AgentProvider] = row.invocations;
-    current.providers = orderedProviders(Object.keys(current.byProvider));
-    folded.set(key, current);
-  }
-
-  const ranked = [...folded.values()].sort(
-    (left, right) =>
-      right.invocations - left.invocations ||
-      right.sessionCount - left.sessionCount ||
-      right.lastUsedAt.localeCompare(left.lastUsedAt) ||
-      left.name.localeCompare(right.name),
-  );
-  // Every observed capability is returned: the card ranks each kind in its own
-  // tab and discloses the tail behind a toggle, so trimming here would make the
-  // "show all N" affordance lie about what it can reveal.
-  const used = (["skill", "mcp"] as const).flatMap((kind) =>
-    ranked.filter((item) => item.kind === kind),
-  );
-
   const scanRows = sqlite
     .prepare(
       `SELECT provider, sources, errors,
@@ -1493,22 +1456,16 @@ function capabilityInsights(
        GROUP BY provider, kind, LOWER(TRIM(capability_name))`,
     )
     .all() as CapabilityHistoryRow[];
-  const history = new Map<string, string>();
-  for (const row of historyRows) {
-    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
-    history.set(
-      capabilityHistoryKey(row.provider as AgentProvider, row.kind, row.name),
-      row.lastUsedAt,
-    );
-  }
-
-  const unusedByCapability = new Map<
+  const installationsByCapability = new Map<
     string,
-    UnusedCapabilityInsight & { providerSet: Set<AgentProvider> }
+    UnusedCapabilityInsight & {
+      providerSet: Set<AgentProvider>;
+      usedInRange: boolean;
+    }
   >();
   const seenInstallations = new Set<string>();
+  const aliasCandidates = new Map<string, Set<string>>();
   const installedKeys = new Set<string>();
-  const installedUsedKeys = new Set<string>();
   for (const inventory of inventories) {
     if (coverageByProvider.get(inventory.provider) !== "complete") continue;
     for (const installed of inventory.capabilities) {
@@ -1518,8 +1475,17 @@ function capabilityInsights(
       ) {
         continue;
       }
-      const name = canonicalCapabilityName(installed.name);
-      if (!name) continue;
+      const baseName = canonicalCapabilityName(installed.name);
+      if (!baseName) continue;
+      const pluginName = canonicalCapabilityName(
+        installed.sourcePlugin?.split("@")[0] ?? "",
+      );
+      const name =
+        installed.kind === "skill" && pluginName
+          ? baseName.startsWith(`${pluginName}:`)
+            ? baseName
+            : `${pluginName}:${baseName}`
+          : baseName;
       const installationKey = capabilityHistoryKey(
         inventory.provider,
         installed.kind,
@@ -1527,38 +1493,108 @@ function capabilityInsights(
       );
       if (seenInstallations.has(installationKey)) continue;
       seenInstallations.add(installationKey);
-      const lastUsedAt = history.get(installationKey) ?? null;
       const groupKey = `${installed.kind}:${name}`;
       installedKeys.add(groupKey);
-      if (lastUsedAt !== null && lastUsedAt >= rangeStart) {
-        installedUsedKeys.add(groupKey);
-        continue;
+      for (const alias of new Set([baseName, name])) {
+        const aliasKey = capabilityHistoryKey(
+          inventory.provider,
+          installed.kind,
+          alias,
+        );
+        const candidates = aliasCandidates.get(aliasKey) ?? new Set<string>();
+        candidates.add(groupKey);
+        aliasCandidates.set(aliasKey, candidates);
       }
 
-      const current = unusedByCapability.get(groupKey) ?? {
+      const current = installationsByCapability.get(groupKey) ?? {
         kind: installed.kind,
         name,
         providers: [],
         providerSet: new Set<AgentProvider>(),
         lastUsedAt: null,
         neverObserved: true,
+        usedInRange: false,
       };
       current.providerSet.add(inventory.provider);
-      if (
-        lastUsedAt !== null &&
-        (current.lastUsedAt === null || lastUsedAt > current.lastUsedAt)
-      ) {
-        current.lastUsedAt = lastUsedAt;
-      }
-      if (lastUsedAt !== null) current.neverObserved = false;
-      unusedByCapability.set(groupKey, current);
+      installationsByCapability.set(groupKey, current);
     }
   }
 
-  const unused = [...unusedByCapability.values()]
-    .map(({ providerSet, ...item }) => ({
-      ...item,
+  const eligibleAliases = new Map<string, string>();
+  for (const [alias, candidates] of aliasCandidates) {
+    if (candidates.size === 1) {
+      eligibleAliases.set(alias, [...candidates][0]);
+    }
+  }
+
+  const installedUsedKeys = new Set<string>();
+  for (const row of historyRows) {
+    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
+    const provider = row.provider as AgentProvider;
+    const groupKey = eligibleAliases.get(
+      capabilityHistoryKey(provider, row.kind, row.name),
+    );
+    if (!groupKey) continue;
+    const current = installationsByCapability.get(groupKey);
+    if (!current) continue;
+    if (current.lastUsedAt === null || row.lastUsedAt > current.lastUsedAt) {
+      current.lastUsedAt = row.lastUsedAt;
+    }
+    current.neverObserved = false;
+    if (row.lastUsedAt >= rangeStart) {
+      current.usedInRange = true;
+      installedUsedKeys.add(groupKey);
+    }
+  }
+
+  const folded = new Map<string, CapabilityInsight>();
+  for (const row of aggregateRows) {
+    if (!agentProviders.includes(row.provider as AgentProvider)) continue;
+    const provider = row.provider as AgentProvider;
+    const key = eligibleAliases.get(
+      capabilityHistoryKey(provider, row.kind, row.name),
+    );
+    if (!key) continue;
+    const installation = installationsByCapability.get(key);
+    if (!installation) continue;
+    const current = folded.get(key) ?? {
+      kind: row.kind,
+      name: installation.name,
+      invocations: 0,
+      sessionCount: 0,
+      lastUsedAt: row.lastUsedAt,
+      providers: [],
+      byProvider: {},
+    };
+    current.invocations += row.invocations;
+    current.sessionCount += row.sessionCount;
+    if (row.lastUsedAt > current.lastUsedAt) {
+      current.lastUsedAt = row.lastUsedAt;
+    }
+    current.byProvider[provider] = row.invocations;
+    current.providers = orderedProviders(Object.keys(current.byProvider));
+    folded.set(key, current);
+  }
+
+  const ranked = [...folded.values()].sort(
+    (left, right) =>
+      right.invocations - left.invocations ||
+      right.sessionCount - left.sessionCount ||
+      right.lastUsedAt.localeCompare(left.lastUsedAt) ||
+      left.name.localeCompare(right.name),
+  );
+  const used = (["skill", "mcp"] as const).flatMap((kind) =>
+    ranked.filter((item) => item.kind === kind),
+  );
+
+  const unused = [...installationsByCapability.values()]
+    .filter((item) => !item.usedInRange)
+    .map(({ kind, name, providerSet, lastUsedAt, neverObserved }) => ({
+      kind,
+      name,
       providers: orderedProviders(providerSet),
+      lastUsedAt,
+      neverObserved,
     }))
     .sort((left, right) => {
       if (left.neverObserved !== right.neverObserved)

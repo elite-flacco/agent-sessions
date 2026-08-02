@@ -236,6 +236,42 @@ describe("provider adapters", () => {
     expect(result.sessions[0]?.title).toBe("Title shown in Codex");
   });
 
+  it("uses the task input from a delegated Codex app title", async () => {
+    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-codex-db-"));
+    temporaryDirectories.push(dbDir);
+    const dbPath = path.join(dbDir, "state_5.sqlite");
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL)");
+    db.prepare("INSERT INTO threads (id, title) VALUES (?, ?)").run(
+      "codex-delegated-title",
+      `<codex_delegation>
+  <source_thread_id>parent-thread</source_thread_id>
+  <input>Redesign Agent Setup Inventory</input>
+</codex_delegation>`,
+    );
+    db.close();
+    process.env.CODEX_STATE_DB_PATH = dbPath;
+
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-11T10:00:00Z",
+        payload: { id: "codex-delegated-title", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Raw delegated task" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Redesign Agent Setup Inventory");
+  });
+
   it("marks Codex as interrupted only for an explicit abort marker", async () => {
     const result = await parse(codexAdapter, [
       {

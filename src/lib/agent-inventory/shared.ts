@@ -206,6 +206,17 @@ function skillName(content: string, fallback: string): string {
   return name?.trim() || fallback;
 }
 
+function qualifiedSkillName(name: string, sourcePlugin?: string): string {
+  const pluginName = sourcePlugin?.split("@")[0]?.trim();
+  if (!pluginName) return name;
+  const prefix = `${pluginName}:`;
+  return canonicalCapabilityName(name).startsWith(
+    canonicalCapabilityName(prefix),
+  )
+    ? name
+    : `${prefix}${name}`;
+}
+
 function skillOrigin(
   name: string,
   canonicalPath: string,
@@ -240,9 +251,10 @@ async function capabilityFromSkillPath(
   } catch {
     // A skill path that cannot resolve (broken symlink, deleted target) is
     // unavailable no matter what status its contributing plugin carries.
+    const name = qualifiedSkillName(fallback, context.sourcePlugin);
     return {
-      id: `${context.provider}:skill:${canonicalCapabilityName(fallback)}:${sourcePath}`,
-      name: fallback,
+      id: `${context.provider}:skill:${canonicalCapabilityName(name)}:${sourcePath}`,
+      name,
       kind: "skill",
       status: "unavailable",
       packaging: context.packaging ?? "standalone",
@@ -263,8 +275,9 @@ async function capabilityFromSkillPath(
   } catch {
     return undefined;
   }
-  const name = skillName(content, fallback);
-  const provenance = skillOrigin(name, canonicalSourcePath, context);
+  const declaredName = skillName(content, fallback);
+  const name = qualifiedSkillName(declaredName, context.sourcePlugin);
+  const provenance = skillOrigin(declaredName, canonicalSourcePath, context);
   return {
     id: `${context.provider}:skill:${canonicalCapabilityName(name)}:${canonicalSourcePath}`,
     name,

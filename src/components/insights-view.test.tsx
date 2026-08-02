@@ -191,7 +191,6 @@ describe("InsightsView", () => {
     expect(cacheCard.querySelector("strong")).not.toHaveTextContent(
       "estimated spend avoided by cached input",
     );
-    expect(cacheCard).toHaveTextContent("not an amount charged");
     expect(cacheCard).toHaveTextContent(
       "64% of estimated model cost without cached reads",
     );

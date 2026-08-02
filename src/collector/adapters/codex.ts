@@ -5,7 +5,14 @@ import {
   matchedSkillReads,
   mcpUsage,
 } from "../capabilities";
-import { homePath, record, safeTitle, stringValue, walkJsonl } from "../utils";
+import {
+  codexDelegationInput,
+  homePath,
+  record,
+  safeTitle,
+  stringValue,
+  walkJsonl,
+} from "../utils";
 import {
   contentText,
   filenameId,
@@ -70,7 +77,8 @@ export const codexAdapter: ProviderAdapter = {
           const payload = record(row.payload);
           if (row.type === "response_item" && payload?.role === "user") {
             const candidate = contentText(payload.content);
-            if (safeTitle(candidate, "")) return candidate;
+            const title = codexDelegationInput(candidate) ?? candidate;
+            if (safeTitle(title, "")) return title;
           }
         }
         // Subagent rollouts carry their task prompt as encrypted inter-agent
@@ -226,7 +234,11 @@ export const codexAdapter: ProviderAdapter = {
     const session = result.sessions[0];
     if (session?.externalId) {
       const title = getCodexThreadTitle(session.externalId);
-      if (title) session.title = safeTitle(title, session.title);
+      if (title)
+        session.title = safeTitle(
+          codexDelegationInput(title) ?? title,
+          session.title,
+        );
     }
     return result;
   },

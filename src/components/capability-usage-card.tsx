@@ -19,15 +19,12 @@ type CapabilityTab = "skills" | "mcps" | "providers" | "unused";
 
 const providerBadgeClasses: Record<AgentProvider, string> = providerBadges;
 const visibleRowCount = 8;
-// Only the three counted tabs feed the segmented bar; "By provider" is a
-// second view of the same usage, not a fourth bucket of capabilities.
 const tabs: { id: CapabilityTab; label: string }[] = [
-  { id: "skills", label: "Skills" },
-  { id: "mcps", label: "MCPs" },
+  { id: "skills", label: "Used skills" },
+  { id: "mcps", label: "Used MCPs" },
   { id: "unused", label: "Unused" },
   { id: "providers", label: "By provider" },
 ];
-const countedTabs = ["skills", "mcps", "unused"] as const;
 
 function parseTab(value: string | null): CapabilityTab {
   return value === "mcps" || value === "unused" || value === "providers"
@@ -35,7 +32,7 @@ function parseTab(value: string | null): CapabilityTab {
     : "skills";
 }
 
-// Quantized fill/segment classes keep dynamic sizing out of inline styles.
+// Quantized fill classes keep dynamic sizing out of inline styles.
 function level(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0;
   return Math.max(1, Math.round((value / max) * 10));
@@ -194,12 +191,11 @@ export function CapabilityUsageCard({
 
   const skills = capabilities.used.filter((item) => item.kind === "skill");
   const mcps = capabilities.used.filter((item) => item.kind === "mcp");
-  const counts: Record<(typeof countedTabs)[number], number> = {
+  const counts = {
     skills: skills.length,
     mcps: mcps.length,
     unused: capabilities.unused.length,
   };
-  const segmentTotal = counts.skills + counts.mcps + counts.unused;
   const coverageByProvider = new Map(
     capabilities.coverage.map(({ provider, state }) => [provider, state]),
   );
@@ -269,26 +265,11 @@ export function CapabilityUsageCard({
             </p>
           )}
           <p className="capability-evidence-note">
-            Used means Relay recorded at least one matching call in the selected
-            period. Unused means installed but no matching call was recorded in
-            that period. Results include only providers with complete scan
-            coverage.
+            Used skills plus used MCPs plus unused equals the installed total.
+            Providers with incomplete scan coverage are excluded.
           </p>
         </div>
       </div>
-
-      {segmentTotal > 0 ? (
-        <div className="capability-segments" aria-hidden>
-          {countedTabs.map((id) =>
-            counts[id] === 0 ? null : (
-              <span
-                className={`capability-segment is-${id} capability-seg-${level(counts[id], segmentTotal)}${activeTab === id ? "" : " is-dim"}`}
-                key={id}
-              />
-            ),
-          )}
-        </div>
-      ) : null}
 
       <div className="capability-tabs" role="tablist">
         {tabs.map(({ id, label }) => (
@@ -307,7 +288,7 @@ export function CapabilityUsageCard({
             )}
             {label}
             {id === "providers" ? null : (
-              <b>{counts[id as (typeof countedTabs)[number]]}</b>
+              <b>{counts[id as keyof typeof counts]}</b>
             )}
           </button>
         ))}

@@ -259,10 +259,6 @@ function CacheCard({
             ? "Requires complete model pricing"
             : `${Math.round(cache.week.savedSharePct)}% of estimated model cost without cached reads`}
         </span>
-        <p className="insight-estimate-note">
-          Estimate reprices cached input at full input rates; it is not an
-          amount charged.
-        </p>
       </div>
 
       {cache.week.byModel.length ? (
@@ -326,7 +322,7 @@ function CostCard({
       {cost.outliers.length ? (
         <div>
           <div className="insight-sub">
-            Most expensive sessions (incl. subagents) · {rangePeriodLabel}
+            Most expensive sessions (incl. subagents)
           </div>
           {cost.outliers.map((o) => (
             <CostOutlierRow

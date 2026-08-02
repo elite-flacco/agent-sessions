@@ -307,6 +307,18 @@ describe("getInsights — capability usage", () => {
     expect(capabilities.installedUsedCount).toBeLessThanOrEqual(
       capabilities.installedCount,
     );
+    expect(capabilities.used).toHaveLength(capabilities.installedUsedCount);
+    expect(capabilities.used.length + capabilities.unused.length).toBe(
+      capabilities.installedCount,
+    );
+    // A capability installed by two providers is used when either complete
+    // provider has a matching call, so it must not also appear as unused.
+    expect(capabilities.unused.map((item) => item.name)).not.toContain(
+      "frontend-rules",
+    );
+    expect(capabilities.unused.map((item) => item.name)).not.toContain(
+      "github",
+    );
   });
 
   it("excludes observations older than the selected range", () => {
@@ -322,19 +334,12 @@ describe("getInsights — capability usage", () => {
     });
   });
 
-  it("returns every observed capability per kind with deterministic tie ordering", () => {
+  it("excludes observations that are not in the eligible installed set", () => {
     const skills = queries
       .getInsights("30d", inventories)
       .capabilities.used.filter((item) => item.kind === "skill");
 
-    expect(skills.map((item) => item.name)).toEqual([
-      "frontend-rules",
-      "rank-a",
-      "rank-b",
-      "rank-c",
-      "retired-skill",
-      "shared-skill",
-    ]);
+    expect(skills.map((item) => item.name)).toEqual(["frontend-rules"]);
   });
 
   it("ranks ties by invocations, sessions, recency, then name", () => {
@@ -386,8 +391,25 @@ describe("getInsights — capability usage", () => {
       addUses(sameTimeSession, "tie-alpha", 5, older);
       addUses(sameTimeSession, "tie-zeta", 5, older);
 
+      const rankingInventories = inventories.map((inventory) =>
+        inventory.provider === "codex"
+          ? {
+              ...inventory,
+              capabilities: [
+                ...inventory.capabilities,
+                ...[
+                  "tie-invocations",
+                  "tie-sessions",
+                  "tie-newer",
+                  "tie-alpha",
+                  "tie-zeta",
+                ].map((name) => capability("codex", "skill", name)),
+              ],
+            }
+          : inventory,
+      );
       const skills = queries
-        .getInsights("30d", inventories)
+        .getInsights("30d", rankingInventories)
         .capabilities.used.filter((item) => item.kind === "skill");
 
       expect(
@@ -438,8 +460,29 @@ describe("getInsights — capability usage", () => {
         }
       }
 
+      const rankedMcpNames = [
+        "mcp-rank-a",
+        "mcp-rank-b",
+        "mcp-rank-c",
+        "mcp-rank-d",
+        "mcp-rank-e",
+        "mcp-rank-f",
+      ];
+      const rankingInventories = inventories.map((inventory) =>
+        inventory.provider === "codex"
+          ? {
+              ...inventory,
+              capabilities: [
+                ...inventory.capabilities,
+                ...rankedMcpNames.map((name) =>
+                  capability("codex", "mcp", name),
+                ),
+              ],
+            }
+          : inventory,
+      );
       const mcps = queries
-        .getInsights("30d", inventories)
+        .getInsights("30d", rankingInventories)
         .capabilities.used.filter((item) => item.kind === "mcp");
 
       expect(mcps.map((item) => item.name)).toEqual([
@@ -456,21 +499,15 @@ describe("getInsights — capability usage", () => {
     }
   });
 
-  it("ranks observed capabilities even when they are no longer installed", () => {
+  it("does not rank observations that are no longer installed", () => {
     const capabilities = queries.getInsights("30d", inventories).capabilities;
 
-    expect(capabilities.used).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "skill",
-          name: "retired-skill",
-          invocations: 1,
-        }),
-      ]),
+    expect(capabilities.used.map((item) => item.name)).not.toContain(
+      "retired-skill",
     );
   });
 
-  it("derives unused status independently for each provider installation", () => {
+  it("counts a shared capability as used when any eligible installation was used", () => {
     const inventoriesWithSharedSkill = inventories.map((inventory) => ({
       ...inventory,
       capabilities: [
@@ -479,15 +516,16 @@ describe("getInsights — capability usage", () => {
       ],
     }));
 
-    const shared = queries
-      .getInsights("30d", inventoriesWithSharedSkill)
-      .capabilities.unused.find((item) => item.name === "shared-skill");
-
-    expect(shared).toMatchObject({
-      providers: ["codex"],
-      lastUsedAt: null,
-      neverObserved: true,
-    });
+    const capabilities = queries.getInsights(
+      "30d",
+      inventoriesWithSharedSkill,
+    ).capabilities;
+    expect(capabilities.used.map((item) => item.name)).toContain(
+      "shared-skill",
+    );
+    expect(capabilities.unused.map((item) => item.name)).not.toContain(
+      "shared-skill",
+    );
   });
 
   it("does not contradict a canonically mapped MCP observation with unused", () => {
@@ -528,6 +566,56 @@ describe("getInsights — capability usage", () => {
       expect(capabilities.unused.map((item) => item.name)).not.toContain(
         "event-stream",
       );
+    } finally {
+      sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+    }
+  });
+
+  it("matches namespaced native skill calls to installed plugin skills", () => {
+    const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
+    const sessionId = Number(
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at, ended_at)
+          VALUES ('plugin-skill-usage', 'claude', 'Plugin skill usage', 'completed', ?, ?, ?)`,
+        )
+        .run(occurredAt, occurredAt, occurredAt).lastInsertRowid,
+    );
+    sqlite
+      .prepare(
+        `INSERT INTO session_capability_usage
+        (session_id, external_id, provider, kind, capability_name, occurred_at)
+        VALUES (?, 'plugin-skill-event', 'claude', 'skill', 'superpowers:brainstorming', ?)`,
+      )
+      .run(sessionId, occurredAt);
+    const pluginInventory: AgentInventory = {
+      provider: "claude",
+      scope: "global",
+      warnings: [],
+      capabilities: [
+        {
+          ...capability("claude", "skill", "brainstorming", "enabled"),
+          sourcePlugin: "superpowers@claude-plugins-official",
+        },
+      ],
+    };
+
+    try {
+      const capabilities = queries.getInsights("30d", [
+        pluginInventory,
+      ]).capabilities;
+
+      expect(capabilities.installedCount).toBe(1);
+      expect(capabilities.installedUsedCount).toBe(1);
+      expect(capabilities.used).toEqual([
+        expect.objectContaining({
+          kind: "skill",
+          name: "superpowers:brainstorming",
+          providers: ["claude"],
+        }),
+      ]);
+      expect(capabilities.unused).toEqual([]);
     } finally {
       sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     }

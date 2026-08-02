@@ -86,7 +86,7 @@ API_KEY = "secret-value"
           origin: "personal",
         }),
         expect.objectContaining({
-          name: "review",
+          name: "github:review",
           kind: "skill",
           status: "enabled",
           packaging: "plugin",
@@ -133,7 +133,7 @@ enabled = false
           status: "disabled",
         }),
         expect.objectContaining({
-          name: "dormant-skill",
+          name: "disabled:dormant-skill",
           kind: "skill",
           status: "disabled",
         }),
@@ -187,7 +187,7 @@ enabled = true
           sourcePath: pluginRoot,
         }),
         expect.objectContaining({
-          name: "brainstorming",
+          name: "superpowers:brainstorming",
           kind: "skill",
           status: "enabled",
           packaging: "plugin",
@@ -395,7 +395,7 @@ enabled = true
           sourcePlugin: "superpowers@claude-plugins-official",
         }),
         expect.objectContaining({
-          name: "claude-tool",
+          name: "superpowers:claude-tool",
           kind: "skill",
           status: "enabled",
           packaging: "plugin",
@@ -419,7 +419,7 @@ enabled = true
           status: "disabled",
         }),
         expect.objectContaining({
-          name: "claude-disabled-tool",
+          name: "disabled-skills:claude-disabled-tool",
           kind: "skill",
           status: "disabled",
         }),
@@ -429,7 +429,7 @@ enabled = true
       expect.arrayContaining([
         expect.objectContaining({ name: "github@market", status: "enabled" }),
         expect.objectContaining({
-          name: "zcode-tool",
+          name: "github:zcode-tool",
           kind: "skill",
           status: "enabled",
           packaging: "plugin",
@@ -452,7 +452,7 @@ enabled = true
           status: "installed",
         }),
         expect.objectContaining({
-          name: "zcode-disabled-tool",
+          name: "disabled-skills:zcode-disabled-tool",
           kind: "skill",
           status: "installed",
         }),
@@ -521,7 +521,7 @@ enabled = true
           sourcePlugin: "android-emulator@zcode-plugins-official",
         }),
         expect.objectContaining({
-          name: "android-tool",
+          name: "android-emulator:android-tool",
           kind: "skill",
           status: "installed",
           packaging: "plugin",
@@ -624,7 +624,7 @@ enabled = true
           sourcePlugin: "ios-simulator@zcode-plugins-official",
         }),
         expect.objectContaining({
-          name: "ios-tool",
+          name: "ios-simulator:ios-tool",
           kind: "skill",
           status: "enabled",
           sourcePlugin: "ios-simulator@zcode-plugins-official",
@@ -694,7 +694,7 @@ enabled = true
           status: "disabled",
         }),
         expect.objectContaining({
-          name: "ios-tool",
+          name: "ios-simulator:ios-tool",
           kind: "skill",
           status: "disabled",
         }),
@@ -799,8 +799,11 @@ enabled = false
     // "<plugin-short-name>:<skill>" (or bare "<skill>" for standalone skills).
     expect(codex?.capabilities).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "ai-sdk", status: "enabled" }),
-        expect.objectContaining({ name: "chat-sdk", status: "disabled" }),
+        expect.objectContaining({ name: "vercel:ai-sdk", status: "enabled" }),
+        expect.objectContaining({
+          name: "vercel:chat-sdk",
+          status: "disabled",
+        }),
         expect.objectContaining({
           name: "standalone-off",
           status: "disabled",
@@ -1084,7 +1087,7 @@ source = "${pluginRoot}"
     expect(codex?.capabilities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "broken-plugin-skill",
+          name: "linked:broken-plugin-skill",
           status: "unavailable",
         }),
       ]),
