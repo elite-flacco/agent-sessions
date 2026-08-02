@@ -10,14 +10,10 @@ import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { UsageBucket, UsageSummary, UsageWindow } from "@/lib/queries";
 import type { AgentProvider } from "@/lib/types";
+import { Meter, Sparkline } from "./charts";
 
 interface UsageViewProps {
   usage: UsageSummary;
-}
-
-function level(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.max(1, Math.round((value / max) * 10));
 }
 
 export function UsageView({ usage }: UsageViewProps) {
@@ -31,7 +27,6 @@ export function UsageView({ usage }: UsageViewProps) {
     return () => window.clearInterval(timer);
   }, [router]);
 
-  const maxDaily = Math.max(...usage.daily.map((day) => day.costUsd), 0);
   const maxProvider = Math.max(
     ...usage.byProvider.map((bucket) => bucket.costUsd),
     0,
@@ -72,21 +67,14 @@ export function UsageView({ usage }: UsageViewProps) {
               <h3>Daily cost, last 30 days</h3>
               <span>{formatCostUsd(usage.month.costUsd)} total</span>
             </div>
-            <div
-              className="spark"
-              role="img"
-              aria-label="Estimated cost per day"
-            >
-              {usage.daily.map((day) => (
-                <span
-                  key={day.date}
-                  className="spark-slot"
-                  title={`${day.date}: ${formatCostUsd(day.costUsd)} · ${formatTokens(day.tokens)}`}
-                >
-                  <i className={`spark-fill-${level(day.costUsd, maxDaily)}`} />
-                </span>
-              ))}
-            </div>
+            <Sparkline
+              values={usage.daily.map((day) => day.costUsd)}
+              label="Estimated cost per day"
+              slotTitle={(index) => {
+                const day = usage.daily[index];
+                return `${day.date}: ${formatCostUsd(day.costUsd)} · ${formatTokens(day.tokens)}`;
+              }}
+            />
           </section>
 
           <section className="card overview-card" aria-label="Cost by model">
@@ -127,11 +115,7 @@ export function UsageView({ usage }: UsageViewProps) {
                   >
                     {providerLabels[bucket.key as AgentProvider]}
                   </span>
-                  <span className="meter" aria-hidden>
-                    <i
-                      className={`meter-fill-${level(bucket.costUsd, maxProvider)}`}
-                    />
-                  </span>
+                  <Meter value={bucket.costUsd} max={maxProvider} />
                   <span className="mono">{formatCostUsd(bucket.costUsd)}</span>
                 </Link>
               ))
@@ -216,9 +200,7 @@ function BucketRow({
       <span className={mono ? "mono dist-label" : "dist-label"}>
         {label ?? bucket.key}
       </span>
-      <span className="meter" aria-hidden>
-        <i className={`meter-fill-${level(bucket.costUsd, max)}`} />
-      </span>
+      <Meter value={bucket.costUsd} max={max} />
       <span className="mono">{formatCostUsd(bucket.costUsd)}</span>
     </div>
   );

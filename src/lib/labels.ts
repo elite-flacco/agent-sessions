@@ -1,9 +1,17 @@
+import type { OverviewRange } from "./queries";
 import type {
   AgentProvider,
   CostSource,
   SessionStatus,
   StatusReason,
 } from "./types";
+
+// Shared "7 days" / "30 days" copy for range-scoped views. Sentence-context
+// phrasings ("this week", "the last 30 days") stay inline at their call sites
+// because they vary by surrounding grammar.
+export function rangeDaysLabel(range: OverviewRange): string {
+  return range === "7d" ? "7 days" : "30 days";
+}
 
 export const providerLabels: Record<AgentProvider, string> = {
   codex: "Codex",

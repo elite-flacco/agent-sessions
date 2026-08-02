@@ -7,18 +7,14 @@ import {
   formatTokens,
   relativeTime,
 } from "@/lib/format";
-import {
-  costSourceLabels,
-  providerBadges,
-  providerLabels,
-  statusDisplay,
-} from "@/lib/labels";
+import { costSourceLabels, providerBadges, providerLabels } from "@/lib/labels";
 import type {
   SessionDetail,
   SessionListItem,
   SessionUsageDetail,
 } from "@/lib/queries";
 import type { SessionTranscript } from "@/lib/transcript";
+import { StatusLabel } from "./status-label";
 import { TranscriptView } from "./transcript-view";
 
 interface SessionDetailViewProps {
@@ -58,10 +54,10 @@ export function SessionDetailView({
             <span className={`badge ${providerBadges[session.provider]}`}>
               {providerLabels[session.provider]}
             </span>
-            <span className={`status-label status-${session.status}`}>
-              <i />
-              {statusDisplay(session.status, session.statusReason)}
-            </span>
+            <StatusLabel
+              status={session.status}
+              reason={session.statusReason}
+            />
           </div>
         </div>
         <div className="detail-time">
@@ -153,10 +149,10 @@ export function SessionDetailView({
                       : ""}
                   </span>
                 </div>
-                <span className={`status-label status-${child.status}`}>
-                  <i />
-                  {statusDisplay(child.status, child.statusReason)}
-                </span>
+                <StatusLabel
+                  status={child.status}
+                  reason={child.statusReason}
+                />
               </Link>
             ))}
           </div>

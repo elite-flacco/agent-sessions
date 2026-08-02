@@ -21,12 +21,7 @@ import {
   relativeTime,
   runtime,
 } from "@/lib/format";
-import {
-  providerBadges,
-  providerLabels,
-  statusDisplay,
-  statusLabels,
-} from "@/lib/labels";
+import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { normalizeModel } from "@/lib/pricing";
 import type {
@@ -37,6 +32,7 @@ import type {
   SessionTreeItem,
   UsageWindow,
 } from "@/lib/queries";
+import { StatusLabel } from "./status-label";
 
 export type WorkspaceView = "sessions" | "projects";
 
@@ -432,10 +428,7 @@ function SessionRow({
             {providerLabels[session.provider]}
           </span>
         </div>
-        <div className={`status-label status-${session.status}`}>
-          <i />
-          {statusDisplay(session.status, session.statusReason)}
-        </div>
+        <StatusLabel status={session.status} reason={session.statusReason} />
         <span
           className="mono session-secondary"
           title={absoluteTime(session.startedAt)}

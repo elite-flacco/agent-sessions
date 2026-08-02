@@ -9,7 +9,7 @@ import {
   FolderKanban,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Fragment, useEffect } from "react";
 import {
   absoluteTime,
@@ -17,11 +17,12 @@ import {
   formatCostUsd,
   formatTokens,
   hasMeaningfulDuration,
+  level,
   relativeTime,
   runtime,
 } from "@/lib/format";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
-import { providerLabels, statusDisplay } from "@/lib/labels";
+import { providerLabels, rangeDaysLabel, statusDisplay } from "@/lib/labels";
 import type {
   OverviewData,
   OverviewPatterns,
@@ -29,6 +30,8 @@ import type {
   ProjectSummary,
   SessionListItem,
 } from "@/lib/queries";
+import { Meter } from "./charts";
+import { RangeSwitcher } from "./range-switcher";
 
 interface OverviewViewProps {
   range: OverviewRange;
@@ -37,11 +40,6 @@ interface OverviewViewProps {
   running: SessionListItem[];
   attention: SessionListItem[];
   recentProjects: ProjectSummary[];
-}
-
-function level(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.max(1, Math.round((value / max) * 10));
 }
 
 export function OverviewView({
@@ -53,14 +51,12 @@ export function OverviewView({
   recentProjects,
 }: OverviewViewProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   // The summary label follows the active range: "this week" at the default
   // 7-day view, "last 30 days" when widened. The toggle defaults to 7d, so an
   // absent param is treated as 7d rather than persisted.
   const rangeLabel = range === "7d" ? "this week" : "last 30 days";
-  const rangeDaysLabel = range === "7d" ? "7 days" : "30 days";
+  const daysLabel = rangeDaysLabel(range);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -69,16 +65,6 @@ export function OverviewView({
     );
     return () => window.clearInterval(timer);
   }, [router]);
-
-  function selectRange(next: OverviewRange) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "7d") params.delete("range");
-    else params.set("range", next);
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, {
-      scroll: false,
-    });
-  }
 
   return (
     <section className="relay-content">
@@ -91,24 +77,7 @@ export function OverviewView({
               : "Today and the last thirty days across every agent."}
           </p>
         </div>
-        <div className="overview-range" aria-label="Overview range">
-          <button
-            className={`btn ${range === "7d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={range === "7d"}
-            onClick={() => selectRange("7d")}
-          >
-            7 days
-          </button>
-          <button
-            className={`btn ${range === "30d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={range === "30d"}
-            onClick={() => selectRange("30d")}
-          >
-            30 days
-          </button>
-        </div>
+        <RangeSwitcher range={range} ariaLabel="Overview range" />
       </header>
 
       <div className="summary-grid" aria-label="Daily and weekly summary">
@@ -148,10 +117,7 @@ export function OverviewView({
       <div className="overview-grid">
         <div className="overview-column">
           <ActivityHeatmap cells={patterns.heatmap} />
-          <SessionLength
-            length={patterns.length}
-            rangeDaysLabel={rangeDaysLabel}
-          />
+          <SessionLength length={patterns.length} rangeDaysLabel={daysLabel} />
           <CostAtAGlance cost={patterns.costWeek} rangeLabel={rangeLabel} />
         </div>
 
@@ -381,9 +347,7 @@ function SessionLength({
             title={`${bucket.count} sessions`}
           >
             <span className="hist-label">{bucket.label}</span>
-            <span className="meter" aria-hidden>
-              <i className={`meter-fill-${level(bucket.count, maxBucket)}`} />
-            </span>
+            <Meter value={bucket.count} max={maxBucket} />
             <span className="mono">{bucket.count}</span>
           </div>
         ))}
@@ -441,9 +405,7 @@ function CostAtAGlance({
             title={`${model.model}: ${formatCostUsd(model.costUsd)}`}
           >
             <span className="cost-label mono">{model.model}</span>
-            <span className="meter" aria-hidden>
-              <i className={`meter-fill-${level(model.costUsd, maxModel)}`} />
-            </span>
+            <Meter value={model.costUsd} max={maxModel} />
             <span className="mono">{formatCostUsd(model.costUsd)}</span>
           </div>
         ))}

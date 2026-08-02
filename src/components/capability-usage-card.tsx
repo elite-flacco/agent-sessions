@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { relativeTime } from "@/lib/format";
-import { providerBadges, providerLabels } from "@/lib/labels";
+import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
 import type {
   CapabilitiesInsight,
   CapabilityCoverage,
@@ -10,6 +10,7 @@ import type {
   UnusedCapabilityInsight,
 } from "@/lib/queries";
 import { type AgentProvider, agentProviders } from "@/lib/types";
+import { Meter } from "./charts";
 
 interface CapabilityUsageCardProps {
   capabilities: CapabilitiesInsight;
@@ -17,7 +18,6 @@ interface CapabilityUsageCardProps {
 
 type CapabilityTab = "skills" | "mcps" | "providers" | "unused";
 
-const providerBadgeClasses: Record<AgentProvider, string> = providerBadges;
 const visibleRowCount = 8;
 const tabs: { id: CapabilityTab; label: string }[] = [
   { id: "skills", label: "Used skills" },
@@ -30,12 +30,6 @@ function parseTab(value: string | null): CapabilityTab {
   return value === "mcps" || value === "unused" || value === "providers"
     ? value
     : "skills";
-}
-
-// Quantized fill classes keep dynamic sizing out of inline styles.
-function level(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.max(1, Math.round((value / max) * 10));
 }
 
 // Heat cells span three orders of magnitude — a busy MCP server runs into the
@@ -52,7 +46,7 @@ function heatLevel(value: number, max: number): number {
 
 function ProviderBadges({ providers }: { providers: AgentProvider[] }) {
   return providers.map((provider) => (
-    <span className={`badge ${providerBadgeClasses[provider]}`} key={provider}>
+    <span className={`badge ${providerBadges[provider]}`} key={provider}>
       {providerLabels[provider]}
     </span>
   ));
@@ -78,13 +72,12 @@ function UsedCapabilityRow({
       <span className="capability-name" title={capability.name}>
         {capability.name}
       </span>
-      <span
-        aria-hidden
-        className={`meter capability-meter is-${capability.kind}`}
+      <Meter
+        value={capability.invocations}
+        max={max}
+        className={`capability-meter is-${capability.kind}`}
         title={detail}
-      >
-        <i className={`meter-fill-${level(capability.invocations, max)}`} />
-      </span>
+      />
       <span className="capability-bar-value">{capability.invocations}</span>
       <span className="capability-ladder-meta">
         {capability.sessionCount} {sessionLabel} ·{" "}
@@ -239,7 +232,7 @@ export function CapabilityUsageCard({
     (highest, item) => Math.max(highest, ...Object.values(item.byProvider), 0),
     0,
   );
-  const rangeLabel = capabilities.range === "7d" ? "7 days" : "30 days";
+  const rangeLabel = rangeDaysLabel(capabilities.range);
 
   return (
     <section

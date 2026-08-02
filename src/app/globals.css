@@ -206,16 +206,6 @@
     color: var(--primary-foreground);
   }
 
-  .btn-ghost {
-    background: transparent;
-    color: var(--muted-foreground);
-  }
-
-  .btn-ghost:hover {
-    background: var(--muted);
-    color: var(--foreground);
-  }
-
   .card {
     border: 1px solid var(--border);
     border-radius: 0.5rem;
@@ -309,8 +299,7 @@
   .connection-card,
   .nav-row,
   .inspector-heading,
-  .inspector-badges,
-  .activity-heading {
+  .inspector-badges {
     display: flex;
     align-items: center;
   }
@@ -535,13 +524,6 @@
     background: var(--card);
   }
 
-  .workspace-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.7fr) minmax(20rem, 1fr);
-    gap: 0.8rem;
-    margin-top: 0.9rem;
-    transition: opacity 120ms ease;
-  }
   .workspace-loading {
     opacity: 0.6;
   }
@@ -621,17 +603,6 @@
     width: 0.65rem;
     border-bottom: 1px solid var(--border-hover);
     border-left: 1px solid var(--border-hover);
-    content: "";
-  }
-  .session-selected {
-    background: var(--muted);
-  }
-  .session-selected::before {
-    position: absolute;
-    inset-block: 0;
-    left: 0;
-    width: 2px;
-    background: var(--accent);
     content: "";
   }
   .session-primary {
@@ -759,14 +730,6 @@
     margin-top: 0.9rem;
     color: var(--muted-foreground);
   }
-  .inspector-empty {
-    display: grid;
-    min-height: 20rem;
-    place-items: center;
-    align-content: center;
-    gap: 0.6rem;
-    color: var(--muted-foreground);
-  }
   .detail-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -786,20 +749,6 @@
     font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .detail-wide {
-    grid-column: 1 / -1;
-  }
-  .activity-heading {
-    justify-content: space-between;
-    margin-top: 1rem;
-  }
-  .activity-heading > span:last-child {
-    color: var(--muted-foreground);
-  }
-  .activity-list {
-    display: grid;
-    margin-top: 0.5rem;
   }
   .empty-state {
     display: grid;
@@ -836,38 +785,12 @@
     background: var(--success);
     vertical-align: middle;
   }
-  .detail-accent {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    color: var(--success);
-  }
   .inline-icon {
     display: inline;
     vertical-align: -0.12em;
   }
   .warning-icon {
     color: var(--warning);
-  }
-  .branch-list {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-  .branch-list > div {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-  .branch-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    border: 1px solid var(--border);
-    border-radius: 9999px;
-    padding: 0.25rem 0.6rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
   }
   .project-session-row {
     display: grid;
@@ -1263,14 +1186,6 @@
   .insight-hero {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .insight-hero-signals {
-    margin-left: auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    border-color: var(--border);
-  }
   .insight-card {
     display: grid;
     gap: 0.7rem;
@@ -1340,10 +1255,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.7rem;
-  }
-  .capability-range {
-    display: inline-flex;
-    gap: 0.25rem;
   }
   .capability-headline {
     margin-top: 0.4rem;
@@ -1661,20 +1572,10 @@
   .dist-row-wide {
     grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr) 4.5rem;
   }
-  .cost-outlier-column-head,
   .cost-outlier-row {
     grid-template-columns:
       minmax(6rem, 12rem) minmax(0, 1fr) minmax(2.75rem, 3.5rem)
       minmax(3.75rem, 4.5rem);
-  }
-  .cost-outlier-column-head {
-    display: grid;
-    align-items: center;
-    gap: 0.6rem;
-    color: var(--muted-foreground);
-  }
-  .cost-outlier-column-head span:nth-child(n + 3) {
-    text-align: right;
   }
   .cost-outlier-share,
   .cost-outlier-cost {
@@ -2103,55 +2004,9 @@
   .agent-duplicate-table td code + code {
     margin-top: 0.25rem;
   }
-  .agent-capability-list {
-    border-top: 1px solid var(--border);
-  }
-  /* Inventory shows one provider at a time; the Kind rail (Skills / Plugins /
-     MCPs, plus Instructions when present) selects which pane is visible. */
-  .agent-inventory-single {
-    min-width: 0;
-    margin-top: 0.9rem;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--card);
-  }
-  .agent-inventory-single .agent-provider-heading {
-    border-top: 0;
-  }
-  .agent-kind-rail-layout {
-    display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
-  }
-  .agent-kind-rail {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    border-right: 1px solid var(--border);
-    padding-right: 0.4rem;
-  }
-  .agent-kind-rail-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.5rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-sm);
-    text-decoration: none;
-    cursor: pointer;
-  }
-  .agent-kind-rail-item:hover {
-    background: var(--card-hover);
-    color: var(--foreground);
-  }
-  .agent-kind-rail-item.is-active {
-    background: var(--card-hover);
-    color: var(--foreground);
-    font-weight: 600;
-  }
+  /* Kind-rail items share the base/hover/active rules with
+     .agent-provider-rail-item below; only the leading kind icon needs its own
+     no-shrink guard (provider items lead with a fixed-size dot instead). */
   .agent-kind-rail-item svg {
     flex: 0 0 auto;
   }
@@ -2160,54 +2015,10 @@
     color: var(--muted-foreground);
     font-size: var(--text-xs);
   }
-  .agent-kind-rail-content {
-    min-width: 0;
-  }
   .agent-kind-empty {
     padding: 1rem 0.5rem;
     color: var(--muted-foreground);
     font-size: var(--text-sm);
-  }
-  .agent-capability-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: center;
-    gap: 0.7rem;
-    min-height: 2.3rem;
-    padding: 0.4rem 0.75rem;
-  }
-  .agent-capability-row:hover {
-    background: var(--card-hover);
-  }
-  .agent-capability-primary {
-    display: grid;
-    min-width: 0;
-    gap: 0.2rem;
-  }
-  .agent-capability-primary strong,
-  .agent-capability-primary span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .agent-capability-primary strong {
-    font-size: var(--text-sm);
-    font-weight: 400;
-  }
-  .agent-capability-primary span,
-  .agent-packaging {
-    color: var(--muted-foreground);
-  }
-  .agent-capability-path-hint {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--muted-foreground);
-    font-family: var(--font-geist-mono), ui-monospace, monospace;
-    font-size: var(--text-xs);
-    line-height: var(--leading-tight);
-    opacity: 0.85;
   }
   .agent-origin-tag {
     width: fit-content;
@@ -2238,134 +2049,7 @@
   .agent-kind-instruction svg {
     color: var(--badge-5-foreground);
   }
-  .agent-capability-group {
-    border-top: 1px solid var(--border);
-  }
-  .agent-capability-row + .agent-capability-group,
-  .agent-capability-group + .agent-capability-row,
-  .agent-capability-group + .agent-capability-group {
-    border-top: 1px solid var(--border);
-  }
-  .agent-capability-group > summary {
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    min-height: 2.3rem;
-    padding: 0.4rem 0.75rem;
-    cursor: pointer;
-  }
-  .agent-capability-group > summary::-webkit-details-marker {
-    display: none;
-  }
-  .agent-capability-group > summary:hover {
-    background: var(--card-hover);
-  }
-  .agent-capability-group-primary {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-width: 0;
-  }
-  .agent-capability-group-primary::before {
-    content: "›";
-    display: inline-block;
-    width: 1rem;
-    flex: 0 0 auto;
-    color: var(--muted-foreground);
-    font-size: var(--text-lg);
-    line-height: 1;
-    transform: rotate(0deg);
-    transition: transform 0.15s ease-in-out;
-  }
-  .agent-capability-group[open]
-    > summary
-    .agent-capability-group-primary::before {
-    transform: rotate(90deg);
-  }
-  .agent-capability-group-primary svg {
-    flex: 0 0 auto;
-    color: var(--muted-foreground);
-  }
-  .agent-capability-group-primary strong {
-    color: var(--foreground);
-    font-size: var(--text-sm);
-    font-weight: 400;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .agent-capability-group > summary > span:not(.agent-origin-tag) {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-    white-space: nowrap;
-  }
-  .agent-capability-group > summary > .agent-origin-tag {
-    font-size: var(--text-xs);
-  }
-  .agent-capability-group-members {
-    margin-inline-start: 0.9rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-    gap: 0.1rem 1.75rem;
-    align-content: start;
-  }
-  .agent-source-group > summary {
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    min-height: 2.3rem;
-    padding: 0.4rem 0.75rem;
-    cursor: pointer;
-  }
-  .agent-source-group > summary::-webkit-details-marker {
-    display: none;
-  }
-  .agent-source-group > summary:hover {
-    background: var(--card-hover);
-  }
-  .agent-source-group-primary {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-width: 0;
-  }
-  .agent-source-group-primary::before {
-    content: "›";
-    display: inline-block;
-    width: 1rem;
-    flex: 0 0 auto;
-    color: var(--muted-foreground);
-    font-size: var(--text-lg);
-    line-height: 1;
-    transform: rotate(0deg);
-    transition: transform 0.15s ease-in-out;
-  }
-  .agent-source-group[open] > summary .agent-source-group-primary::before {
-    transform: rotate(90deg);
-  }
-  .agent-source-group > summary > span:not(.agent-source-group-primary) {
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-    white-space: nowrap;
-  }
-  .agent-source-group-primary .agent-origin-tag {
-    font-size: var(--text-xs);
-  }
-  .agent-source-group-body {
-    margin-inline-start: 1.6rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-    gap: 0.1rem 1.75rem;
-    align-content: start;
-  }
-  .agent-source-group-body > .agent-capability-group {
-    grid-column: 1 / -1;
-  }
-  /* Source-aware Inventory catalog. These rules intentionally follow the
-     legacy inventory selectors above so the new semantic layout wins without
-     changing Compare or Scheduled tasks. */
+  /* Source-aware Inventory catalog. */
   .agent-inventory-region {
     min-width: 0;
     margin-top: 0.9rem;
@@ -3196,9 +2880,6 @@
     }
     .relay-content {
       padding: 1rem;
-    }
-    .workspace-grid {
-      grid-template-columns: 1fr;
     }
     .session-detail-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));

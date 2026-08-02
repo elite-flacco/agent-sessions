@@ -2,27 +2,23 @@
 
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
+import { rangeDaysLabel } from "@/lib/labels";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import type { Insights, InsightSignal, OverviewRange } from "@/lib/queries";
 import { CapabilityUsageCard } from "./capability-usage-card";
+import { Meter, Sparkline } from "./charts";
+import { RangeSwitcher } from "./range-switcher";
 
 interface InsightsViewProps {
   range: OverviewRange;
   insights: Insights;
 }
 
-function level(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.max(1, Math.round((value / max) * 10));
-}
-
 export function InsightsView({ range, insights }: InsightsViewProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
 
   useEffect(() => {
@@ -33,16 +29,6 @@ export function InsightsView({ range, insights }: InsightsViewProps) {
     return () => window.clearInterval(timer);
   }, [router]);
 
-  function selectRange(next: OverviewRange) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "7d") params.delete("range");
-    else params.set("range", next);
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, {
-      scroll: false,
-    });
-  }
-
   return (
     <section className="relay-content">
       <header className="page-header">
@@ -50,24 +36,7 @@ export function InsightsView({ range, insights }: InsightsViewProps) {
           <h1>Insights</h1>
           <p>Cost, cache, and capability usage for {rangePeriodLabel}.</p>
         </div>
-        <div className="overview-range" aria-label="Insights range">
-          <button
-            className={`btn ${range === "7d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={range === "7d"}
-            onClick={() => selectRange("7d")}
-          >
-            7 days
-          </button>
-          <button
-            className={`btn ${range === "30d" ? "btn-accent" : "btn-outline"}`}
-            type="button"
-            aria-pressed={range === "30d"}
-            onClick={() => selectRange("30d")}
-          >
-            30 days
-          </button>
-        </div>
+        <RangeSwitcher range={range} ariaLabel="Insights range" />
       </header>
 
       <HeroStrip range={range} insights={insights} />
@@ -124,19 +93,7 @@ export function InsightSparkline({
   values: (number | null)[];
   label: string;
 }) {
-  const present = values.filter((v): v is number => v !== null);
-  if (present.length === 0) return null;
-  const max = Math.max(...present, 0);
-
-  return (
-    <span className="spark insight-spark" role="img" aria-label={label}>
-      {values.map((v, i) => (
-        <span className="spark-slot" key={i}>
-          <i className={`spark-fill-${level(v ?? 0, max)}`} />
-        </span>
-      ))}
-    </span>
-  );
+  return <Sparkline values={values} label={label} className="insight-spark" />;
 }
 
 function KpiTile({
@@ -179,8 +136,8 @@ export function HeroStrip({
     capabilities.installedCount > 0
       ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
       : `${capabilities.used.length} used`;
-  const capabilityRange = capabilities.range === "7d" ? "7 days" : "30 days";
-  const rangeDaysLabel = range === "7d" ? "7 days" : "30 days";
+  const capabilityRange = rangeDaysLabel(capabilities.range);
+  const daysLabel = rangeDaysLabel(range);
   const adoptionDetail =
     capabilities.installedCount > 0
       ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used in ${capabilityRange}; complete providers only`
@@ -195,14 +152,14 @@ export function HeroStrip({
         detail={
           cost.week.totalUsd === null
             ? "Unavailable when any usage is unpriced"
-            : `Priced total · last ${rangeDaysLabel}`
+            : `Priced total · last ${daysLabel}`
         }
       />
       <KpiTile
         href="#insight-cache"
         label="Cache hit rate"
         value={hitValue}
-        detail={`Share of input served from cache · last ${rangeDaysLabel}`}
+        detail={`Share of input served from cache · last ${daysLabel}`}
       />
       <KpiTile
         href="#insight-capability"
@@ -222,7 +179,7 @@ function CacheCard({
   insights: Insights;
 }) {
   const { cache } = insights;
-  const rangeDaysLabel = range === "7d" ? "7 days" : "30 days";
+  const daysLabel = rangeDaysLabel(range);
   const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
   const hitPct =
     cache.week.hitRate === null
@@ -237,7 +194,7 @@ function CacheCard({
     >
       <div className="insight-card-head">
         <h3>Cache effectiveness</h3>
-        <span className="mono">last {rangeDaysLabel}</span>
+        <span className="mono">last {daysLabel}</span>
       </div>
 
       <div>
@@ -263,13 +220,10 @@ function CacheCard({
 
       {cache.week.byModel.length ? (
         <div>
-          <div className="insight-sub">Hit rate by model</div>
           {cache.week.byModel.map((m) => (
             <div className="dist-row dist-row-wide" key={m.model}>
-              <span className="mono dist-label">{m.model}</span>
-              <span className="meter" aria-hidden>
-                <i className={`meter-fill-${level(m.hitRate, 1)}`} />
-              </span>
+              <span className="dist-label">{m.model}</span>
+              <Meter value={m.hitRate} max={1} />
               <span className="mono">{Math.round(m.hitRate * 100)}%</span>
             </div>
           ))}
@@ -291,7 +245,7 @@ function CostCard({
   insights: Insights;
 }) {
   const { cost } = insights;
-  const rangeDaysLabel = range === "7d" ? "7 days" : "30 days";
+  const daysLabel = rangeDaysLabel(range);
   const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
   const maxOutlier = Math.max(...cost.outliers.map((o) => o.costUsd), 0);
 
@@ -303,7 +257,7 @@ function CostCard({
     >
       <div className="insight-card-head">
         <h3>Cost outliers</h3>
-        <span className="mono">last {rangeDaysLabel}</span>
+        <span className="mono">last {daysLabel}</span>
       </div>
 
       <div>
@@ -340,6 +294,28 @@ function CostCard({
   );
 }
 
+// Prefer the query-provided share; otherwise derive it from the period total
+// when that is known and positive; otherwise there is nothing to show.
+function outlierShare(
+  outlier: Insights["cost"]["outliers"][number],
+  periodTotalUsd: number | null,
+): number | null {
+  if (
+    typeof outlier.shareOfPeriodPct === "number" &&
+    Number.isFinite(outlier.shareOfPeriodPct)
+  ) {
+    return outlier.shareOfPeriodPct;
+  }
+  if (
+    periodTotalUsd !== null &&
+    periodTotalUsd > 0 &&
+    Number.isFinite(outlier.costUsd)
+  ) {
+    return (outlier.costUsd / periodTotalUsd) * 100;
+  }
+  return null;
+}
+
 function CostOutlierRow({
   outlier,
   periodTotalUsd,
@@ -349,20 +325,8 @@ function CostOutlierRow({
   periodTotalUsd: number | null;
   maxOutlier: number;
 }) {
-  const shareOfPeriodPct =
-    typeof outlier.shareOfPeriodPct === "number" &&
-    Number.isFinite(outlier.shareOfPeriodPct)
-      ? outlier.shareOfPeriodPct
-      : Number.isFinite(periodTotalUsd) &&
-          periodTotalUsd !== null &&
-          periodTotalUsd > 0 &&
-          Number.isFinite(outlier.costUsd)
-        ? (outlier.costUsd / periodTotalUsd) * 100
-        : null;
-  const shareLabel =
-    typeof shareOfPeriodPct === "number" && Number.isFinite(shareOfPeriodPct)
-      ? `${Math.round(shareOfPeriodPct)}%`
-      : "—";
+  const share = outlierShare(outlier, periodTotalUsd);
+  const shareLabel = share === null ? "—" : `${Math.round(share)}%`;
 
   return (
     <Link
@@ -376,13 +340,11 @@ function CostOutlierRow({
           <span className="insight-sub"> · {outlier.model}</span>
         ) : null}
       </span>
-      <span className="meter" aria-hidden>
-        <i className={`meter-fill-${level(outlier.costUsd, maxOutlier)}`} />
-      </span>
-      <span className="mono cost-outlier-share">{shareLabel}</span>
+      <Meter value={outlier.costUsd} max={maxOutlier} />
       <span className="mono cost-outlier-cost">
         {formatCostUsd(outlier.costUsd)}
       </span>
+      <span className="mono cost-outlier-share">{shareLabel}</span>
     </Link>
   );
 }

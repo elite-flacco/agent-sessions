@@ -72,6 +72,15 @@ export function runtime(value: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+// Quantize a value to a 0–10 bar/spark/heat fill step. Keeps dynamic sizing out
+// of inline styles by mapping onto the `meter-fill-N` / `spark-fill-N` /
+// `heat-fill-N` classes. Any positive value lands on at least step 1 so a
+// non-zero row never renders as empty.
+export function level(value: number, max: number): number {
+  if (max <= 0 || value <= 0) return 0;
+  return Math.max(1, Math.round((value / max) * 10));
+}
+
 /**
  * Shorten an absolute path for compact display by replacing the user's home
  * directory with `~` and trimming intermediate cache-version segments of the
