@@ -1255,27 +1255,25 @@
     margin-top: 0.9rem;
   }
   .insight-hero {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 1.25rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 0.9rem;
-    padding: 0.8rem 1.2rem;
     border: 1px solid var(--border);
     border-radius: 0.5rem;
     background: var(--card);
+    overflow: hidden;
   }
   .insight-kpi {
     display: grid;
     gap: 0.2rem;
-    padding-left: 1.25rem;
-    border-left: 1px solid var(--border);
+    align-content: center;
+    min-width: 0;
+    padding: 0.85rem 1rem;
     color: inherit;
     text-decoration: none;
   }
-  .insight-kpi:first-child {
-    padding-left: 0;
-    border-left: none;
+  .insight-kpi + .insight-kpi {
+    border-left: 1px solid var(--border);
   }
   .insight-kpi:hover .insight-kpi-label {
     color: var(--foreground);
@@ -1295,6 +1293,10 @@
   .insight-kpi-value {
     font-size: var(--text-xl);
     letter-spacing: -0.03em;
+  }
+  .insight-kpi-detail {
+    color: var(--muted-foreground);
+    line-height: var(--leading-normal);
   }
   .insight-card {
     display: grid;
@@ -1323,6 +1325,11 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.25rem;
+  }
+  .insight-estimate-note {
+    flex-basis: 100%;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .insight-sub {
     color: var(--muted-foreground);
@@ -1391,6 +1398,12 @@
     color: var(--muted-foreground);
     font-size: var(--text-sm);
     letter-spacing: 0;
+  }
+  .capability-evidence-note {
+    max-inline-size: 46rem;
+    margin-top: 0.35rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
   .capability-segments {
     display: flex;
@@ -2877,6 +2890,13 @@
     }
     .summary-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .insight-hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .insight-kpi + .insight-kpi {
+      border-top: 1px solid var(--border);
+      border-left: 0;
     }
     .metric {
       min-height: 6.25rem;

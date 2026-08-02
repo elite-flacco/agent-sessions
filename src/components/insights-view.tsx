@@ -35,8 +35,8 @@ export function InsightsView({ insights }: InsightsViewProps) {
         <div>
           <h1>Insights</h1>
           <p>
-            Observed skill and MCP activity alongside actionable cache and cost
-            signals.
+            Cost, cache, and capability usage with the evidence behind each
+            metric.
           </p>
         </div>
       </header>
@@ -114,15 +114,18 @@ function KpiTile({
   href,
   label,
   value,
+  detail,
 }: {
   href: string;
   label: string;
   value: string;
+  detail: string;
 }) {
   return (
     <a className="insight-kpi" href={href}>
       <span className="insight-kpi-label">{label}</span>
       <span className="insight-kpi-value">{value}</span>
+      <span className="insight-kpi-detail">{detail}</span>
     </a>
   );
 }
@@ -141,25 +144,36 @@ export function HeroStrip({ insights }: { insights: Insights }) {
     capabilities.installedCount > 0
       ? `${capabilities.installedUsedCount} / ${capabilities.installedCount}`
       : `${capabilities.used.length} used`;
-
-  const signals = heroSignals(insights);
+  const capabilityRange = capabilities.range === "7d" ? "7 days" : "30 days";
+  const adoptionDetail =
+    capabilities.installedCount > 0
+      ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used in ${capabilityRange}; complete providers only`
+      : `${capabilities.used.length} capabilities used in ${capabilityRange}; no complete inventory denominator`;
 
   return (
     <div className="insight-hero">
-      <KpiTile href="#insight-cost" label="Week cost" value={costValue} />
-      <KpiTile href="#insight-cache" label="Cache hit rate" value={hitValue} />
+      <KpiTile
+        href="#insight-cost"
+        label="Week cost"
+        value={costValue}
+        detail={
+          cost.week.totalUsd === null
+            ? "Unavailable when any usage is unpriced"
+            : "Priced total · last 7 days"
+        }
+      />
+      <KpiTile
+        href="#insight-cache"
+        label="Cache hit rate"
+        value={hitValue}
+        detail="Share of input served from cache · last 7 days"
+      />
       <KpiTile
         href="#insight-capability"
         label="Capability adoption"
         value={adoptionValue}
+        detail={adoptionDetail}
       />
-      {signals.length > 0 && (
-        <div className="insight-hero-signals">
-          {signals.map((signal, i) => (
-            <Signal key={`${signal.tone}-${i}`} signal={signal} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -206,14 +220,18 @@ function CacheCard({ insights }: { insights: Insights }) {
       <div className="insight-savings">
         <strong>
           {cache.week.savedUsd === null
-            ? "Unavailable"
-            : `${formatCostUsd(cache.week.savedUsd)} saved`}
+            ? "Avoided-spend estimate unavailable"
+            : `${formatCostUsd(cache.week.savedUsd)} estimated spend avoided by cached input`}
         </strong>
         <span className="insight-sub">
           {cache.week.savedSharePct === null
-            ? "Requires full pricing"
-            : `${Math.round(cache.week.savedSharePct)}% of gross cost`}
+            ? "Requires complete model pricing"
+            : `${Math.round(cache.week.savedSharePct)}% of estimated model cost without cached reads`}
         </span>
+        <p className="insight-estimate-note">
+          Estimate reprices cached input at full input rates; it is not an
+          amount charged.
+        </p>
       </div>
 
       {cache.week.byModel.length ? (
