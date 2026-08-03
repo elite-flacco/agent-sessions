@@ -89,7 +89,10 @@ describe("InsightSparkline", () => {
     );
     const slots = container.querySelectorAll(".spark-slot");
     expect(slots).toHaveLength(3);
-    expect(container.querySelector(".spark-fill-10")).not.toBeNull();
+    // The max value (10) fills its slot to 100% height.
+    expect(
+      container.querySelector('.spark-slot i[style*="height: 100%"]'),
+    ).not.toBeNull();
   });
 
   test("renders nothing when every value is null or empty", () => {

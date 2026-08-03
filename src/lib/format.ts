@@ -72,9 +72,9 @@ export function runtime(value: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-// Quantize a value to a 0–10 bar/spark/heat fill step. Keeps dynamic sizing out
-// of inline styles by mapping onto the `meter-fill-N` / `spark-fill-N` /
-// `heat-fill-N` classes. Any positive value lands on at least step 1 so a
+// Quantize a value to a 0–10 fill step. `Meter`/`Sparkline` turn the result
+// into an inline percent (width/height); the heatmap turns it into a
+// `heat-fill-N` class. Any positive value lands on at least step 1 so a
 // non-zero row never renders as empty.
 export function level(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0;
