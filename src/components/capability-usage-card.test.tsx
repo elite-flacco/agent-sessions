@@ -5,7 +5,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { CapabilitiesInsight } from "@/lib/queries";
 import { CapabilityUsageCard } from "./capability-usage-card";
-import styles from "./capability-usage-card.module.css";
 
 const replace = vi.fn();
 let query = "";
@@ -192,7 +191,7 @@ describe("CapabilityUsageCard", () => {
     // complete, so its observed zero stays a real zero.
     const row = screen.getAllByRole("row")[2];
     expect(row.querySelector('[title="Pi: coverage incomplete"]')).toHaveClass(
-      styles.cellUnknown,
+      "is-unknown",
     );
     expect(
       row.querySelector('[title="Zcode: coverage incomplete"]'),

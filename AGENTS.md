@@ -27,8 +27,7 @@ Relay is a private, loopback-only dashboard for coding-agent sessions, usage, ca
 - `src/lib/transcript.ts`: on-demand transcript reading and redaction.
 - `src/lib/pricing.ts`: dated, sourced model pricing and model normalization.
 - `src/lib/agent-inventory/`: live global capability and scheduled-task discovery; never persisted by the collector.
-- `src/app/globals.css`: semantic design tokens, base element styles, and shared primitives/layouts used across 3+ components.
-- `src/components/*.module.css`: co-located layout for a single component (grids, pseudo-elements, responsive overrides). CSS Modules auto-scope; reference via `styles.*`.
+- `src/app/globals.css`: semantic design tokens and shared component classes.
 
 ## Collector and privacy invariants
 
@@ -95,10 +94,10 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 
 - Keep browsing filters URL-backed and use the shared sidebar.
 - `router.refresh()` only rereads SQLite. Pages that must show fresh local activity must also call the shared throttled `refreshIngestedData()`; use `DASHBOARD_REFRESH_INTERVAL_MS` for polling and ingestion cadence.
-- Styling lives in three tiers: shared primitives/layouts in `src/app/globals.css` (used by 3+ components), component-specific layout in a co-located `*.module.css` next to its component, and Tailwind utilities backed by the semantic `@theme inline` tokens (e.g. `flex gap-2`, `text-muted-foreground`) for trivial one-off spacing/layout with no states or breakpoints. Reach for a new global class only when at least three components share it.
-- Prefer co-locating single-use component layout in `*.module.css` over adding to `globals.css`. Move the component's responsive `@media` overrides into the same module file.
+- Use semantic tokens and component classes from `src/app/globals.css`. Component CSS lives there, not in co-located `*.module.css` files.
+- Prefer Tailwind utilities backed by the semantic `@theme inline` tokens (e.g. `flex gap-2`, `text-muted-foreground`) for trivial one-off spacing and layout. Add a `globals.css` class when the styling has states, breakpoints, pseudo-elements, or more than one consumer.
 - Do not add raw Tailwind palette colors, arbitrary values, or `dark:` variants. Inline styles are only permitted for data-driven values that can't be a class (e.g. a meter fill width derived from a runtime ratio).
-- For the heatmap, use the quantized `heat-fill-N` classes (a stepped color ramp, shared across overview and capability views). Meter and sparkline fills are derived inline from `level()` in `src/lib/format.ts`.
+- For the heatmap, use the quantized `heat-fill-N` classes. Meter and sparkline fills are derived inline from `level()` in `src/lib/format.ts`.
 - Verify visible behavior in a browser at relevant desktop and mobile widths.
 
 ## Plans and verification

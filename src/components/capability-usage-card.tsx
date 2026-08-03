@@ -11,29 +11,12 @@ import type {
 } from "@/lib/queries";
 import { type AgentProvider, agentProviders } from "@/lib/types";
 import { Meter } from "./charts";
-import styles from "./capability-usage-card.module.css";
 
 interface CapabilityUsageCardProps {
   capabilities: CapabilitiesInsight;
 }
 
 type CapabilityTab = "skills" | "mcps" | "providers" | "unused";
-type CapabilityKind = "skill" | "mcp";
-
-// Kind → module tint class for the meter bar and the grid dot.
-const meterTint: Record<CapabilityKind, string> = {
-  skill: styles.meterSkill,
-  mcp: styles.meterMcp,
-};
-const dotTint: Record<CapabilityKind, string> = {
-  skill: styles.dotSkill,
-  mcp: styles.dotMcp,
-};
-// Tab id → module tint class for the tab key swatch.
-const tabKeyTint: Partial<Record<CapabilityTab, string>> = {
-  skills: styles.tabKeySkills,
-  mcps: styles.tabKeyMcps,
-};
 
 const visibleRowCount = 8;
 const tabs: { id: CapabilityTab; label: string }[] = [
@@ -85,20 +68,18 @@ function UsedCapabilityRow({
   const detail = `${capability.invocations} ${useLabel} · ${capability.sessionCount} ${sessionLabel} · last used ${relativeTime(capability.lastUsedAt)}`;
 
   return (
-    <li className={styles.capabilityLadderRow}>
-      <span className={styles.capabilityName} title={capability.name}>
+    <li className="capability-ladder-row">
+      <span className="capability-name" title={capability.name}>
         {capability.name}
       </span>
       <Meter
         value={capability.invocations}
         max={max}
-        className={meterTint[capability.kind]}
+        className={`capability-meter is-${capability.kind}`}
         title={detail}
       />
-      <span className={styles.capabilityBarValue}>
-        {capability.invocations}
-      </span>
-      <span className={styles.capabilityLadderMeta}>
+      <span className="capability-bar-value">{capability.invocations}</span>
+      <span className="capability-ladder-meta">
         {capability.sessionCount} {sessionLabel} ·{" "}
         {relativeTime(capability.lastUsedAt)}
         <ProviderBadges providers={capability.providers} />
@@ -113,9 +94,9 @@ function UnusedCapabilityRow({
   capability: UnusedCapabilityInsight;
 }) {
   return (
-    <li className={styles.capabilityUnusedRow}>
-      <span className={styles.capabilityName}>{capability.name}</span>
-      <span className={styles.capabilityUsageMeta}>
+    <li className="capability-unused-row">
+      <span className="capability-name">{capability.name}</span>
+      <span className="capability-usage-meta">
         <span className="badge badge-5">
           {capability.kind === "skill" ? "Skill" : "MCP"}
         </span>
@@ -139,7 +120,7 @@ function Disclosure({
 }) {
   if (hidden === 0) return null;
   return (
-    <details className={styles.capabilityMore}>
+    <details className="capability-more">
       <summary>Show {hidden} more</summary>
       {children}
     </details>
@@ -161,11 +142,9 @@ function ProviderGridRows({
   return capabilities.map((capability) => (
     <tr key={`${capability.kind}:${capability.name}`}>
       <th scope="row">
-        <span className={styles.capabilityGridName}>
-          <span
-            className={`${styles.capabilityKindDot} ${dotTint[capability.kind]}`}
-          />
-          <span className={styles.capabilityName} title={capability.name}>
+        <span className="capability-grid-name">
+          <span className={`capability-kind-dot is-${capability.kind}`} />
+          <span className="capability-name" title={capability.name}>
             {capability.name}
           </span>
         </span>
@@ -178,8 +157,8 @@ function ProviderGridRows({
             <span
               className={
                 unknown
-                  ? `${styles.capabilityCell} ${styles.cellUnknown}`
-                  : `${styles.capabilityCell} heat-fill-${heatLevel(invocations, max)}`
+                  ? "capability-cell is-unknown"
+                  : `capability-cell heat-fill-${heatLevel(invocations, max)}`
               }
               title={
                 unknown
@@ -190,7 +169,7 @@ function ProviderGridRows({
           </td>
         );
       })}
-      <td className={styles.capabilityBarValue}>{capability.invocations}</td>
+      <td className="capability-bar-value">{capability.invocations}</td>
     </tr>
   ));
 }
@@ -257,14 +236,14 @@ export function CapabilityUsageCard({
 
   return (
     <section
-      className={`card insight-card ${styles.capabilityInsight}`}
+      className="card insight-card capability-insight"
       aria-labelledby="capability-insight-title"
     >
-      <div className={styles.capabilityInsightHead}>
+      <div className="capability-insight-head">
         <div>
           <h3 id="capability-insight-title">Capability adoption</h3>
           {capabilities.installedCount > 0 ? (
-            <p className={styles.capabilityHeadline}>
+            <p className="capability-headline">
               {capabilities.installedUsedCount}
               <small>
                 {" "}
@@ -273,55 +252,45 @@ export function CapabilityUsageCard({
               </small>
             </p>
           ) : (
-            <p className={styles.capabilityHeadline}>
+            <p className="capability-headline">
               {capabilities.used.length}
               <small> capabilities used · {rangeLabel}</small>
             </p>
           )}
-          <p className={styles.capabilityEvidenceNote}>
+          <p className="capability-evidence-note">
             Used skills plus used MCPs plus unused equals the installed total.
             Providers with incomplete scan coverage are excluded.
           </p>
         </div>
       </div>
 
-      <div className={styles.capabilityTabs} role="tablist">
-        {tabs.map(({ id, label }) => {
-          const keyTint = tabKeyTint[id];
-          return (
-            <button
-              aria-controls={`capability-panel-${id}`}
-              aria-selected={activeTab === id}
-              className={styles.capabilityTab}
-              id={`capability-tab-${id}`}
-              key={id}
-              onClick={() => selectTab(id)}
-              role="tab"
-              type="button"
-            >
-              {id === "providers" ? null : (
-                <span
-                  aria-hidden
-                  className={
-                    keyTint
-                      ? `${styles.capabilityTabKey} ${keyTint}`
-                      : styles.capabilityTabKey
-                  }
-                />
-              )}
-              {label}
-              {id === "providers" ? null : (
-                <b>{counts[id as keyof typeof counts]}</b>
-              )}
-            </button>
-          );
-        })}
+      <div className="capability-tabs" role="tablist">
+        {tabs.map(({ id, label }) => (
+          <button
+            aria-controls={`capability-panel-${id}`}
+            aria-selected={activeTab === id}
+            className={`capability-tab is-${id}`}
+            id={`capability-tab-${id}`}
+            key={id}
+            onClick={() => selectTab(id)}
+            role="tab"
+            type="button"
+          >
+            {id === "providers" ? null : (
+              <span aria-hidden className="capability-tab-key" />
+            )}
+            {label}
+            {id === "providers" ? null : (
+              <b>{counts[id as keyof typeof counts]}</b>
+            )}
+          </button>
+        ))}
       </div>
 
       {activeTab === "providers" ? (
         <div
           aria-labelledby="capability-tab-providers"
-          className={styles.capabilityPanel}
+          className="capability-panel"
           id="capability-panel-providers"
           role="tabpanel"
         >
@@ -331,8 +300,8 @@ export function CapabilityUsageCard({
             </p>
           ) : (
             <>
-              <div className={styles.capabilityGridScroll}>
-                <table className={styles.capabilityGrid}>
+              <div className="capability-grid-scroll">
+                <table className="capability-grid">
                   <caption className="sr-only">
                     Capability invocations per provider, most used first
                   </caption>
@@ -359,8 +328,8 @@ export function CapabilityUsageCard({
               <Disclosure
                 hidden={Math.max(0, gridRows.length - visibleRowCount)}
               >
-                <div className={styles.capabilityGridScroll}>
-                  <table className={styles.capabilityGrid}>
+                <div className="capability-grid-scroll">
+                  <table className="capability-grid">
                     <tbody>
                       <ProviderGridRows
                         capabilities={gridRows.slice(visibleRowCount)}
@@ -371,20 +340,18 @@ export function CapabilityUsageCard({
                   </table>
                 </div>
               </Disclosure>
-              <div className={styles.capabilityLegend}>
+              <div className="capability-legend">
                 <span>
                   Less
-                  <i className={`${styles.capabilityCell} heat-fill-0`} />
-                  <i className={`${styles.capabilityCell} heat-fill-3`} />
-                  <i className={`${styles.capabilityCell} heat-fill-6`} />
-                  <i className={`${styles.capabilityCell} heat-fill-10`} />
+                  <i className="capability-cell heat-fill-0" />
+                  <i className="capability-cell heat-fill-3" />
+                  <i className="capability-cell heat-fill-6" />
+                  <i className="capability-cell heat-fill-10" />
                   More
                 </span>
                 {incompleteCoverage.length > 0 ? (
                   <span>
-                    <i
-                      className={`${styles.capabilityCell} ${styles.cellUnknown}`}
-                    />
+                    <i className="capability-cell is-unknown" />
                     coverage incomplete
                   </span>
                 ) : null}
@@ -395,7 +362,7 @@ export function CapabilityUsageCard({
       ) : activeTab === "unused" ? (
         <div
           aria-labelledby="capability-tab-unused"
-          className={styles.capabilityPanel}
+          className="capability-panel"
           id="capability-panel-unused"
           role="tabpanel"
         >
@@ -407,7 +374,7 @@ export function CapabilityUsageCard({
             </p>
           ) : (
             <>
-              <ul className={styles.capabilityPanelList}>
+              <ul className="capability-panel-list">
                 {capabilities.unused
                   .slice(0, visibleRowCount)
                   .map((capability) => (
@@ -423,7 +390,7 @@ export function CapabilityUsageCard({
                   capabilities.unused.length - visibleRowCount,
                 )}
               >
-                <ul className={styles.capabilityPanelList}>
+                <ul className="capability-panel-list">
                   {capabilities.unused
                     .slice(visibleRowCount)
                     .map((capability) => (
@@ -437,7 +404,7 @@ export function CapabilityUsageCard({
             </>
           )}
           {incompleteCoverage.length > 0 ? (
-            <div className={styles.capabilityCoverage} role="note">
+            <div className="capability-coverage" role="note">
               {incompleteCoverage.map(({ provider, state, message }) => (
                 <p key={provider}>
                   {providerLabels[provider]} coverage {state}:{" "}
@@ -451,7 +418,7 @@ export function CapabilityUsageCard({
       ) : (
         <div
           aria-labelledby={`capability-tab-${activeTab}`}
-          className={styles.capabilityPanel}
+          className="capability-panel"
           id={`capability-panel-${activeTab}`}
           role="tabpanel"
         >
@@ -463,7 +430,7 @@ export function CapabilityUsageCard({
             </p>
           ) : (
             <>
-              <ul className={styles.capabilityPanelList}>
+              <ul className="capability-panel-list">
                 {ladder.slice(0, visibleRowCount).map((capability) => (
                   <UsedCapabilityRow
                     capability={capability}
@@ -473,7 +440,7 @@ export function CapabilityUsageCard({
                 ))}
               </ul>
               <Disclosure hidden={Math.max(0, ladder.length - visibleRowCount)}>
-                <ul className={styles.capabilityPanelList}>
+                <ul className="capability-panel-list">
                   {ladder.slice(visibleRowCount).map((capability) => (
                     <UsedCapabilityRow
                       capability={capability}

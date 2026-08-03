@@ -11,7 +11,6 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import styles from "./sidebar.module.css";
 
 interface SidebarProps {
   connectedAgents: number;
@@ -21,15 +20,15 @@ interface SidebarProps {
 export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
   const pathname = usePathname();
   return (
-    <aside className={styles.sidebar}>
-      <div className={styles.brandBlock}>
-        <div className={styles.brandMark}>R</div>
-        <div className={styles.brandCopy}>
+    <aside className="relay-sidebar">
+      <div className="brand-block">
+        <div className="brand-mark">R</div>
+        <div className="brand-copy">
           <strong>Relay</strong>
           <span>Agent operations</span>
         </div>
       </div>
-      <nav aria-label="Primary navigation" className={styles.primaryNav}>
+      <nav aria-label="Primary navigation" className="primary-nav">
         <NavLink
           href="/"
           active={pathname === "/"}
@@ -61,8 +60,8 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           label="Agent setup"
         />
       </nav>
-      <div className={styles.sidebarFooter}>
-        <div className={styles.connectionCard}>
+      <div className="sidebar-footer">
+        <div className="connection-card">
           <CircleDot size={14} />
           <div>
             <strong>{connectedAgents} agents connected</strong>
@@ -73,8 +72,8 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
             </span>
           </div>
         </div>
-        <div className={styles.profileRow}>
-          <div className={styles.avatar}>SS</div>
+        <div className="profile-row">
+          <div className="avatar">SS</div>
           <div>
             <strong>Shuang</strong>
             <span>Personal workspace</span>
@@ -99,9 +98,7 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={
-        active ? `${styles.navRow} ${styles.navActive}` : styles.navRow
-      }
+      className={active ? "nav-row nav-active" : "nav-row"}
       aria-current={active ? "page" : undefined}
     >
       {icon}
