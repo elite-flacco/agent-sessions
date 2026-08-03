@@ -298,7 +298,6 @@
   .profile-row,
   .connection-card,
   .nav-row,
-  .inspector-heading,
   .inspector-badges {
     display: flex;
     align-items: center;
@@ -527,8 +526,7 @@
   .workspace-loading {
     opacity: 0.6;
   }
-  .session-panel,
-  .inspector {
+  .session-panel {
     min-width: 0;
     border: 1px solid var(--border);
     border-radius: 0.5rem;
@@ -712,43 +710,9 @@
     margin-top: 0.8rem;
   }
 
-  .inspector {
-    padding: 1.1rem;
-  }
-  .inspector-heading {
-    justify-content: space-between;
-    color: var(--muted-foreground);
-  }
-  .inspector h2 {
-    margin-top: 0.55rem;
-  }
   .inspector-badges {
     gap: 0.45rem;
     margin-top: 0.8rem;
-  }
-  .inspector > p {
-    margin-top: 0.9rem;
-    color: var(--muted-foreground);
-  }
-  .detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    padding-block: 1rem;
-  }
-  .detail-grid > div {
-    display: grid;
-    min-width: 0;
-    gap: 0.3rem;
-  }
-  .detail-grid strong {
-    overflow: hidden;
-    font-size: var(--text-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .empty-state {
     display: grid;
@@ -1101,6 +1065,9 @@
   }
   .transcript-tool .transcript-icon {
     color: var(--warning);
+  }
+  .transcript-result .transcript-icon {
+    color: var(--info);
   }
   .transcript-body {
     min-width: 0;
@@ -1720,30 +1687,20 @@
   .heat-fill-0 {
     background: var(--heat-0);
   }
-  .heat-fill-1 {
-    background: var(--heat-1);
-  }
+  .heat-fill-1,
   .heat-fill-2 {
     background: var(--heat-1);
   }
-  .heat-fill-3 {
-    background: var(--heat-2);
-  }
+  .heat-fill-3,
   .heat-fill-4 {
     background: var(--heat-2);
   }
-  .heat-fill-5 {
-    background: var(--heat-3);
-  }
+  .heat-fill-5,
   .heat-fill-6 {
     background: var(--heat-3);
   }
-  .heat-fill-7 {
-    background: var(--heat-4);
-  }
-  .heat-fill-8 {
-    background: var(--heat-4);
-  }
+  .heat-fill-7,
+  .heat-fill-8,
   .heat-fill-9 {
     background: var(--heat-4);
   }
@@ -2019,13 +1976,6 @@
     padding: 1rem 0.5rem;
     color: var(--muted-foreground);
     font-size: var(--text-sm);
-  }
-  .agent-origin-tag {
-    width: fit-content;
-    justify-self: start;
-    border: 1px solid currentColor;
-    background: transparent;
-    padding-inline: 0.45rem;
   }
   .agent-kind-label {
     display: inline-flex;
@@ -2445,10 +2395,6 @@
   .agent-inspector-duplicates code + code {
     margin-top: 0.35rem;
   }
-  .status-disabled,
-  .status-unavailable {
-    color: var(--warning);
-  }
   .agent-instruction {
     border-top: 1px solid var(--border);
   }
@@ -2780,6 +2726,8 @@
     width: fit-content;
     color: var(--muted-foreground);
   }
+  /* Only `disabled` needs emphasis; `enabled`/`installed`/`unavailable` are
+     intentionally bare and inherit the muted `--bare` color. */
   .agent-status-tag--disabled {
     color: var(--warning);
   }
@@ -2921,9 +2869,6 @@
     .agent-filter-row .search-control {
       grid-column: 1 / -1;
     }
-    .inspector {
-      order: 2;
-    }
   }
 }
 
@@ -3028,9 +2973,6 @@
     .transcript-body time {
       width: 100%;
       margin-left: 0;
-    }
-    .inspector {
-      margin-top: 0.2rem;
     }
     .agent-context-summary {
       align-items: flex-start;
