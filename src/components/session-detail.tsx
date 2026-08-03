@@ -46,7 +46,7 @@ export function SessionDetailView({
 
       <header className="detail-page-header">
         <div>
-          <span className="mono detail-session-id">
+          <span className="mono text-muted-foreground">
             {session.provider.toUpperCase()} · {session.externalId.slice(0, 12)}
           </span>
           <h1>{session.title}</h1>
@@ -61,10 +61,13 @@ export function SessionDetailView({
           </div>
         </div>
         <div className="detail-time">
-          <span title={relativeTime(session.startedAt)}>
+          <span
+            className="text-muted-foreground"
+            title={relativeTime(session.startedAt)}
+          >
             Started {absoluteTime(session.startedAt)}
           </span>
-          <strong>
+          <strong className="text-lg">
             {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
           </strong>
         </div>
@@ -134,14 +137,16 @@ export function SessionDetailView({
               <span className="eyebrow">Delegated work</span>
               <h2 id="subagents-title">Subagents</h2>
             </div>
-            <span>{subagents.length} sessions</span>
+            <span className="text-muted-foreground">
+              {subagents.length} sessions
+            </span>
           </header>
           <div className="session-children-list">
             {subagents.map((child) => (
               <Link key={child.id} href={`/sessions/${child.id}`}>
                 <div>
-                  <strong>{child.title}</strong>
-                  <span className="mono">
+                  <strong className="truncate text-sm">{child.title}</strong>
+                  <span className="mono text-muted-foreground">
                     {child.agentLabel ?? "Subagent"} ·{" "}
                     {elapsed(child.startedAt, child.endedAt ?? child.updatedAt)}
                     {child.costUsd != null
@@ -169,16 +174,13 @@ export function SessionDetailView({
         </p>
       </div>
 
-      <section
-        className="transcript-section"
-        aria-labelledby="transcript-title"
-      >
+      <section className="mt-6" aria-labelledby="transcript-title">
         <header className="transcript-heading">
           <div>
             <span className="eyebrow">Session log</span>
             <h2 id="transcript-title">Conversation and tool payloads</h2>
           </div>
-          <span>
+          <span className="text-muted-foreground">
             {transcript.entries.length} entries
             {transcript.truncated
               ? " · newest 500 shown; older entries remain in the source file"
@@ -216,7 +218,9 @@ function Detail({
   return (
     <div>
       <span className="eyebrow">{label}</span>
-      <strong className={mono ? "mono" : ""}>{value}</strong>
+      <strong className={mono ? "mono truncate text-xs" : "truncate text-xs"}>
+        {value}
+      </strong>
     </div>
   );
 }

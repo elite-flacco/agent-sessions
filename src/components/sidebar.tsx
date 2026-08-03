@@ -23,9 +23,9 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
     <aside className="relay-sidebar">
       <div className="brand-block">
         <div className="brand-mark">R</div>
-        <div className="brand-copy">
-          <strong>Relay</strong>
-          <span>Agent operations</span>
+        <div className="brand-copy stacked-copy">
+          <strong className="text-sm">Relay</strong>
+          <span className="text-muted-foreground">Agent operations</span>
         </div>
       </div>
       <nav aria-label="Primary navigation" className="primary-nav">
@@ -63,9 +63,11 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
       <div className="sidebar-footer">
         <div className="connection-card">
           <CircleDot size={14} />
-          <div>
-            <strong>{connectedAgents} agents connected</strong>
-            <span>
+          <div className="stacked-copy">
+            <strong className="text-foreground text-xs">
+              {connectedAgents} agents connected
+            </strong>
+            <span className="text-muted-foreground">
               {sourceErrors
                 ? `${sourceErrors} sources need attention`
                 : "Local data only"}
@@ -75,8 +77,8 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
         <div className="profile-row">
           <div className="avatar">SS</div>
           <div>
-            <strong>Shuang</strong>
-            <span>Personal workspace</span>
+            <strong className="text-xs">Shuang</strong>
+            <span className="text-muted-foreground">Personal workspace</span>
           </div>
         </div>
       </div>
