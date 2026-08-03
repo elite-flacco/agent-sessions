@@ -3,10 +3,19 @@
 import { ArrowDown, Bot, Check, CircleDot, Command, User } from "lucide-react";
 import { Fragment, useMemo, useRef, useState } from "react";
 import type { SessionTranscript, TranscriptEntry } from "@/lib/transcript";
+import styles from "./transcript-view.module.css";
 
 const CLAMP_CHARS = 700;
 
 type KindFilter = "all" | "conversation" | "tools";
+
+// Maps a transcript kind to its icon-tint module class.
+const kindTint: Record<TranscriptEntry["kind"], string> = {
+  user: styles.kindUser,
+  assistant: styles.kindAssistant,
+  tool: styles.kindTool,
+  result: styles.kindResult,
+};
 
 export function TranscriptView({
   transcript,
@@ -30,9 +39,9 @@ export function TranscriptView({
 
   return (
     <>
-      <div className="transcript-controls">
+      <div className={styles.transcriptControls}>
         <div
-          className="transcript-filter"
+          className={styles.transcriptFilter}
           role="group"
           aria-label="Filter transcript entries"
         >
@@ -47,8 +56,8 @@ export function TranscriptView({
               key={value}
               className={
                 filter === value
-                  ? "transcript-filter-btn transcript-filter-active"
-                  : "transcript-filter-btn"
+                  ? `${styles.transcriptFilterBtn} ${styles.transcriptFilterActive}`
+                  : styles.transcriptFilterBtn
               }
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
@@ -58,7 +67,7 @@ export function TranscriptView({
           ))}
         </div>
         <button
-          className="transcript-filter-btn"
+          className={styles.transcriptFilterBtn}
           onClick={() =>
             endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })
           }
@@ -67,7 +76,7 @@ export function TranscriptView({
           Jump to end
         </button>
       </div>
-      <div className="transcript-list">
+      <div className={styles.transcriptList}>
         <TranscriptEntries entries={entries} />
         {entries.length === 0 && (
           <p className="overview-empty">
@@ -91,7 +100,7 @@ function TranscriptEntries({ entries }: { entries: TranscriptEntry[] }) {
       const day = new Date(entry.occurredAt).toDateString();
       if (lastDay && day !== lastDay) {
         divider = (
-          <div className="transcript-day-divider" role="separator">
+          <div className={styles.transcriptDayDivider} role="separator">
             {new Date(entry.occurredAt).toLocaleDateString([], {
               weekday: "short",
               month: "short",
@@ -123,12 +132,14 @@ function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
       <Check size={15} />
     );
   return (
-    <article className={`transcript-entry transcript-${entry.kind}`}>
-      <div className="transcript-icon">{icon}</div>
-      <div className="transcript-body">
+    <article className={styles.transcriptEntry}>
+      <div className={`${styles.transcriptIcon} ${kindTint[entry.kind]}`}>
+        {icon}
+      </div>
+      <div className={styles.transcriptBody}>
         <header>
           <strong>{entry.title}</strong>
-          {entry.isError && <span className="payload-error">Error</span>}
+          {entry.isError && <span className={styles.payloadError}>Error</span>}
           {entry.occurredAt && (
             <time>
               {new Date(entry.occurredAt).toLocaleTimeString([], {
@@ -150,14 +161,14 @@ function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
 function ClampedContent({ content }: { content: string }) {
   const [showAll, setShowAll] = useState(false);
   if (content.length <= CLAMP_CHARS)
-    return <p className="transcript-content">{content}</p>;
+    return <p className={styles.transcriptContent}>{content}</p>;
   return (
     <>
-      <p className="transcript-content">
+      <p className={styles.transcriptContent}>
         {showAll ? content : `${content.slice(0, CLAMP_CHARS).trimEnd()}…`}
       </p>
       <button
-        className="transcript-clamp-toggle"
+        className={styles.transcriptClampToggle}
         onClick={() => setShowAll((value) => !value)}
       >
         {showAll
@@ -170,7 +181,7 @@ function ClampedContent({ content }: { content: string }) {
 
 function Payload({ label, value }: { label: string; value: string }) {
   return (
-    <details className="payload-disclosure">
+    <details className={styles.payloadDisclosure}>
       <summary>
         <CircleDot size={11} />
         {label}

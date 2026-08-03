@@ -16,6 +16,7 @@ import type {
 import type { SessionTranscript } from "@/lib/transcript";
 import { StatusLabel } from "./status-label";
 import { TranscriptView } from "./transcript-view";
+import styles from "./session-detail.module.css";
 
 interface SessionDetailViewProps {
   session: SessionDetail;
@@ -38,15 +39,15 @@ export function SessionDetailView({
   transcript,
 }: SessionDetailViewProps) {
   return (
-    <section className="relay-content session-detail-page">
-      <Link className="back-link" href="/sessions">
+    <section className={`relay-content ${styles.sessionDetailPage}`}>
+      <Link className={styles.backLink} href="/sessions">
         <ArrowLeft size={14} />
         Back to sessions
       </Link>
 
-      <header className="detail-page-header">
+      <header className={styles.detailPageHeader}>
         <div>
-          <span className="mono detail-session-id">
+          <span className={`mono ${styles.detailSessionId}`}>
             {session.provider.toUpperCase()} · {session.externalId.slice(0, 12)}
           </span>
           <h1>{session.title}</h1>
@@ -60,7 +61,7 @@ export function SessionDetailView({
             />
           </div>
         </div>
-        <div className="detail-time">
+        <div className={styles.detailTime}>
           <span title={relativeTime(session.startedAt)}>
             Started {absoluteTime(session.startedAt)}
           </span>
@@ -71,7 +72,7 @@ export function SessionDetailView({
       </header>
 
       {parent && (
-        <div className="session-parent-link card">
+        <div className={`${styles.sessionParentLink} card`}>
           <Users size={16} />
           <div>
             <span className="eyebrow">Main session</span>
@@ -80,7 +81,10 @@ export function SessionDetailView({
         </div>
       )}
 
-      <div className="session-detail-grid card" aria-label="Session details">
+      <div
+        className={`${styles.sessionDetailGrid} card`}
+        aria-label="Session details"
+      >
         <Detail
           label="Repository"
           value={session.repository ?? "Unavailable"}
@@ -126,7 +130,7 @@ export function SessionDetailView({
 
       {subagents.length > 0 && (
         <section
-          className="session-children card"
+          className={`${styles.sessionChildren} card`}
           aria-labelledby="subagents-title"
         >
           <header>
@@ -136,7 +140,7 @@ export function SessionDetailView({
             </div>
             <span>{subagents.length} sessions</span>
           </header>
-          <div className="session-children-list">
+          <div className={styles.sessionChildrenList}>
             {subagents.map((child) => (
               <Link key={child.id} href={`/sessions/${child.id}`}>
                 <div>
@@ -159,7 +163,7 @@ export function SessionDetailView({
         </section>
       )}
 
-      <div className="payload-notice">
+      <div className={styles.payloadNotice}>
         <ShieldCheck size={16} />
         <p>
           This transcript is read from local provider storage on demand. Common
@@ -170,10 +174,10 @@ export function SessionDetailView({
       </div>
 
       <section
-        className="transcript-section"
+        className={styles.transcriptSection}
         aria-labelledby="transcript-title"
       >
-        <header className="transcript-heading">
+        <header className={styles.transcriptHeading}>
           <div>
             <span className="eyebrow">Session log</span>
             <h2 id="transcript-title">Conversation and tool payloads</h2>
