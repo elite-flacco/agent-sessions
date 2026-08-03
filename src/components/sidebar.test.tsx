@@ -9,19 +9,25 @@ vi.mock("next/navigation", () => ({
 
 describe("Sidebar", () => {
   test("uses a narrower desktop rail with tighter menu spacing", () => {
-    const styles = readFileSync(
+    const globals = readFileSync(
       new URL("../app/globals.css", import.meta.url),
       "utf8",
     );
+    const moduleStyles = readFileSync(
+      new URL("./sidebar.module.css", import.meta.url),
+      "utf8",
+    );
 
-    expect(styles).toContain("--sidebar-width: 12.5rem;");
-    expect(styles).toContain("--sidebar-nav-gap: 0.2rem;");
-    expect(styles).toContain(
+    // The shell grid and sidebar sizing tokens stay global.
+    expect(globals).toContain("--sidebar-width: 12.5rem;");
+    expect(globals).toContain("--sidebar-nav-gap: 0.2rem;");
+    expect(globals).toContain(
       "grid-template-columns: var(--sidebar-width) minmax(0, 1fr);",
     );
-    expect(styles).toContain(`.primary-nav {
-    display: grid;
-    gap: var(--sidebar-nav-gap);`);
+    // The nav layout itself is co-located in the sidebar module.
+    expect(moduleStyles).toContain(`.primaryNav {
+  display: grid;
+  gap: var(--sidebar-nav-gap);`);
   });
 
   test("omits the upcoming settings row", () => {
