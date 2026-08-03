@@ -1728,7 +1728,7 @@ function UniformComparisonCell({ row }: { row: ComparisonRow }) {
         : Check;
 
   return (
-    <td colSpan={agentProviders.length} className="agent-all-agents-cell">
+    <td colSpan={agentProviders.length}>
       <details className="agent-compare-detail agent-all-agents-detail">
         <summary
           className={`agent-status-tag ${statusBadges[capability.status]}`}
@@ -1786,7 +1786,7 @@ function ScheduledTasksView({
   const tasks = scheduledTasksFor(inventories);
   const total = tasks.length;
   return (
-    <div className="agent-inventory-list">
+    <div>
       {total === 0 ? (
         <div className="card empty-state agent-empty-state">
           <h3>No scheduled tasks found across agents.</h3>
