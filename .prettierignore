@@ -1,5 +1,6 @@
 .next
 .worktrees
+.zcode
 coverage
 data
 node_modules

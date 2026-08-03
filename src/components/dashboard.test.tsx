@@ -48,16 +48,18 @@ describe("Dashboard session rows", () => {
       "utf8",
     );
 
-    expect(styles).toContain(`@media (max-width: 1200px) {
-  @layer components {
-    .session-filter-row {
+    // The 1200px block also carries unrelated inventory rules, so assert the
+    // filter-row pair sits inside it rather than matching the whole block.
+    const breakpoint = styles
+      .split("@media (max-width: 1200px) {")[1]
+      ?.split("\n}")[0];
+
+    expect(breakpoint).toContain(`.session-filter-row {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .session-filter-row .search-control {
+    }`);
+    expect(breakpoint).toContain(`.session-filter-row .search-control {
       grid-column: 1 / -1;
-    }
-  }
-}`);
+    }`);
   });
 
   test("uses the single-row desktop layout for all session filters", () => {

@@ -127,7 +127,7 @@ function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
       <div className="transcript-icon">{icon}</div>
       <div className="transcript-body">
         <header>
-          <strong>{entry.title}</strong>
+          <strong className="text-sm">{entry.title}</strong>
           {entry.isError && <span className="payload-error">Error</span>}
           {entry.occurredAt && (
             <time>

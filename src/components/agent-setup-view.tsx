@@ -331,7 +331,7 @@ function compareCatalogCapabilities(
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
   return (
-    <section className="relay-content agent-setup-page">
+    <section className="relay-content min-w-0">
       <header className="page-header">
         <div>
           <h1>Agent setup</h1>
@@ -438,7 +438,8 @@ function ContextSummary({
                 : "agent-context-metric"
             }
           >
-            <strong>{metric.value}</strong> <span>{metric.label}</span>
+            <strong>{metric.value}</strong>{" "}
+            <span className="text-muted-foreground">{metric.label}</span>
           </li>
         ))}
       </ul>
@@ -867,11 +868,13 @@ function InventoryView({
             ) : null}
           </nav>
         </aside>
-        <section className="agent-catalog" aria-label="Capability catalog">
+        <section className="min-w-0" aria-label="Capability catalog">
           <header className="agent-catalog-heading">
             <div>
-              <strong>{kindLabels[selectedKind]}</strong>
-              <span>{countLabel(selected.length, "item")}</span>
+              <strong className="text-sm">{kindLabels[selectedKind]}</strong>
+              <span className="text-muted-foreground">
+                {countLabel(selected.length, "item")}
+              </span>
             </div>
             <span className={`badge ${providerBadges[inventory.provider]}`}>
               {providerLabels[inventory.provider]}
@@ -1105,7 +1108,7 @@ function PluginSkillGroup({
     <details className="agent-plugin-group">
       <summary className="agent-catalog-grid">
         <span className="agent-plugin-group-name">
-          <span>
+          <span className="stacked-copy">
             <strong>{plugin}</strong>
           </span>
         </span>
@@ -1206,9 +1209,11 @@ function CapabilityInspector({
       <header className="agent-inspector-heading">
         <div>
           <KindIcon aria-hidden="true" size={16} />
-          <div>
+          <div className="stacked-copy">
             <strong>{capability.name}</strong>
-            <span>{capabilityKindLabels[capability.kind]}</span>
+            <span className="text-muted-foreground">
+              {capabilityKindLabels[capability.kind]}
+            </span>
           </div>
         </div>
         <Link
@@ -1245,17 +1250,21 @@ function CapabilityInspector({
         <div>
           <dt>Location</dt>
           <dd>
-            <code>{catalogLocationDetail(capability)}</code>
+            <code className="text-muted-foreground text-xs">
+              {catalogLocationDetail(capability)}
+            </code>
           </dd>
         </div>
       </dl>
       {duplicate ? (
         <section className="agent-inspector-duplicates">
           <header>
-            <strong>Duplicate installs</strong>
-            <span>{countLabel(duplicate.copies.length, "location")}</span>
+            <strong className="text-xs">Duplicate installs</strong>
+            <span className="text-muted-foreground">
+              {countLabel(duplicate.copies.length, "location")}
+            </span>
           </header>
-          <p>
+          <p className="text-muted-foreground">
             {duplicate.identicalContent
               ? "Copies have matching content."
               : "Copies may differ; review which install should take precedence."}
@@ -1410,7 +1419,9 @@ function ComparisonView({
             <div>
               <strong>Configuration warnings</strong>
             </div>
-            <span>Discovery could not fully trust these sources</span>
+            <span className="text-muted-foreground">
+              Discovery could not fully trust these sources
+            </span>
           </header>
           <div className="agent-warning-list">
             {attentionWarnings.map((warning: InventoryWarning) => (
@@ -1514,7 +1525,9 @@ function DuplicatesSection({
         <div>
           <strong>Duplicate installs</strong>
         </div>
-        <span>Same capability installed more than once in a single agent</span>
+        <span className="text-muted-foreground">
+          Same capability installed more than once in a single agent
+        </span>
       </header>
       <div className="agent-duplicate-region">
         <table className="agent-duplicate-table">
@@ -1594,7 +1607,7 @@ function ComparisonTableRow({
         <div className="agent-comparison-name">{row.name}</div>
         <div className="agent-comparison-metadata">
           <span
-            className={`agent-kind-label ${kindMarkers[row.kind]} agent-comparison-kind`}
+            className={`agent-kind-label ${kindMarkers[row.kind]} text-muted-foreground`}
           >
             <KindIcon aria-hidden="true" size={12} />
             {capabilityKindLabels[row.kind]}
@@ -1715,7 +1728,7 @@ function UniformComparisonCell({ row }: { row: ComparisonRow }) {
         : Check;
 
   return (
-    <td colSpan={agentProviders.length} className="agent-all-agents-cell">
+    <td colSpan={agentProviders.length}>
       <details className="agent-compare-detail agent-all-agents-detail">
         <summary
           className={`agent-status-tag ${statusBadges[capability.status]}`}
@@ -1773,7 +1786,7 @@ function ScheduledTasksView({
   const tasks = scheduledTasksFor(inventories);
   const total = tasks.length;
   return (
-    <div className="agent-inventory-list">
+    <div>
       {total === 0 ? (
         <div className="card empty-state agent-empty-state">
           <h3>No scheduled tasks found across agents.</h3>

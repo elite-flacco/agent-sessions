@@ -59,7 +59,7 @@ function Signal({ signal }: { signal: InsightSignal }) {
       role={signal.tone === "warning" ? "alert" : "status"}
     >
       <Sparkles size={13} />
-      <span>{signal.text}</span>
+      <span className="text-foreground">{signal.text}</span>
     </div>
   );
 }
@@ -193,7 +193,7 @@ function CacheCard({
       aria-label="Cache effectiveness"
     >
       <div className="insight-card-head">
-        <h3>Cache effectiveness</h3>
+        <h3 className="text-sm">Cache effectiveness</h3>
         <span className="mono">last {daysLabel}</span>
       </div>
 
@@ -256,7 +256,7 @@ function CostCard({
       aria-label="Cost outliers"
     >
       <div className="insight-card-head">
-        <h3>Cost outliers</h3>
+        <h3 className="text-sm">Cost outliers</h3>
         <span className="mono">last {daysLabel}</span>
       </div>
 

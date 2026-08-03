@@ -115,7 +115,9 @@ describe("CapabilityUsageCard", () => {
 
     // frontend-rules (2) tops the skills tab and fills it, even though the
     // MCP tab's github (4) is the larger number.
-    expect(document.querySelector(".meter-fill-10")).not.toBeNull();
+    expect(
+      document.querySelector('.meter i[style*="width: 100%"]'),
+    ).not.toBeNull();
   });
 
   test("writes only non-default tab selection to the URL", () => {

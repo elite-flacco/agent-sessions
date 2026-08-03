@@ -419,7 +419,7 @@ describe("AgentSetupView", () => {
     expect(container.querySelectorAll(".agent-plugin-group")).toHaveLength(0);
     expect(
       container.querySelectorAll(
-        ".agent-catalog .agent-source-group > .agent-source-group-body > .agent-catalog-row",
+        '[aria-label="Capability catalog"] .agent-source-group > .agent-source-group-body > .agent-catalog-row',
       ),
     ).toHaveLength(2);
   });

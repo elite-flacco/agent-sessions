@@ -181,9 +181,9 @@ export function OverviewView({
                 href={`/sessions?project=${encodeURIComponent(project.key)}`}
               >
                 <span className="project-list-marker" aria-hidden />
-                <div>
+                <div className="min-w-0">
                   <strong>{project.repository ?? "Unknown workspace"}</strong>
-                  <p>
+                  <p className="text-muted-foreground text-xs">
                     {project.sessionCount} sessions ·{" "}
                     {runtime(project.totalRuntimeMs)}
                   </p>
@@ -217,9 +217,9 @@ function SessionLine({
       >
         <Circle aria-hidden="true" fill="currentColor" size={6} />
       </span>
-      <div>
+      <div className="min-w-0">
         <strong>{session.title}</strong>
-        <p>
+        <p className="text-muted-foreground text-xs">
           {[
             providerLabels[session.provider],
             hideStatus
@@ -339,14 +339,16 @@ function SessionLength({
         </h3>
         <span>{`last ${rangeDaysLabel} · ${length.sessionCount} sessions`}</span>
       </div>
-      <div className="hist-list">
+      <div className="grid gap-2">
         {length.buckets.map((bucket) => (
           <div
             key={bucket.label}
             className="hist-row"
             title={`${bucket.count} sessions`}
           >
-            <span className="hist-label">{bucket.label}</span>
+            <span className="text-muted-foreground text-xs">
+              {bucket.label}
+            </span>
             <Meter value={bucket.count} max={maxBucket} />
             <span className="mono">{bucket.count}</span>
           </div>

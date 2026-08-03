@@ -94,9 +94,10 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 
 - Keep browsing filters URL-backed and use the shared sidebar.
 - `router.refresh()` only rereads SQLite. Pages that must show fresh local activity must also call the shared throttled `refreshIngestedData()`; use `DASHBOARD_REFRESH_INTERVAL_MS` for polling and ingestion cadence.
-- Use semantic tokens and component classes from `src/app/globals.css`.
-- Do not add raw Tailwind palette colors, arbitrary values, inline styles, or `dark:` variants.
-- For dynamic chart fills, use the quantized `meter-fill-N`, `spark-fill-N`, and `heat-fill-N` classes.
+- Use semantic tokens and component classes from `src/app/globals.css`. Component CSS lives there, not in co-located `*.module.css` files.
+- Prefer Tailwind utilities backed by the semantic `@theme inline` tokens (e.g. `flex gap-2`, `text-muted-foreground`) for trivial one-off spacing and layout. Add a `globals.css` class when the styling has states, breakpoints, pseudo-elements, or more than one consumer.
+- Do not add raw Tailwind palette colors, arbitrary values, or `dark:` variants. Inline styles are only permitted for data-driven values that can't be a class (e.g. a meter fill width derived from a runtime ratio).
+- For the heatmap, use the quantized `heat-fill-N` classes. Meter and sparkline fills are derived inline from `level()` in `src/lib/format.ts`.
 - Verify visible behavior in a browser at relevant desktop and mobile widths.
 
 ## Plans and verification
