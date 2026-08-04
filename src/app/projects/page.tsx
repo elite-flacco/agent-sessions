@@ -5,6 +5,8 @@ import {
   getCollectorHealth,
   getProjectDetail,
   getProjects,
+  parseOverviewRange,
+  parseProjectEvidenceFilter,
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +20,11 @@ export default async function ProjectsPage({
 }: ProjectsPageProps) {
   await refreshIngestedData();
   const params = await searchParams;
-  const key = Array.isArray(params.project)
-    ? params.project[0]
-    : params.project;
+  const first = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+  const key = first(params.project);
+  const range = parseOverviewRange(first(params.range));
+  const evidence = parseProjectEvidenceFilter(first(params.evidence));
   const health = getCollectorHealth();
   const projects = getProjects().filter(
     (project) => project.category === "project",
@@ -33,7 +37,7 @@ export default async function ProjectsPage({
       />
       <ProjectsView
         projects={projects}
-        selected={key ? getProjectDetail(key) : null}
+        selected={key ? getProjectDetail(key, range, evidence) : null}
       />
     </main>
   );

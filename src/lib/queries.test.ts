@@ -376,9 +376,91 @@ describe("project and overview queries", () => {
       state: "active",
       currentFocus: { title: "Fresh runner" },
       attention: [],
-      totalCostUsd: null,
+      range: "7d",
+      evidenceFilter: "all",
     });
     expect(detail?.project.repository).toBe("beacon");
+  });
+
+  it("scopes briefing rollups to the selected range", () => {
+    const stale = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, repository, branch, status, started_at, updated_at)
+        VALUES (?, 'codex', ?, 'beacon', 'feature/beacon', 'completed', ?, ?)`,
+      )
+      .run("project-old", "Old beacon run", stale, stale);
+    try {
+      // 20 days back: outside the 7d window, inside the 30d one.
+      expect(queries.getProjectDetail("beacon")?.windowSessionCount).toBe(1);
+      expect(
+        queries.getProjectDetail("beacon", "30d")?.windowSessionCount,
+      ).toBe(2);
+      expect(queries.getProjectDetail("beacon", "30d")?.costTrend).toHaveLength(
+        30,
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("project-old");
+    }
+  });
+
+  it("counts each session once in the project cost rollup", () => {
+    // A parent and its subagent both live in the project. Summing the subtree
+    // roll-ups would bill the child's spend twice.
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, parent_external_id, title, repository, branch, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, ?, 'beacon', 'feature/beacon', 'completed', ?, ?)`);
+    insert.run("cost-parent", null, "Parent run", now, now);
+    insert.run("cost-child", "cost-parent", "Subagent run", now, now);
+    const usage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      SELECT id, 'gpt-5', 0, 0, 0, 0, ? FROM sessions WHERE external_id = ?`);
+    usage.run(1, "cost-parent");
+    usage.run(2, "cost-child");
+    try {
+      const detail = queries.getProjectDetail("beacon");
+      expect(detail?.totalCostUsd).toBe(3);
+      expect(detail?.unpricedSessionCount).toBe(0);
+      // The subtree roll-up still credits the parent with both, so the
+      // "most expensive session" ranking sees 3 while the total stays 3.
+      expect(detail?.largestCostSession?.title).toBe("Parent run");
+      expect(detail?.largestCostSession?.costUsd).toBe(3);
+    } finally {
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id IN ('cost-parent', 'cost-child')",
+        )
+        .run();
+    }
+  });
+
+  it("filters briefing evidence down to sessions needing attention", () => {
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, repository, branch, status, status_reason, started_at, updated_at)
+        VALUES (?, 'zcode', ?, 'relay', 'main', 'failed', 'model_error', ?, ?)`,
+      )
+      .run("project-failed", "Failed run", now, now);
+    try {
+      const all = queries.getProjectDetail("relay", "7d", "all");
+      const attention = queries.getProjectDetail("relay", "7d", "attention");
+      expect(attention?.sessions.map((session) => session.title)).toEqual([
+        "Failed run",
+      ]);
+      expect(attention?.sessions.length).toBeLessThan(
+        all?.sessions.length ?? 0,
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("project-failed");
+    }
   });
 
   it("derives waiting and blocked project states from actionable evidence", () => {

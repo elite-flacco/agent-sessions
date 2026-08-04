@@ -726,7 +726,6 @@
   }
   .project-card-title,
   .project-provider-list,
-  .project-context-list > div,
   .project-state {
     display: flex;
     align-items: center;
@@ -760,6 +759,9 @@
   .project-briefing-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* Natural heights: paired cards hold very different amounts of evidence,
+       and stretching leaves a one-line card as a tall empty panel. */
+    align-items: start;
     gap: 0.8rem;
     margin-top: 1.25rem;
   }
@@ -827,31 +829,84 @@
   .project-attention-list a:hover {
     color: var(--accent);
   }
-  .project-metrics strong {
+  /* Grid items default to min-width: auto, so without this the value and note
+     push the track wider than the cell and clip mid-word instead of ellipsing.
+     The note also has to leave the shared `.metric` flex display: ellipsis has
+     no effect on a flex container's own anonymous text run. */
+  .project-metrics strong,
+  .project-metrics .metric > span:last-child {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .project-metrics .metric > span:last-child {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .project-metrics .metric-textual > strong {
+    font-size: var(--text-sm);
+    letter-spacing: normal;
+  }
+  .project-header-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.6rem;
+  }
+  .project-spark {
+    margin-top: 0.9rem;
+  }
+  .project-provider-split {
+    display: grid;
+    gap: 0.65rem;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .project-provider-split li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.65rem;
+  }
+  .project-provider-split span:last-child {
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
   }
   .project-evidence {
     margin-top: 0.8rem;
   }
-  .project-context-list {
+  .project-worktree-list {
     display: grid;
-    gap: 0.5rem;
-    margin-top: 0.8rem;
+    gap: 0.65rem;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    list-style: none;
   }
-  .project-context-list code {
+  .project-worktree-list li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.55rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.65rem;
+  }
+  .project-worktree-list strong {
+    display: block;
+    font-size: var(--text-xs);
+  }
+  .project-worktree-list code {
     color: var(--muted-foreground);
     font-size: var(--text-xs);
     overflow-wrap: anywhere;
   }
-  .project-context-list strong {
+  .project-worktree-list time {
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
     font-size: var(--text-xs);
+    white-space: nowrap;
   }
   .project-session-list > a {
     grid-template-columns: auto minmax(0, 1fr) auto;
