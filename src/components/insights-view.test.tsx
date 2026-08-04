@@ -219,9 +219,7 @@ describe("InsightsView", () => {
 
     expect(screen.getByText("Capability adoption")).toBeVisible();
     expect(
-      screen.getByText(
-        /9 of 14 installed capabilities used in 30 days; complete providers only/i,
-      ),
+      screen.getByText(/9 of 14 installed capabilities used in 30 days/i),
     ).toBeVisible();
   });
 

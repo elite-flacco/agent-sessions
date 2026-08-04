@@ -140,7 +140,7 @@ export function HeroStrip({
   const daysLabel = rangeDaysLabel(range);
   const adoptionDetail =
     capabilities.installedCount > 0
-      ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used in ${capabilityRange}; complete providers only`
+      ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used in ${capabilityRange}`
       : `${capabilities.used.length} capabilities used in ${capabilityRange}; no complete inventory denominator`;
 
   return (
