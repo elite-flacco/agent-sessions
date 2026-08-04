@@ -7,7 +7,6 @@ import { useEffect } from "react";
 import { formatCostUsd, formatTokens } from "@/lib/format";
 import { providerBadges, providerLabels } from "@/lib/labels";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
-import { PRICING_RETRIEVED_AT } from "@/lib/pricing";
 import type { UsageBucket, UsageSummary, UsageWindow } from "@/lib/queries";
 import type { AgentProvider } from "@/lib/types";
 import { Meter, Sparkline } from "./charts";
@@ -38,9 +37,8 @@ export function UsageView({ usage }: UsageViewProps) {
         <div>
           <h1>Usage &amp; cost</h1>
           <p>
-            API-equivalent estimates from public per-token rates (pricing
-            recorded {PRICING_RETRIEVED_AT}); subscription plans bill
-            differently. Pi costs are provider-reported.
+            API-equivalent estimates from public per-token rates; subscription
+            plans bill differently. Pi costs are provider-reported.
           </p>
         </div>
       </header>

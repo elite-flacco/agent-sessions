@@ -1,7 +1,7 @@
 // Versioned local pricing table. Rates are USD per million tokens, recorded
-// from public pricing pages on the retrieval date below; costs derived from
-// them are API-equivalent estimates, not billed amounts (subscription plans
-// don't meter per token). Update this table when providers change pricing —
+// from the public pricing page each entry links as its source; costs derived
+// from them are API-equivalent estimates, not billed amounts (subscription
+// plans don't meter per token). Update this table when providers change pricing —
 // costs are computed at query time, so corrections apply retroactively.
 
 import type { ModelUsage } from "./types";
@@ -15,14 +15,12 @@ export interface PricingEntry {
   effectiveFrom: string;
   effectiveTo?: string;
   source: string;
-  retrievedAt: string;
 }
 
 const ANTHROPIC_SOURCE =
   "https://platform.claude.com/docs/en/about-claude/models/overview";
 const OPENAI_SOURCE = "https://developers.openai.com/api/docs/pricing";
 const ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing";
-const RETRIEVED = "2026-07-12";
 
 // Anthropic cache rates: read 0.1x input, write 1.25x input (5-minute TTL,
 // the Claude Code default). OpenAI publishes an explicit cache-write rate
@@ -37,7 +35,15 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 12.5,
     effectiveFrom: "2026-06-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
+  },
+  {
+    model: "claude-opus-5",
+    inputPerMTok: 5,
+    outputPerMTok: 25,
+    cacheReadPerMTok: 0.5,
+    cacheWritePerMTok: 6.25,
+    effectiveFrom: "2026-08-01",
+    source: ANTHROPIC_SOURCE,
   },
   {
     model: "claude-opus-4-8",
@@ -47,7 +53,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 6.25,
     effectiveFrom: "2026-01-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-opus-4-7",
@@ -57,7 +62,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 6.25,
     effectiveFrom: "2026-01-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-opus-4-6",
@@ -67,7 +71,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 6.25,
     effectiveFrom: "2025-11-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-sonnet-5",
@@ -78,7 +81,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     effectiveFrom: "2026-04-01",
     effectiveTo: "2026-08-31",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-sonnet-5",
@@ -88,7 +90,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 3.75,
     effectiveFrom: "2026-09-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-sonnet-4-6",
@@ -98,7 +99,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 3.75,
     effectiveFrom: "2025-11-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "claude-haiku-4-5",
@@ -108,7 +108,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 1.25,
     effectiveFrom: "2025-10-01",
     source: ANTHROPIC_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.6-sol",
@@ -118,7 +117,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 6.25,
     effectiveFrom: "2026-06-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.6-terra",
@@ -128,7 +126,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 3.125,
     effectiveFrom: "2026-06-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.6-luna",
@@ -138,7 +135,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 1.25,
     effectiveFrom: "2026-06-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.5",
@@ -148,7 +144,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 5,
     effectiveFrom: "2026-02-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.5-pro",
@@ -158,7 +153,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 0,
     effectiveFrom: "2026-02-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.4",
@@ -168,7 +162,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 2.5,
     effectiveFrom: "2025-12-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.4-mini",
@@ -178,7 +171,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 0.75,
     effectiveFrom: "2025-12-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.4-nano",
@@ -188,7 +180,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 0,
     effectiveFrom: "2025-12-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5.4-pro",
@@ -198,7 +189,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 0,
     effectiveFrom: "2025-12-01",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "gpt-5-mini",
@@ -208,7 +198,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 0.25,
     effectiveFrom: "2025-08-07",
     source: OPENAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   {
     model: "glm-5.2",
@@ -218,7 +207,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 1.4,
     effectiveFrom: "2026-05-01",
     source: ZAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
   // Distinct deployable source (a user-configured provider routing the same
   // underlying GLM-5.2 via "z-ai/"), kept separate from the built-in glm-5.2.
@@ -231,11 +219,8 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheWritePerMTok: 1.4,
     effectiveFrom: "2026-05-01",
     source: ZAI_SOURCE,
-    retrievedAt: RETRIEVED,
   },
 ];
-
-export const PRICING_RETRIEVED_AT = RETRIEVED;
 
 // Reduce raw provider model strings to the canonical ids used in the table.
 // Routing prefixes are stripped (a leading UUID segment from the Zcode routing
