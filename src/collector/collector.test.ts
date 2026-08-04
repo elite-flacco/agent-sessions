@@ -245,6 +245,52 @@ describe("collector sync", () => {
     expect(result.locked).toBe(false);
   });
 
+  it("keeps the last successful Zcode capability coverage during a sync", async () => {
+    const filePath = path.join(directory, "coverage-in-progress.jsonl");
+    await fs.writeFile(
+      filePath,
+      claudeRow({ sessionId: "coverage-in-progress", uuid: "u1" }),
+    );
+    let parsing = false;
+    let releaseParse: (() => void) | undefined;
+    const parsePaused = new Promise<void>((resolve) => {
+      releaseParse = resolve;
+    });
+    const adapter: ProviderAdapter = {
+      provider: "claude",
+      discover: async () => [filePath],
+      parse: async () => {
+        parsing = true;
+        await parsePaused;
+        return { errors: [], sessions: [] };
+      },
+    };
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 0, 0, 1)`,
+      )
+      .run(new Date().toISOString());
+
+    const sync = collector.syncAll({ adapters: [adapter] });
+    await until(() => parsing);
+
+    try {
+      expect(
+        sqlite
+          .prepare(
+            `SELECT capability_reconciliation_complete complete
+             FROM adapter_scans WHERE provider = 'zcode'`,
+          )
+          .get(),
+      ).toEqual({ complete: 1 });
+    } finally {
+      releaseParse?.();
+      await sync;
+    }
+  });
+
   it("records per-adapter scan state", async () => {
     const scan = sqlite
       .prepare("SELECT * FROM adapter_scans WHERE provider = 'claude'")

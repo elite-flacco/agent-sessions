@@ -68,7 +68,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "14";
+const NORMALIZATION_VERSION = "15";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -688,15 +688,6 @@ async function runSync(options: SyncOptions): Promise<SyncTotals> {
     return totals;
   }
   try {
-    // Clear the prior result before doing any work. If this run exits before
-    // authoritative reconciliation completes, Insights must stay conservative.
-    sqlite
-      .prepare(
-        `UPDATE adapter_scans
-         SET capability_reconciliation_complete = 0
-         WHERE provider = 'zcode'`,
-      )
-      .run();
     const selectedAdapters = options.adapters ?? adapters;
     const capabilityLookups =
       options.capabilityLookups ??
