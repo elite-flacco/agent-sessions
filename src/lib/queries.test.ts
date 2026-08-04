@@ -369,6 +369,43 @@ describe("project and overview queries", () => {
     expect(tasks[0].status).toBe("incomplete");
   });
 
+  it("builds a briefing only for safely established projects", () => {
+    expect(queries.getProjectDetail("(tasks)")).toBeNull();
+    const detail = queries.getProjectDetail("beacon");
+    expect(detail).toMatchObject({
+      state: "active",
+      currentFocus: { title: "Fresh runner" },
+      attention: [],
+      totalCostUsd: null,
+    });
+    expect(detail?.project.repository).toBe("beacon");
+  });
+
+  it("derives waiting and blocked project states from actionable evidence", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, repository, branch, status, started_at, updated_at)
+      VALUES (?, 'zcode', ?, 'relay', 'main', ?, ?, ?)`);
+    insert.run(
+      "project-waiting",
+      "Waiting for review",
+      "needs_attention",
+      now,
+      now,
+    );
+    try {
+      const waiting = queries.getProjectDetail("relay");
+      expect(waiting?.state).toBe("waiting");
+      expect(waiting?.attention.map((session) => session.title)).toContain(
+        "Waiting for review",
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("project-waiting");
+    }
+  });
+
   it("summarizes daily and weekly overview windows", () => {
     const overview = queries.getOverview();
     expect(overview.today.sessions).toBe(1);

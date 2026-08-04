@@ -688,6 +688,177 @@
     margin-top: 0.8rem;
   }
 
+  .projects-page {
+    max-width: 78rem;
+  }
+  .projects-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .projects-header p,
+  .project-muted {
+    color: var(--muted-foreground);
+  }
+  .projects-list {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1.5rem;
+  }
+  .project-card {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+  }
+  .project-card:hover {
+    border-color: var(--border-hover);
+    background: var(--card-hover);
+  }
+  .project-card time,
+  .project-timeline time {
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
+  .project-card-title,
+  .project-provider-list,
+  .project-context-list > div,
+  .project-state {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .project-card-title h2 {
+    font-size: var(--text-lg);
+  }
+  .project-card-title svg:last-child,
+  .project-state-active {
+    color: var(--success);
+  }
+  .project-provider-list {
+    margin-top: 0.65rem;
+  }
+  .project-briefing-header {
+    margin-top: 1.5rem;
+  }
+  .project-state {
+    font-size: var(--text-sm);
+  }
+  .project-state-waiting {
+    color: var(--info);
+  }
+  .project-state-blocked {
+    color: var(--warning);
+  }
+  .project-state-complete {
+    color: var(--muted-foreground);
+  }
+  .project-briefing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+    margin-top: 1.25rem;
+  }
+  .project-briefing-card,
+  .project-evidence {
+    padding: 1rem 1.1rem;
+  }
+  .project-briefing-card h2,
+  .project-evidence h2 {
+    margin-top: 0.35rem;
+    font-size: var(--text-sm);
+  }
+  .project-timeline,
+  .project-attention-list,
+  .project-session-list {
+    display: grid;
+    gap: 0.65rem;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .project-timeline li,
+  .project-attention-list li,
+  .project-session-list > a {
+    display: grid;
+    align-items: start;
+    gap: 0.55rem;
+  }
+  .project-timeline li {
+    grid-template-columns: var(--status-dot-size) minmax(0, 1fr) auto;
+  }
+  .project-timeline strong {
+    display: block;
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .project-session-list strong {
+    display: block;
+    overflow: hidden;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-timeline p,
+  .project-session-list p {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .project-attention-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-top: 1px solid var(--border);
+    padding-top: 0.65rem;
+  }
+  .project-attention-list a,
+  .project-session-list a:hover strong {
+    color: var(--foreground);
+  }
+  .project-attention-list a {
+    overflow: hidden;
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-attention-list a:hover {
+    color: var(--accent);
+  }
+  .project-metrics strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-metrics .metric > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-evidence {
+    margin-top: 0.8rem;
+  }
+  .project-context-list {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+  .project-context-list code {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+  }
+  .project-context-list strong {
+    font-size: var(--text-xs);
+  }
+  .project-session-list > a {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    border-top: 1px solid var(--border);
+    padding-top: 0.65rem;
+  }
+
   .inspector-badges {
     gap: 0.45rem;
     margin-top: 0.8rem;
@@ -2833,6 +3004,18 @@
     .project-row > :nth-child(n + 3) {
       display: none;
     }
+  }
+}
+
+@media (max-width: 42rem) {
+  .project-briefing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .project-card {
+    display: grid;
   }
 }
 

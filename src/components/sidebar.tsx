@@ -5,6 +5,7 @@ import {
   Blocks,
   CircleDot,
   Database,
+  FolderKanban,
   LayoutDashboard,
   Sparkles,
 } from "lucide-react";
@@ -37,9 +38,15 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
         />
         <NavLink
           href="/sessions"
-          active={pathname.startsWith("/sessions") || pathname === "/projects"}
+          active={pathname.startsWith("/sessions")}
           icon={<Database size={15} />}
           label="Sessions"
+        />
+        <NavLink
+          href="/projects"
+          active={pathname === "/projects"}
+          icon={<FolderKanban size={15} />}
+          label="Projects"
         />
         <NavLink
           href="/usage"

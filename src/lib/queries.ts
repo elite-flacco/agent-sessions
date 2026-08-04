@@ -399,6 +399,32 @@ export interface ProjectSummary {
   lastActivityAt: string;
 }
 
+export type ProjectState = "active" | "waiting" | "blocked" | "complete";
+
+export interface ProjectActivity {
+  kind: "started" | "file" | "command" | "completed";
+  title: string;
+  detail: string | null;
+  occurredAt: string;
+  sessionId: number;
+}
+
+/**
+ * The briefing data for one safely-grouped project. A project exists only
+ * when Relay observed a repository together with branch or local Git evidence;
+ * titles and activity remain provider-derived evidence rather than task plans.
+ */
+export interface ProjectDetail {
+  project: ProjectSummary;
+  state: ProjectState;
+  currentFocus: SessionListItem | null;
+  attention: SessionListItem[];
+  sessions: SessionListItem[];
+  activity: ProjectActivity[];
+  totalCostUsd: number | null;
+  largestCostSession: SessionListItem | null;
+}
+
 interface ProjectRow {
   repository: string | null;
   sessionCount: number;
@@ -562,6 +588,67 @@ export function getProjectSessions(key: string): SessionListItem[] {
     ORDER BY started_at DESC LIMIT 50`,
     )
     .all(...params) as SessionListItem[];
+}
+
+function projectState(sessions: SessionListItem[]): ProjectState {
+  if (sessions.some((session) => session.status === "running")) return "active";
+  if (sessions.some((session) => session.status === "needs_attention")) {
+    return "waiting";
+  }
+  if (
+    sessions.some(
+      (session) =>
+        session.status === "failed" || session.status === "interrupted",
+    )
+  ) {
+    return "blocked";
+  }
+  return "complete";
+}
+
+export function getProjectDetail(key: string): ProjectDetail | null {
+  const project = getProjects().find(
+    (candidate) => candidate.category === "project" && candidate.key === key,
+  );
+  if (!project) return null;
+  const sessions = getProjectSessions(key);
+  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+  for (const session of sessions)
+    session.costUsd = costs.get(session.id) ?? null;
+  const costKnown = sessions.every((session) => session.costUsd !== null);
+  const totalCostUsd = costKnown
+    ? sessions.reduce((total, session) => total + (session.costUsd ?? 0), 0)
+    : null;
+  const largestCostSession =
+    sessions
+      .filter((session) => session.costUsd !== null)
+      .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0))[0] ?? null;
+  const ids = sessions.map((session) => session.id);
+  const activity = ids.length
+    ? (sqlite
+        .prepare(
+          `SELECT session_id sessionId, kind, title, detail, occurred_at occurredAt
+           FROM activity_events
+           WHERE session_id IN (${ids.map(() => "?").join(", ")})
+             AND kind IN ('started', 'file', 'command', 'completed')
+           ORDER BY occurred_at DESC LIMIT 8`,
+        )
+        .all(...ids) as ProjectActivity[])
+    : [];
+  return {
+    project,
+    state: projectState(sessions),
+    currentFocus: sessions[0] ?? null,
+    attention: sessions
+      .filter((session) =>
+        ["needs_attention", "failed", "interrupted"].includes(session.status),
+      )
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    sessions,
+    activity,
+    totalCostUsd,
+    largestCostSession,
+  };
 }
 
 export interface OverviewPatterns {
