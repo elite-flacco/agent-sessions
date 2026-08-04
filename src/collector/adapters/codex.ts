@@ -27,7 +27,20 @@ function functionInput(value: unknown): unknown {
   try {
     return JSON.parse(value) as unknown;
   } catch {
-    return value;
+    // Recent Codex desktop sessions serialize the execution wrapper itself,
+    // e.g. `await tools.exec_command({"cmd":"sed ..."})`, rather than the
+    // command arguments as JSON. Extract only its command-string values so
+    // capability matching still sees the command that actually ran.
+    const commands = [
+      ...value.matchAll(/(?:"cmd"|'cmd'|\bcmd)\s*:\s*("(?:\\.|[^"\\])*")/g),
+    ].flatMap((match) => {
+      try {
+        return [JSON.parse(match[1]) as string];
+      } catch {
+        return [];
+      }
+    });
+    return commands.length ? commands : value;
   }
 }
 

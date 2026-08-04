@@ -687,6 +687,46 @@ describe("provider adapters", () => {
     ]);
   });
 
+  it("normalizes Codex execution-wrapper skill reads", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map([
+        ["/safe/links/frontend-rules/SKILL.md", "frontend-rules"],
+      ]),
+      mcpNames: new Map(),
+    };
+    const result = await parse(
+      codexAdapter,
+      [
+        {
+          type: "session_meta",
+          timestamp: "2026-08-02T10:00:00Z",
+          payload: { id: "codex-execution-wrapper", cwd: "/work/relay" },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-02T10:01:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "execution-wrapper-read",
+            name: "exec",
+            input:
+              'const result = await tools.exec_command({"cmd":"sed -n \'1,240p\' /safe/links/frontend-rules/SKILL.md","workdir":"/work/relay"});',
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      expect.objectContaining({
+        externalId: "skill-read:execution-wrapper-read:frontend-rules",
+        kind: "skill",
+        name: "frontend-rules",
+      }),
+    ]);
+  });
+
   it("skips capability evidence with missing or malformed timestamps", async () => {
     const lookup: CapabilityLookup = {
       skillFiles: new Map([
