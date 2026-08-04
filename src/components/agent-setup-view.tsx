@@ -46,7 +46,6 @@ export interface AgentSetupFilters {
   q?: string;
   provider?: AgentProvider;
   kind?: AgentSetupKind;
-  source?: InventorySource;
   status?: CapabilityStatus;
   selected?: string;
   discrepanciesOnly?: boolean;
@@ -199,7 +198,6 @@ export function parseAgentSetupFilters(
 ): AgentSetupFilters {
   const provider = first(params.provider);
   const kind = first(params.kind);
-  const source = first(params.source);
   const status = first(params.status);
   const view =
     first(params.view) === "compare"
@@ -222,16 +220,14 @@ export function parseAgentSetupFilters(
     kind: ["plugin", "skill", "mcp", "instruction"].includes(kind ?? "")
       ? (kind as AgentSetupKind)
       : undefined,
-    source:
-      view === "inventory" &&
-      inventorySources.includes(source as InventorySource)
-        ? (source as InventorySource)
+    // Status is a Compare-only control, so it is scoped here the same way
+    // provider is: an inventory URL carrying one would filter a list that
+    // offers no way to clear it.
+    status:
+      view === "compare" &&
+      ["enabled", "installed", "disabled", "unavailable"].includes(status ?? "")
+        ? (status as CapabilityStatus)
         : undefined,
-    status: ["enabled", "installed", "disabled", "unavailable"].includes(
-      status ?? "",
-    )
-      ? (status as CapabilityStatus)
-      : undefined,
     selected: view === "inventory" ? first(params.selected) : undefined,
     discrepanciesOnly: first(params.discrepancies) === "1" || undefined,
   };
@@ -251,10 +247,9 @@ function setupHref(
   if (next.q) params.set("q", next.q);
   if (next.provider) params.set("provider", next.provider);
   if (next.kind) params.set("kind", next.kind);
-  if (next.view === "inventory" && next.source) {
-    params.set("source", next.source);
+  if (next.view === "compare" && next.status) {
+    params.set("status", next.status);
   }
-  if (next.status) params.set("status", next.status);
   if (next.view === "inventory" && next.selected) {
     params.set("selected", next.selected);
   }
@@ -277,7 +272,6 @@ function matchesCapability(
   if (!ignoreKind && filters.kind && filters.kind !== capability.kind) {
     return false;
   }
-  if (filters.status && filters.status !== capability.status) return false;
   if (!filters.q) return true;
   const query = filters.q.toLocaleLowerCase();
   return [
@@ -348,7 +342,6 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             view: "inventory",
             comparisonMode: undefined,
             discrepanciesOnly: undefined,
-            source: undefined,
             selected: undefined,
           })}
           className={
@@ -365,7 +358,6 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             view: "compare",
             comparisonMode: "attention",
             discrepanciesOnly: undefined,
-            source: undefined,
             selected: undefined,
           })}
           className={
@@ -382,7 +374,6 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
             view: "tasks",
             comparisonMode: undefined,
             discrepanciesOnly: undefined,
-            source: undefined,
             selected: undefined,
           })}
           className={
@@ -620,67 +611,54 @@ function FilterForm({ filters }: { filters: AgentSetupFilters }) {
         // Compare is a provider-by-provider matrix, so it has no Agent filter:
         // every row already spans all providers, and narrowing to one would
         // drop the missing-from-that-provider rows that drift analysis is for.
-        <label className="agent-filter">
-          <span className="sr-only">Type</span>
-          <select
-            className="select"
-            name="kind"
-            defaultValue={filters.kind ?? ""}
-          >
-            <option value="">All types</option>
-            {Object.entries(kindLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+        // Status stays here and nowhere else: Inventory groups by source and
+        // flags the one exceptional status inline, so the only question a
+        // status control still answers — which providers a capability is
+        // broken or disabled on — is a cross-provider one.
+        <>
+          <label className="agent-filter">
+            <span className="sr-only">Type</span>
+            <select
+              className="select"
+              name="kind"
+              defaultValue={filters.kind ?? ""}
+            >
+              <option value="">All types</option>
+              {Object.entries(kindLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="agent-filter">
+            <span className="sr-only">Status</span>
+            <select
+              className="select"
+              name="status"
+              defaultValue={filters.status ?? ""}
+            >
+              <option value="">All statuses</option>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       ) : (
         <>
-          {/* Inventory selects provider and kind in the rail; preserve both
-              so a Status change or search keeps the current view. */}
+          {/* Inventory selects provider and kind in the rail; preserve both so
+              a search keeps the current view. */}
           {filters.provider ? (
             <input type="hidden" name="provider" value={filters.provider} />
           ) : null}
           {filters.kind ? (
             <input type="hidden" name="kind" value={filters.kind} />
           ) : null}
-          <label className="agent-filter">
-            <span className="sr-only">Source</span>
-            <select
-              className="select"
-              name="source"
-              defaultValue={filters.source ?? ""}
-            >
-              <option value="">All sources</option>
-              {inventorySources.map((source) => (
-                <option key={source} value={source}>
-                  {inventorySourceMeta[source].label}
-                </option>
-              ))}
-            </select>
-          </label>
         </>
       )}
-      <label className="agent-filter">
-        <span className="sr-only">Status</span>
-        <select
-          className="select"
-          name="status"
-          defaultValue={filters.status ?? ""}
-        >
-          <option value="">All statuses</option>
-          {Object.entries(statusLabels)
-            .filter(
-              ([value]) => value !== "disabled" || filters.view === "compare",
-            )
-            .map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-        </select>
-      </label>
       {filters.view === "compare" && !filters.comparisonMode ? (
         <label className="agent-discrepancy-toggle">
           <input
@@ -724,14 +702,10 @@ function InventoryView({
     );
   }
 
-  // Status + search + source filtered, but NOT kind — the rail owns kind
-  // selection and therefore remains visible while the catalog changes.
+  // Search filtered, but NOT kind — the rail owns kind selection and therefore
+  // remains visible while the catalog changes.
   const matched = inventory.capabilities
     .filter((capability) => matchesCapability(capability, filters, true))
-    .filter(
-      (capability) =>
-        !filters.source || inventorySourceFor(capability) === filters.source,
-    )
     .sort(compareCatalogCapabilities);
 
   const kindCounts = Object.fromEntries(
@@ -876,9 +850,6 @@ function InventoryView({
                 {countLabel(selected.length, "item")}
               </span>
             </div>
-            <span className={`badge ${providerBadges[inventory.provider]}`}>
-              {providerLabels[inventory.provider]}
-            </span>
           </header>
           {selectedKind === "instruction" && inventory.instructionFile ? (
             <details className="agent-instruction" open>
@@ -895,7 +866,6 @@ function InventoryView({
               <div className="agent-catalog-columns" aria-hidden="true">
                 <span>Name</span>
                 <span>Package / source</span>
-                <span>Status</span>
                 <span>Location / detail</span>
               </div>
               <div className="agent-capability-list">
@@ -957,15 +927,14 @@ function KindRailItem({
   );
 }
 
-// Whether the instruction file survives the active status/search filters. Kind
-// is deliberately not consulted: the rail owns that dimension, the same way
+// Whether the instruction file survives the active search filter. Kind is
+// deliberately not consulted: the rail owns that dimension, the same way
 // `matchesCapability` ignores it for the other kinds.
 function showsInstruction(
   inventory: AgentInventory,
   filters: AgentSetupFilters,
 ): boolean {
   if (!inventory.instructionFile) return false;
-  if (filters.status) return false;
   if (!filters.q) return true;
   const query = filters.q.toLocaleLowerCase();
   return [
@@ -1113,13 +1082,13 @@ function PluginSkillGroup({
           </span>
         </span>
         <span className="agent-catalog-source">{source}</span>
-        <span>
-          <span className={`badge ${statusBadges[status]}`}>
-            {statusLabels[status]}
-          </span>
-        </span>
         <span className="agent-catalog-detail">
           {countLabel(members.length, "skill")}
+          {status === "unavailable" ? (
+            <span className="agent-unavailable-inline">
+              {statusLabels.unavailable}
+            </span>
+          ) : null}
         </span>
       </summary>
       <div className="agent-plugin-group-members">
@@ -1151,8 +1120,6 @@ function CatalogCapabilityRow({
   selected: boolean;
   withinPlugin?: boolean;
 }) {
-  const source = inventorySourceFor(capability);
-  const sourceLabel = inventorySourceMeta[source].label;
   return (
     <Link
       href={setupHref(filters, { selected: capability.id })}
@@ -1166,15 +1133,9 @@ function CatalogCapabilityRow({
     >
       <span className="agent-catalog-name">
         <strong>{capability.name}</strong>
-        <span className="agent-row-source">{sourceLabel}</span>
       </span>
       <span className="agent-catalog-source">
         {catalogPackageSource(capability)}
-      </span>
-      <span>
-        <span className={`badge ${statusBadges[capability.status]}`}>
-          {statusLabels[capability.status]}
-        </span>
       </span>
       <span className="agent-catalog-detail">
         {capability.sourcePath ? (
@@ -1182,6 +1143,11 @@ function CatalogCapabilityRow({
         ) : (
           catalogLocationDetail(capability)
         )}
+        {capability.status === "unavailable" ? (
+          <span className="agent-unavailable-inline">
+            {statusLabels.unavailable}
+          </span>
+        ) : null}
         {duplicateNames.has(capability.name) ? (
           <span className="agent-duplicate-inline">Duplicate install</span>
         ) : null}

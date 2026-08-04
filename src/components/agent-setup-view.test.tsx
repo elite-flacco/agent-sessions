@@ -137,23 +137,36 @@ describe("parseAgentSetupFilters", () => {
       parseAgentSetupFilters({
         provider: "codex",
         kind: "skill",
+        // Inventory keeps provider and kind but not status — see the dedicated
+        // test below.
         status: "enabled",
       }),
     ).toMatchObject({
       view: "inventory",
       provider: "codex",
       kind: "skill",
-      status: "enabled",
+      status: undefined,
     });
     expect(
       parseAgentSetupFilters({ provider: "other" }).provider,
     ).toBeUndefined();
   });
 
-  test("accepts the disabled status filter", () => {
-    expect(parseAgentSetupFilters({ status: "disabled" }).status).toBe(
-      "disabled",
+  test("accepts the disabled status filter on compare", () => {
+    expect(
+      parseAgentSetupFilters({ view: "compare", status: "disabled" }).status,
+    ).toBe("disabled");
+  });
+
+  test("drops the status filter outside compare", () => {
+    // Status is a Compare-only control. An inventory URL carrying one would
+    // silently narrow a list that offers no way to clear it.
+    expect(parseAgentSetupFilters({ status: "unavailable" }).status).toBe(
+      undefined,
     );
+    expect(
+      parseAgentSetupFilters({ view: "tasks", status: "enabled" }).status,
+    ).toBe(undefined);
   });
 
   test("parses the consensus attention comparison mode", () => {
@@ -168,17 +181,10 @@ describe("parseAgentSetupFilters", () => {
     });
   });
 
-  test("accepts inventory source filters and drops them outside inventory", () => {
-    expect(parseAgentSetupFilters({ source: "plugin" })).toMatchObject({
-      view: "inventory",
-      source: "plugin",
-    });
-    expect(
-      parseAgentSetupFilters({ source: "not-a-source" }).source,
-    ).toBeUndefined();
-    expect(
-      parseAgentSetupFilters({ view: "compare", source: "plugin" }).source,
-    ).toBeUndefined();
+  test("ignores a source param now that the catalog groups by source", () => {
+    expect(parseAgentSetupFilters({ source: "plugin" })).not.toHaveProperty(
+      "source",
+    );
   });
 });
 
@@ -231,15 +237,16 @@ describe("AgentSetupView", () => {
     ).not.toBeNull();
 
     expect(screen.queryByText("Package / source")).not.toBeNull();
-    expect(screen.queryAllByText("Status").length).toBeGreaterThan(0);
     expect(screen.queryByText("Location / detail")).not.toBeNull();
     expect(container.querySelectorAll(".agent-catalog-row")).toHaveLength(5);
     expect(
       container.querySelectorAll(".agent-catalog-row .agent-kind-label"),
     ).toHaveLength(0);
+    // Rows carry no source pill: the group heading above them already names
+    // the source, and rows are grouped by exactly that value.
     expect(
       container.querySelectorAll(".agent-catalog-row .agent-row-source"),
-    ).toHaveLength(5);
+    ).toHaveLength(0);
   });
 
   test("plugin-provided skills always stay under a collapsible plugin parent", () => {
@@ -270,13 +277,12 @@ describe("AgentSetupView", () => {
     expect(group).not.toBeNull();
     expect(group?.textContent).toContain("skill-creator@openai-curated");
     expect(group?.textContent).toContain("1 skill");
-    expect(group?.textContent).toContain("Enabled");
     expect(group?.querySelector(".agent-catalog-row")?.textContent).toContain(
       "only-skill",
     );
   });
 
-  test("inventory source filter narrows the catalog without removing source context", () => {
+  test("inventory offers no source or status control and shows every group", () => {
     const sourceFiltered: AgentInventory[] = [
       {
         provider: "codex",
@@ -298,17 +304,31 @@ describe("AgentSetupView", () => {
           view: "inventory",
           provider: "codex",
           kind: "skill",
-          source: "marketplace",
         }}
       />,
     );
 
-    expect(html).toContain('name="source"');
+    // Grouping replaced the source filter, and the status filter moved to
+    // Compare, so neither select exists here.
+    expect(html).not.toContain('name="source"');
+    expect(html).not.toContain('name="status"');
+    // Every source group stays on screen instead.
     expect(html).toContain("Marketplace skills");
     expect(html).toContain("managed-skill");
-    expect(html).toContain("Marketplace</span>");
-    expect(html).not.toContain("Standalone skills");
-    expect(html).not.toContain("direct-skill");
+    expect(html).toContain("Standalone skills");
+    expect(html).toContain("direct-skill");
+  });
+
+  test("compare keeps the status filter", () => {
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "compare" }}
+      />,
+    );
+
+    expect(html).toContain('name="status"');
+    expect(html).not.toContain('name="source"');
   });
 
   test("selected skill inspector names its parent plugin and duplicate installs", () => {
@@ -1415,11 +1435,11 @@ describe("AgentSetupView", () => {
       'class="lucide lucide-waypoints" aria-hidden="true"',
     );
     expect(html).toContain("Personal skills");
-    expect(html).toContain('<span class="agent-row-source">Personal</span>');
+    expect(html).not.toContain("agent-row-source");
     expect(html).not.toContain("agent-catalog-row .agent-kind-label");
   });
 
-  test("shows compact status tags in inventory rows", () => {
+  test("flags only unavailable capabilities in inventory rows", () => {
     const statusInventory: AgentInventory = {
       provider: "codex",
       scope: "global",
@@ -1446,11 +1466,13 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Disabled capabilities remain hidden, while active and unavailable rows
-    // expose status in the aligned status column.
+    // Disabled capabilities remain hidden. Enabled and installed are the
+    // unremarkable cases the list no longer spends a column on; only
+    // unavailable still earns an inline marker.
     expect(html).toContain("<strong>enabled-example</strong>");
-    expect(html).toContain(">Enabled</span>");
-    expect(html).toContain(">Unavailable</span>");
+    expect(html).toContain("<strong>unavailable-example</strong>");
+    expect(html).not.toContain(">Enabled</span>");
+    expect(html).toContain('class="agent-unavailable-inline">Unavailable<');
     expect(html).not.toContain("disabled-example");
   });
 
@@ -1501,13 +1523,12 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    // Summary contains the plugin name, member count, source, and status.
+    // Summary contains the plugin name, member count, and source.
     expect(html).toContain(
       "<strong>superpowers@claude-plugins-official</strong>",
     );
     expect(html).toContain("3 skills");
     expect(html).toContain("Plugin-provided skills");
-    expect(html).toContain(">Enabled</span>");
     expect(html).toContain('<details class="agent-plugin-group">');
 
     // Member rows are nested inside the group body container.
@@ -1690,9 +1711,46 @@ describe("AgentSetupView", () => {
           sourcePlugin: "superpowers@claude-plugins-official",
           status: "enabled",
         }),
+        // One unavailable member is the condition the summary must surface:
+        // the rollup is conservative, so the whole group is flagged.
+        skill("codex", "gamma", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "unavailable",
+        }),
+      ],
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      <AgentSetupView
+        inventories={[groupedInventory]}
+        filters={{ view: "inventory" }}
+      />,
+    );
+
+    expect(html).toContain("3 skills");
+    const summaryEnd = html.indexOf("</summary>");
+    expect(summaryEnd).toBeGreaterThan(-1);
+    expect(html.slice(0, summaryEnd)).toContain(
+      'class="agent-unavailable-inline">Unavailable<',
+    );
+  });
+
+  test("inventory plugin summary stays unflagged when every member is in effect", () => {
+    const groupedInventory: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      capabilities: [
+        skill("codex", "alpha", {
+          origin: "marketplace",
+          packaging: "plugin",
+          sourcePlugin: "superpowers@claude-plugins-official",
+          status: "enabled",
+        }),
         // "installed" (unknown enable state) is the non-enabled status that
         // still renders in the inventory; disabled members are hidden there.
-        skill("codex", "gamma", {
+        skill("codex", "beta", {
           origin: "marketplace",
           packaging: "plugin",
           sourcePlugin: "superpowers@claude-plugins-official",
@@ -1708,8 +1766,8 @@ describe("AgentSetupView", () => {
       />,
     );
 
-    expect(html).toContain("3 skills");
-    expect(html).toContain(">Installed</span>");
+    expect(html).toContain("2 skills");
+    expect(html).not.toContain("agent-unavailable-inline");
   });
 
   test("inventory keeps personal/built_in/unknown skills flat even when several share an origin", () => {
