@@ -399,6 +399,84 @@ export interface ProjectSummary {
   lastActivityAt: string;
 }
 
+export type ProjectState = "active" | "waiting" | "blocked" | "complete";
+
+/**
+ * One session's most recent retained lifecycle event. Provider activity titles
+ * are generic ("Task completed"), so the session a run belongs to is the only
+ * part that identifies the work; the feed is keyed by session for that reason.
+ */
+export interface ProjectActivity {
+  kind: "started" | "file" | "command" | "completed";
+  sessionId: number;
+  sessionTitle: string | null;
+  provider: AgentProvider;
+  status: SessionStatus;
+  occurredAt: string;
+}
+
+export interface ProjectProviderSplit {
+  provider: AgentProvider;
+  sessionCount: number;
+  /** Spend over this provider's fully-priced sessions in the window. */
+  costUsd: number;
+  unpricedSessionCount: number;
+}
+
+export interface ProjectWorktree {
+  workdir: string;
+  branches: string[];
+  sessionCount: number;
+  lastActivityAt: string;
+}
+
+/** Which evidence sessions the briefing lists. URL-backed, like `range`. */
+export type ProjectEvidenceFilter = "all" | "attention";
+
+export function parseProjectEvidenceFilter(
+  value: unknown,
+): ProjectEvidenceFilter {
+  return value === "attention" ? "attention" : "all";
+}
+
+/**
+ * The briefing data for one safely-grouped project. A project exists only
+ * when Relay observed a repository together with branch or local Git evidence;
+ * titles and activity remain provider-derived evidence rather than task plans.
+ *
+ * Every `window*` field, the cost roll-up, the trend, and the provider split
+ * describe `range` only; `project` stays the all-time summary so the briefing
+ * header matches the card the user clicked through from.
+ */
+export interface ProjectDetail {
+  project: ProjectSummary;
+  range: OverviewRange;
+  evidenceFilter: ProjectEvidenceFilter;
+  /** Sessions touched in `range`, counted once each (subagents included). */
+  windowSessionCount: number;
+  windowRuntimeMs: number;
+  state: ProjectState;
+  currentFocus: SessionListItem | null;
+  attention: SessionListItem[];
+  sessions: SessionListItem[];
+  /** True when `sessions` was truncated by the evidence cap. */
+  sessionsTruncated: boolean;
+  activity: ProjectActivity[];
+  /**
+   * Spend over fully-priced sessions in the window, following the usage page's
+   * rule: a session with any unpriced usage row is excluded from dollar sums
+   * rather than nulling the whole rollup, and counted in
+   * `unpricedSessionCount` so the exclusion stays visible.
+   */
+  totalCostUsd: number;
+  unpricedSessionCount: number;
+  /** Daily spend across `range`, oldest first, with empty days filled in. */
+  costTrend: { date: string; costUsd: number }[];
+  largestCostSession: SessionListItem | null;
+  byProvider: ProjectProviderSplit[];
+  worktrees: ProjectWorktree[];
+}
+
 interface ProjectRow {
   repository: string | null;
   sessionCount: number;
@@ -538,20 +616,30 @@ export function getProjects(filters?: SessionFilters): ProjectSummary[] {
   return summarizeProjects(rows);
 }
 
-export function getProjectSessions(key: string): SessionListItem[] {
+/** Evidence list cap. Kept small enough to stay a scannable list, not a table. */
+const PROJECT_EVIDENCE_LIMIT = 50;
+
+export function getProjectSessions(
+  key: string,
+  options: { since?: string; limit?: number } = {},
+): SessionListItem[] {
   const status = statusExpression("status", "updated_at");
   const repositoryKeys = getProjects()
     .filter((project) => project.category === "project")
     .map((project) => project.key);
   const isTasks = key === TASKS_PROJECT_KEY || key === UNKNOWN_PROJECT_KEY;
-  const where = isTasks
+  const scope = isTasks
     ? repositoryKeys.length
-      ? `repository IS NULL OR repository NOT IN (${repositoryKeys.map(() => "?").join(", ")})`
+      ? `(repository IS NULL OR repository NOT IN (${repositoryKeys.map(() => "?").join(", ")}))`
       : "1 = 1"
     : "repository = ?";
-  const params: unknown[] = isTasks
-    ? [staleCutoff(), ...repositoryKeys]
-    : [staleCutoff(), key];
+  const where = options.since ? `${scope} AND updated_at >= ?` : scope;
+  const params: unknown[] = [
+    staleCutoff(),
+    ...(isTasks ? repositoryKeys : [key]),
+    ...(options.since ? [options.since] : []),
+  ];
+  const limit = options.limit ?? PROJECT_EVIDENCE_LIMIT;
   return sqlite
     .prepare(
       `SELECT id, external_id externalId, provider, parent_external_id parentExternalId,
@@ -559,9 +647,249 @@ export function getProjectSessions(key: string): SessionListItem[] {
       title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
     cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions WHERE ${where}
-    ORDER BY started_at DESC LIMIT 50`,
+    ORDER BY started_at DESC LIMIT ?`,
     )
-    .all(...params) as SessionListItem[];
+    .all(...params, limit) as SessionListItem[];
+}
+
+function projectState(sessions: SessionListItem[]): ProjectState {
+  if (sessions.some((session) => session.status === "running")) return "active";
+  if (sessions.some((session) => session.status === "needs_attention")) {
+    return "waiting";
+  }
+  if (
+    sessions.some(
+      (session) =>
+        session.status === "failed" || session.status === "interrupted",
+    )
+  ) {
+    return "blocked";
+  }
+  return "complete";
+}
+
+const ATTENTION_STATUSES: SessionStatus[] = [
+  "needs_attention",
+  "failed",
+  "interrupted",
+];
+
+interface ProjectUsageRow extends UsageJoinRow {
+  updatedAt: string;
+}
+
+/**
+ * Every usage row for a project's in-window sessions, each session visited
+ * exactly once. Aggregates must build on this rather than on the subtree
+ * roll-ups from `getSessionsCostUsd`, which would count a delegating parent
+ * and its subagents twice over.
+ */
+function projectUsageRows(key: string, since: string): ProjectUsageRow[] {
+  return sqlite
+    .prepare(
+      `SELECT u.session_id sessionId, s.provider, s.repository, s.started_at startedAt,
+        s.updated_at updatedAt, u.model, u.input_tokens inputTokens,
+        u.output_tokens outputTokens, u.cache_read_tokens cacheReadTokens,
+        u.cache_write_tokens cacheWriteTokens, u.reported_cost_usd reportedCostUsd
+      FROM session_model_usage u JOIN sessions s ON s.id = u.session_id
+      WHERE s.repository = ? AND s.updated_at >= ?`,
+    )
+    .all(key, since) as ProjectUsageRow[];
+}
+
+/**
+ * Oldest-first list of every ISO date in the window, so gaps stay visible as
+ * empty bars. UTC throughout, matching the `slice(0, 10)` the trend buckets on.
+ */
+function dateSpan(since: string, days: number): string[] {
+  const start = Date.parse(`${since.slice(0, 10)}T00:00:00.000Z`);
+  return Array.from({ length: days }, (_, index) =>
+    new Date(start + index * DAY_MS).toISOString().slice(0, 10),
+  );
+}
+
+/**
+ * Ranks the project's costliest work by crediting each subtree to its topmost
+ * in-window session, mirroring the insights outlier rule: a subagent is only
+ * ranked on its own when the run that spawned it fell outside the window.
+ */
+function largestCostSession(
+  key: string,
+  since: string,
+): SessionListItem | null {
+  const windowSessions = getProjectSessions(key, { since, limit: -1 });
+  const inWindow = new Set(
+    windowSessions.map(
+      (session) => `${session.provider}:${session.externalId}`,
+    ),
+  );
+  const topmost = windowSessions.filter(
+    (session) =>
+      !session.parentExternalId ||
+      !inWindow.has(`${session.provider}:${session.parentExternalId}`),
+  );
+  const costs = getSessionsCostUsd(topmost.map((session) => session.id));
+  let best: SessionListItem | null = null;
+  for (const session of topmost) {
+    const cost = costs.get(session.id);
+    if (cost == null) continue;
+    if (!best || cost > (best.costUsd ?? 0))
+      best = { ...session, costUsd: cost };
+  }
+  return best;
+}
+
+export function getProjectDetail(
+  key: string,
+  range: OverviewRange = "7d",
+  evidenceFilter: ProjectEvidenceFilter = "all",
+): ProjectDetail | null {
+  const project = getProjects().find(
+    (candidate) => candidate.category === "project" && candidate.key === key,
+  );
+  if (!project) return null;
+  const days = range === "30d" ? 30 : 7;
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+
+  const sessions = getProjectSessions(key, {
+    since,
+    limit: PROJECT_EVIDENCE_LIMIT + 1,
+  });
+  const sessionsTruncated = sessions.length > PROJECT_EVIDENCE_LIMIT;
+  if (sessionsTruncated) sessions.length = PROJECT_EVIDENCE_LIMIT;
+  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+  for (const session of sessions)
+    session.costUsd = costs.get(session.id) ?? null;
+
+  const window = sqlite
+    .prepare(
+      `SELECT COUNT(*) sessionCount,
+        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs
+      FROM sessions WHERE repository = ? AND updated_at >= ?`,
+    )
+    .get(key, since) as { sessionCount: number; runtimeMs: number };
+
+  // Accumulate per session first: pricing trust is a per-session property, so
+  // a session with one unpriced row must drop out of the dollar sums whole
+  // rather than contributing its priced rows.
+  interface CostAccumulator {
+    provider: AgentProvider;
+    date: string;
+    costUsd: number;
+    priced: boolean;
+  }
+  const bySession = new Map<number, CostAccumulator>();
+  for (const row of projectUsageRows(key, since)) {
+    const entry = bySession.get(row.sessionId) ?? {
+      provider: row.provider,
+      date: row.updatedAt.slice(0, 10),
+      costUsd: 0,
+      priced: true,
+    };
+    const cost = rowCost(row);
+    if (cost === undefined) entry.priced = false;
+    else entry.costUsd += cost;
+    bySession.set(row.sessionId, entry);
+  }
+
+  let totalCostUsd = 0;
+  let unpricedSessionCount = 0;
+  const byDate = new Map<string, number>();
+  const providerCost = new Map<
+    AgentProvider,
+    { costUsd: number; unpricedSessionCount: number }
+  >();
+  for (const entry of bySession.values()) {
+    const provider = providerCost.get(entry.provider) ?? {
+      costUsd: 0,
+      unpricedSessionCount: 0,
+    };
+    if (entry.priced) {
+      totalCostUsd += entry.costUsd;
+      byDate.set(entry.date, (byDate.get(entry.date) ?? 0) + entry.costUsd);
+      provider.costUsd += entry.costUsd;
+    } else {
+      unpricedSessionCount += 1;
+      provider.unpricedSessionCount += 1;
+    }
+    providerCost.set(entry.provider, provider);
+  }
+
+  const providerCounts = sqlite
+    .prepare(
+      `SELECT provider, COUNT(*) sessionCount FROM sessions
+       WHERE repository = ? AND updated_at >= ?
+       GROUP BY provider ORDER BY sessionCount DESC`,
+    )
+    .all(key, since) as { provider: AgentProvider; sessionCount: number }[];
+
+  const worktrees = sqlite
+    .prepare(
+      `SELECT cwd workdir, GROUP_CONCAT(DISTINCT branch) branches,
+        COUNT(*) sessionCount, MAX(updated_at) lastActivityAt
+      FROM sessions WHERE repository = ? AND cwd IS NOT NULL
+      GROUP BY cwd ORDER BY lastActivityAt DESC`,
+    )
+    .all(key) as (Omit<ProjectWorktree, "branches"> & {
+    branches: string | null;
+  })[];
+
+  const attention = sessions
+    .filter((session) => ATTENTION_STATUSES.includes(session.status))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  return {
+    project,
+    range,
+    evidenceFilter,
+    windowSessionCount: window.sessionCount,
+    windowRuntimeMs: window.runtimeMs,
+    state: projectState(sessions),
+    currentFocus: sessions[0] ?? null,
+    attention,
+    sessions: evidenceFilter === "attention" ? attention : sessions,
+    sessionsTruncated:
+      evidenceFilter === "attention" ? false : sessionsTruncated,
+    activity: projectActivity(key, since),
+    totalCostUsd,
+    unpricedSessionCount,
+    costTrend: dateSpan(since, days).map((date) => ({
+      date,
+      costUsd: byDate.get(date) ?? 0,
+    })),
+    largestCostSession: largestCostSession(key, since),
+    byProvider: providerCounts.map((row) => ({
+      provider: row.provider,
+      sessionCount: row.sessionCount,
+      costUsd: providerCost.get(row.provider)?.costUsd ?? 0,
+      unpricedSessionCount:
+        providerCost.get(row.provider)?.unpricedSessionCount ?? 0,
+    })),
+    worktrees: worktrees.map((row) => ({
+      ...row,
+      branches: (row.branches?.split(",") ?? []).filter(Boolean),
+    })),
+  };
+}
+
+/**
+ * The most recent retained lifecycle event per session, newest first. Grouping
+ * by session is what makes the feed readable: the raw events all share a
+ * handful of generic titles, so ungrouped they read as noise.
+ */
+function projectActivity(key: string, since: string): ProjectActivity[] {
+  const status = statusExpression("s.status", "s.updated_at");
+  return sqlite
+    .prepare(
+      `SELECT e.session_id sessionId, s.title sessionTitle, s.provider,
+        ${status} status, e.kind, MAX(e.occurred_at) occurredAt
+      FROM activity_events e JOIN sessions s ON s.id = e.session_id
+      WHERE s.repository = ? AND e.occurred_at >= ?
+        AND e.kind IN ('started', 'file', 'command', 'completed')
+      GROUP BY e.session_id
+      ORDER BY occurredAt DESC LIMIT 8`,
+    )
+    .all(staleCutoff(), key, since) as ProjectActivity[];
 }
 
 export interface OverviewPatterns {
