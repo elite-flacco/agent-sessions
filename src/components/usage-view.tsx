@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { formatCostUsd, formatTokens } from "@/lib/format";
-import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
+import { providerBadges, providerLabels } from "@/lib/labels";
 import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import type { OverviewRange, UsageBucket, UsageSummary } from "@/lib/queries";
 import type { AgentProvider } from "@/lib/types";
@@ -19,7 +19,6 @@ interface UsageViewProps {
 
 export function UsageView({ usage, range }: UsageViewProps) {
   const router = useRouter();
-  const rangeLabel = rangeDaysLabel(range);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -46,7 +45,7 @@ export function UsageView({ usage, range }: UsageViewProps) {
 
       <div className="summary-grid" aria-label="Selected usage summary">
         <UsageMetric
-          label={`Estimated cost, ${rangeLabel}`}
+          label={`Estimated cost`}
           value={formatCostUsd(usage.selected.costUsd)}
           note={
             usage.selected.unpricedSessions
@@ -55,17 +54,17 @@ export function UsageView({ usage, range }: UsageViewProps) {
           }
         />
         <UsageMetric
-          label={`Tokens, ${rangeLabel}`}
+          label={`Tokens`}
           value={formatTokens(usage.selected.tokens)}
           note={`${usage.selected.sessions} sessions with usage`}
         />
         <UsageMetric
-          label={`Sessions, ${rangeLabel}`}
+          label={`Sessions`}
           value={String(usage.selected.sessions)}
           note="Sessions with recorded token usage"
         />
         <div className="metric">
-          <span className="eyebrow">{`Cache reads, ${rangeLabel}`}</span>
+          <span className="eyebrow">{`Cache reads`}</span>
           <strong>{formatTokens(usage.selected.cacheReadTokens)}</strong>
           <span>
             {usage.selected.tokens
@@ -79,7 +78,7 @@ export function UsageView({ usage, range }: UsageViewProps) {
         <div className="overview-column">
           <section className="card overview-card" aria-label="Daily cost">
             <div className="overview-card-head">
-              <h3>{`Daily cost, ${rangeLabel}`}</h3>
+              <h3>{`Daily cost`}</h3>
               <span>{formatCostUsd(usage.selected.costUsd)} total</span>
             </div>
             <Sparkline

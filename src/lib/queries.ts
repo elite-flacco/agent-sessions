@@ -479,6 +479,7 @@ export interface ProjectDetail {
   unpricedSessionCount: number;
   /** Daily spend across `range`, oldest first, with empty days filled in. */
   costTrend: { date: string; costUsd: number }[];
+  largestCostSessions: SessionListItem[];
   largestCostSession: SessionListItem | null;
   byProvider: ProjectProviderSplit[];
   worktrees: ProjectWorktree[];
@@ -779,10 +780,11 @@ function dateSpan(days: number, firstDate?: string | null): string[] {
  * in-window session, mirroring the insights outlier rule: a subagent is only
  * ranked on its own when the run that spawned it fell outside the window.
  */
-function largestCostSession(
+function largestCostSessions(
   key: string,
   since?: string,
-): SessionListItem | null {
+  limit = 5,
+): SessionListItem[] {
   const windowSessions = getProjectSessions(key, { since, limit: -1 });
   const inWindow = new Set(
     windowSessions.map(
@@ -795,14 +797,17 @@ function largestCostSession(
       !inWindow.has(`${session.provider}:${session.parentExternalId}`),
   );
   const costs = getSessionsCostUsd(topmost.map((session) => session.id));
-  let best: SessionListItem | null = null;
-  for (const session of topmost) {
-    const cost = costs.get(session.id);
-    if (cost == null) continue;
-    if (!best || cost > (best.costUsd ?? 0))
-      best = { ...session, costUsd: cost };
-  }
-  return best;
+  return topmost
+    .flatMap((session) => {
+      const costUsd = costs.get(session.id);
+      return costUsd == null ? [] : [{ ...session, costUsd }];
+    })
+    .sort(
+      (a, b) =>
+        (b.costUsd ?? 0) - (a.costUsd ?? 0) ||
+        b.updatedAt.localeCompare(a.updatedAt),
+    )
+    .slice(0, limit);
 }
 
 export function getProjectDetail(
@@ -914,6 +919,7 @@ export function getProjectDetail(
   const attention = sessions
     .filter((session) => ATTENTION_STATUSES.includes(session.status))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const rankedCostSessions = largestCostSessions(key, since ?? undefined);
 
   return {
     project,
@@ -936,7 +942,8 @@ export function getProjectDetail(
         costUsd: byDate.get(date) ?? 0,
       }),
     ),
-    largestCostSession: largestCostSession(key, since ?? undefined),
+    largestCostSessions: rankedCostSessions,
+    largestCostSession: rankedCostSessions[0] ?? null,
     byProvider: providerCounts.map((row) => ({
       provider: row.provider,
       sessionCount: row.sessionCount,

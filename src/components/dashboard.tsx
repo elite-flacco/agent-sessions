@@ -324,7 +324,7 @@ export function Dashboard({
 
       <div className={isPending ? "workspace-loading" : ""}>
         {view === "projects" ? (
-          <ProjectsTable projects={projects} isPending={isPending} />
+          <ProjectsTable projects={projects} />
         ) : (
           <SessionsTable
             sessions={sessions}
@@ -410,9 +410,6 @@ function SessionRow({
               {session.sessionKind === "subagent"
                 ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
                 : (session.repository ?? "Unknown workspace")}
-              {session.sessionKind !== "subagent" && session.branch
-                ? ` · ${session.branch}`
-                : ""}
             </span>
             {session.children.length > 0 && (
               <button
@@ -459,7 +456,7 @@ function SessionRow({
         >
           {session.model ? normalizeModel(session.model) : "—"}
         </span>
-        <span className="mono session-secondary">
+        <span className="mono session-secondary text-foreground">
           {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}
         </span>
       </div>
@@ -471,13 +468,7 @@ function SessionRow({
   );
 }
 
-function ProjectsTable({
-  projects,
-  isPending,
-}: {
-  projects: ProjectCostSummary[];
-  isPending: boolean;
-}) {
+function ProjectsTable({ projects }: { projects: ProjectCostSummary[] }) {
   const projectCount = projects.filter(
     (project) => project.category === "project",
   ).length;

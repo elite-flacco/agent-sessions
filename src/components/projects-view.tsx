@@ -7,18 +7,8 @@ import {
   runtime,
   shortenHomePath,
 } from "@/lib/format";
-import {
-  providerBadges,
-  providerLabels,
-  rangeDaysLabel,
-  statusDisplay,
-} from "@/lib/labels";
-import type {
-  ProjectActivity,
-  ProjectDetail,
-  ProjectState,
-  ProjectSummary,
-} from "@/lib/queries";
+import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
+import type { ProjectDetail, ProjectSummary } from "@/lib/queries";
 import { Sparkline } from "./charts";
 import { RangeSwitcher } from "./range-switcher";
 
@@ -26,13 +16,6 @@ interface ProjectsViewProps {
   projects: ProjectSummary[];
   selected: ProjectDetail | null;
 }
-
-const stateLabels: Record<ProjectState, string> = {
-  active: "Active",
-  waiting: "Waiting on you",
-  blocked: "Blocked",
-  complete: "Idle",
-};
 
 export function ProjectsView({ projects, selected }: ProjectsViewProps) {
   if (selected) return <ProjectBriefing detail={selected} />;
@@ -122,10 +105,6 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
           </p>
         </div>
         <div className="project-header-controls">
-          <span className={`project-state project-state-${detail.state}`}>
-            <CircleDot size={13} />
-            {stateLabels[detail.state]}
-          </span>
           <RangeSwitcher range={detail.range} ariaLabel="Project range" />
         </div>
       </header>
@@ -182,10 +161,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
                         {event.sessionTitle ?? "Untitled session"}
                       </strong>
                     </Link>
-                    <p>
-                      {providerLabels[event.provider]} ·{" "}
-                      {activityLabels[event.kind]}
-                    </p>
+                    <p>{providerLabels[event.provider]} · </p>
                   </div>
                   <time title={absoluteTime(event.occurredAt)}>
                     {relativeTime(event.occurredAt)}
@@ -203,26 +179,39 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
 
         <section
           className="card project-briefing-card"
-          aria-labelledby="attention-title"
+          aria-labelledby="expensive-sessions-title"
         >
-          <span className="eyebrow">Needs attention</span>
-          <h2 id="attention-title">Actionable session evidence</h2>
-          {detail.attention.length ? (
-            <ul className="project-attention-list">
-              {detail.attention.map((session) => (
-                <li key={session.id}>
-                  <Link href={`/sessions/${session.id}`}>{session.title}</Link>
-                  <span className={`status-label status-${session.status}`}>
-                    <i />
-                    {statusDisplay(session.status, session.statusReason)}
+          <span className="eyebrow">What cost the most</span>
+          <h2 id="expensive-sessions-title">Most expensive sessions</h2>
+          {detail.largestCostSessions.length ? (
+            <ol className="mt-4 grid list-none gap-2 p-0">
+              {detail.largestCostSessions.slice(0, 5).map((session) => (
+                <li
+                  className="flex min-w-0 items-start justify-between gap-2 border-t border-border pt-2"
+                  key={session.id}
+                >
+                  <div className="min-w-0">
+                    <Link
+                      className="text-foreground hover:text-accent"
+                      href={`/sessions/${session.id}`}
+                    >
+                      <strong className="block truncate text-xs leading-normal font-semibold">
+                        {session.title}
+                      </strong>
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {providerLabels[session.provider]}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-muted-foreground">
+                    {formatCostUsd(session.costUsd ?? 0)}
                   </span>
                 </li>
               ))}
-            </ul>
+            </ol>
           ) : (
             <p className="project-muted">
-              No sessions currently report waiting input, failure, or
-              interruption.
+              No fully priced sessions in this range.
             </p>
           )}
         </section>
@@ -261,13 +250,6 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
     </section>
   );
 }
-
-const activityLabels: Record<ProjectActivity["kind"], string> = {
-  started: "Run started",
-  file: "Files changed",
-  command: "Command run",
-  completed: "Run completed",
-};
 
 /**
  * Daily spend across the selected range. The single total answers "how much",

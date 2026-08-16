@@ -77,11 +77,15 @@ describe("Dashboard session rows", () => {
     expect(html).not.toContain('aria-label="Date range"');
   });
 
-  test("balances session filters before the desktop row overflows", () => {
+  test("keeps session filters the same width at the compact desktop breakpoint", () => {
     const styles = readFileSync(
       new URL("../app/globals.css", import.meta.url),
       "utf8",
     );
+
+    expect(styles).toContain(`.session-filter-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }`);
 
     // The 1200px block also carries unrelated inventory rules, so assert the
     // filter-row pair sits inside it rather than matching the whole block.
@@ -92,9 +96,7 @@ describe("Dashboard session rows", () => {
     expect(breakpoint).toContain(`.session-filter-row {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }`);
-    expect(breakpoint).toContain(`.session-filter-row .search-control {
-      grid-column: 1 / -1;
-    }`);
+    expect(breakpoint).not.toContain(".session-filter-row .search-control");
   });
 
   test("shows project total cost between sessions and runtime", () => {
@@ -245,10 +247,10 @@ describe("Dashboard session rows", () => {
     expect(html).not.toContain("session-open-link");
     expect(html).not.toContain("Open Standalone session in a new tab");
     expect(html).toContain(
-      'Standalone session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions · main</span></span>',
+      'Standalone session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions</span></span>',
     );
     expect(html).toContain(
-      'Parent session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions · main</span>',
+      'Parent session</a></div><span class="mono session-meta"><span class="session-meta-text">agent-sessions</span>',
     );
     expect(html).toContain("1 subagent");
   });

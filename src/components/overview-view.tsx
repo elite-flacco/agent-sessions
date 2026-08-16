@@ -203,7 +203,7 @@ export function OverviewView({
               >
                 <span className="project-list-marker" aria-hidden />
                 <div className="min-w-0">
-                  <strong>{project.repository ?? "Unknown workspace"}</strong>
+                  <p>{project.repository ?? "Unknown workspace"}</p>
                   <p className="text-muted-foreground text-xs">
                     {project.sessionCount} sessions ·{" "}
                     {runtime(project.totalRuntimeMs)}
@@ -239,7 +239,7 @@ function SessionLine({
         <Circle aria-hidden="true" fill="currentColor" size={6} />
       </span>
       <div className="min-w-0">
-        <strong>{session.title}</strong>
+        <p>{session.title}</p>
         <p className="text-muted-foreground text-xs">
           {[
             providerLabels[session.provider],

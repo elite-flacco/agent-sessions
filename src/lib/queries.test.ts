@@ -569,6 +569,45 @@ describe("project and overview queries", () => {
     }
   });
 
+  it("returns the five most expensive fully priced project sessions", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, repository, branch, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, 'beacon', 'feature/beacon', 'completed', ?, ?)`);
+    const usage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      SELECT id, 'gpt-5', 0, 0, 0, 0, ? FROM sessions WHERE external_id = ?`);
+    for (const cost of [1, 2, 3, 4, 5, 6]) {
+      const externalId = `rank-${cost}`;
+      insert.run(externalId, `Rank ${cost}`, now, now);
+      usage.run(cost, externalId);
+    }
+
+    try {
+      const detail = queries.getProjectDetail("beacon");
+      expect(
+        detail?.largestCostSessions.map(({ title, costUsd }) => [
+          title,
+          costUsd,
+        ]),
+      ).toEqual([
+        ["Rank 6", 6],
+        ["Rank 5", 5],
+        ["Rank 4", 4],
+        ["Rank 3", 3],
+        ["Rank 2", 2],
+      ]);
+      expect(detail?.largestCostSession).toEqual(
+        detail?.largestCostSessions[0],
+      );
+      expect(detail?.totalCostUsd).toBe(21);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id LIKE 'rank-%'")
+        .run();
+    }
+  });
+
   it("filters briefing evidence down to sessions needing attention", () => {
     const now = new Date().toISOString();
     sqlite

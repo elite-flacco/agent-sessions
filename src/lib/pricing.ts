@@ -199,6 +199,18 @@ export const PRICING_TABLE: PricingEntry[] = [
     effectiveFrom: "2025-08-07",
     source: OPENAI_SOURCE,
   },
+  // GLM-5.3 has no published per-token rate yet: Z.ai serves it through the
+  // coding plan while the pricing page still ends at GLM-5.2. Mirror GLM-5.2's
+  // published rates as the API-equivalent estimate until a true rate is posted.
+  {
+    model: "glm-5.3",
+    inputPerMTok: 1.4,
+    outputPerMTok: 4.4,
+    cacheReadPerMTok: 0.26,
+    cacheWritePerMTok: 1.4,
+    effectiveFrom: "2026-05-01",
+    source: ZAI_SOURCE,
+  },
   {
     model: "glm-5.2",
     inputPerMTok: 1.4,

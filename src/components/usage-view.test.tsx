@@ -51,11 +51,12 @@ describe("UsageView", () => {
     const html = renderToStaticMarkup(<UsageView usage={usage} range="all" />);
 
     expect(html).toContain('aria-label="Usage range"');
-    expect(html).toContain("Estimated cost, all time");
-    expect(html).toContain("Tokens, all time");
-    expect(html).toContain("Sessions, all time");
-    expect(html).toContain("Cache reads, all time");
-    expect(html).toContain("Daily cost, all time");
+    expect(html).toContain("Estimated cost");
+    expect(html).toContain("Tokens");
+    expect(html).toContain("Sessions");
+    expect(html).toContain("Cache reads");
+    expect(html).toContain("Daily cost");
+    expect(html).not.toContain(", all time");
     expect(html).toContain('class="spark usage-spark-all"');
     expect(html).not.toContain("Last 30 days");
   });

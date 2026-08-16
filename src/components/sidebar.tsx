@@ -49,12 +49,6 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           label="Projects"
         />
         <NavLink
-          href="/usage"
-          active={pathname === "/usage"}
-          icon={<BarChart3 size={15} />}
-          label="Usage & cost"
-        />
-        <NavLink
           href="/insights"
           active={pathname === "/insights"}
           icon={<Sparkles size={15} />}
@@ -65,6 +59,12 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
           active={pathname === "/agents"}
           icon={<Blocks size={15} />}
           label="Agent setup"
+        />
+        <NavLink
+          href="/usage"
+          active={pathname === "/usage"}
+          icon={<BarChart3 size={15} />}
+          label="Usage & cost"
         />
       </nav>
       <div className="sidebar-footer">

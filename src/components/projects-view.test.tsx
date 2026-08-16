@@ -49,6 +49,7 @@ function baseDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
       { date: "2026-08-01", costUsd: 10 },
       { date: "2026-08-02", costUsd: 95.5 },
     ],
+    largestCostSessions: [],
     largestCostSession: null,
     byProvider: [],
     worktrees: [],
@@ -144,6 +145,59 @@ describe("ProjectsView briefing", () => {
     expect(rollup).toHaveTextContent("$29.55 · incl. subagents");
   });
 
+  test("shows the five most expensive sessions in ranked order", () => {
+    render(
+      <ProjectsView
+        projects={[]}
+        selected={baseDetail({
+          largestCostSessions: [
+            { id: 1, title: "Rank 1", provider: "codex", costUsd: 50 },
+            { id: 2, title: "Rank 2", provider: "claude", costUsd: 40 },
+            { id: 3, title: "Rank 3", provider: "zcode", costUsd: 30 },
+            { id: 4, title: "Rank 4", provider: "codex", costUsd: 20 },
+            { id: 5, title: "Rank 5", provider: "claude", costUsd: 10 },
+            { id: 6, title: "Rank 6", provider: "zcode", costUsd: 5 },
+          ] as ProjectDetail["largestCostSessions"],
+        })}
+      />,
+    );
+
+    const panel = screen.getByRole("region", {
+      name: "Most expensive sessions",
+    });
+    const links = within(panel).getAllByRole("link");
+    expect(links).toHaveLength(5);
+    expect(links.map((link) => link.textContent)).toEqual([
+      "Rank 1",
+      "Rank 2",
+      "Rank 3",
+      "Rank 4",
+      "Rank 5",
+    ]);
+    expect(links[0]).toHaveAttribute("href", "/sessions/1");
+    expect(within(links[0]).getByText("Rank 1")).toHaveClass(
+      "block",
+      "text-xs",
+      "font-semibold",
+      "leading-normal",
+    );
+    expect(within(panel).getAllByText("Codex")[0]).toBeVisible();
+    expect(panel).toHaveTextContent("$50.00");
+    expect(
+      within(panel).queryByRole("link", { name: "Rank 6" }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("explains when the selected range has no fully priced sessions", () => {
+    render(<ProjectsView projects={[]} selected={baseDetail()} />);
+
+    expect(
+      within(
+        screen.getByRole("region", { name: "Most expensive sessions" }),
+      ).getByText("No fully priced sessions in this range."),
+    ).toBeVisible();
+  });
+
   test("says how many sessions the cost excluded when pricing is incomplete", () => {
     render(
       <ProjectsView
@@ -156,7 +210,7 @@ describe("ProjectsView briefing", () => {
     );
   });
 
-  test("identifies activity by its session, not by the generic event title", () => {
+  test("identifies activity by its session and coding agent", () => {
     render(
       <ProjectsView
         projects={[]}
@@ -175,8 +229,8 @@ describe("ProjectsView briefing", () => {
       />,
     );
     expect(screen.getByText("Worktree navigation")).toBeInTheDocument();
-    expect(screen.getByText(/Run completed/)).toBeInTheDocument();
-    expect(screen.queryByText("Task completed")).not.toBeInTheDocument();
+    expect(screen.getByText(/Claude Code/)).toBeInTheDocument();
+    expect(screen.queryByText(/Run completed/)).not.toBeInTheDocument();
   });
 
   test("pairs each worktree with the branches seen in it", () => {
