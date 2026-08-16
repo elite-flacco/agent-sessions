@@ -203,6 +203,63 @@ enabled = true
     );
   });
 
+  test("prefers the runtime remote cache for configured Codex marketplace plugins", async () => {
+    const home = await createHome();
+    const legacyRoot = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-curated",
+      "superpowers",
+      "legacy-hash",
+    );
+    const runtimeRoot = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-curated-remote",
+      "superpowers",
+      "6.2.0",
+    );
+    await skill(legacyRoot, "skills/legacy-skill", "legacy-skill");
+    await skill(runtimeRoot, "skills/runtime-skill", "runtime-skill");
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[plugins."superpowers@openai-curated"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "superpowers@openai-curated",
+          kind: "plugin",
+          sourcePath: runtimeRoot,
+        }),
+        expect.objectContaining({
+          name: "superpowers:runtime-skill",
+          kind: "skill",
+          sourcePath: join(runtimeRoot, "skills/runtime-skill"),
+        }),
+      ]),
+    );
+    expect(codex?.capabilities).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "superpowers:legacy-skill" }),
+      ]),
+    );
+  });
+
   test("distinguishes skills.sh, personal, plugin, and broken global skills", async () => {
     const home = await createHome();
     const sharedSkill = await skill(

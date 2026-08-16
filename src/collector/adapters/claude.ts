@@ -15,6 +15,21 @@ import {
   tokenCount,
 } from "./shared";
 
+function slashSkillCommand(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const commandName = value.match(
+    /<command-name>\s*\/([^<]+)<\/command-name>/,
+  )?.[1];
+  const commandMessage = value.match(
+    /<command-message>\s*\/?([^<]+)<\/command-message>/,
+  )?.[1];
+  if (!commandName || !commandMessage) return undefined;
+  const name = commandName.trim();
+  return name.toLocaleLowerCase() === commandMessage.trim().toLocaleLowerCase()
+    ? name
+    : undefined;
+}
+
 export const claudeAdapter: ProviderAdapter = {
   provider: "claude",
   discover: () => walkJsonl(homePath(".claude", "projects")),
@@ -120,27 +135,36 @@ export const claudeAdapter: ProviderAdapter = {
             : [];
           const occurredAt = capabilityTimestamp(timestamp(row));
           if (!occurredAt) return [];
-          return blocks.flatMap((tool, blockIndex) => {
-            if (tool?.type !== "tool_use") return [];
-            const externalId =
-              stringValue(tool.id) ??
-              stringValue(row.uuid) ??
-              stringValue(row.id) ??
-              `${rowIndex}-${blockIndex}`;
-            return [
-              explicitSkillUsage(
-                externalId,
-                tool.name === "Skill" ? record(tool.input)?.skill : undefined,
-                occurredAt,
-              ),
-              mcpUsage({
-                externalId,
-                toolName: tool.name,
-                occurredAt,
-                lookup: context?.capabilities,
-              }),
-            ].filter((entry): entry is CapabilityUsage => entry !== undefined);
-          });
+          const rowExternalId =
+            stringValue(row.uuid) ?? stringValue(row.id) ?? `${rowIndex}-0`;
+          return [
+            explicitSkillUsage(
+              rowExternalId,
+              slashSkillCommand(message?.content),
+              occurredAt,
+            ),
+            ...blocks.flatMap((tool, blockIndex) => {
+              if (tool?.type !== "tool_use") return [];
+              const externalId =
+                stringValue(tool.id) ??
+                stringValue(row.uuid) ??
+                stringValue(row.id) ??
+                `${rowIndex}-${blockIndex}`;
+              return [
+                explicitSkillUsage(
+                  externalId,
+                  tool.name === "Skill" ? record(tool.input)?.skill : undefined,
+                  occurredAt,
+                ),
+                mcpUsage({
+                  externalId,
+                  toolName: tool.name,
+                  occurredAt,
+                  lookup: context?.capabilities,
+                }),
+              ];
+            }),
+          ].filter((entry): entry is CapabilityUsage => entry !== undefined);
         }),
       events: (rows) =>
         rows.flatMap((row, index) => {

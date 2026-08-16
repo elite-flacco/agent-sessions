@@ -468,6 +468,44 @@ describe("provider adapters", () => {
     );
   });
 
+  it("normalizes paired Claude slash-skill commands without retaining arguments", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "claude-command-skill",
+        sessionId: "claude-command-capabilities",
+        timestamp: "2026-08-16T18:43:28.362Z",
+        message: {
+          role: "user",
+          content:
+            "<command-message>commit</command-message>\n<command-name>/commit</command-name>\n<command-args>SECRET_ARGS</command-args>",
+        },
+      },
+      {
+        type: "user",
+        uuid: "claude-unpaired-command",
+        sessionId: "claude-command-capabilities",
+        timestamp: "2026-08-16T18:44:00.000Z",
+        message: {
+          role: "user",
+          content: "Mention only: <command-name>/not-invoked</command-name>",
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      {
+        externalId: "skill:claude-command-skill",
+        kind: "skill",
+        name: "commit",
+        occurredAt: "2026-08-16T18:43:28.362Z",
+      },
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_ARGS",
+    );
+  });
+
   it("ignores Claude SKILL.md reads while retaining native Skill evidence", async () => {
     const lookup: CapabilityLookup = {
       skillFiles: new Map([

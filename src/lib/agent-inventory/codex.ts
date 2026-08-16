@@ -102,8 +102,10 @@ function applySkillOverrides(
 /**
  * Codex `config.toml` plugin tables rarely carry a `source` path. The installed
  * plugin files live under `~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`.
- * We resolve the lexicographically-highest version directory so re-installs that
- * leave stale hashes behind still surface the active copy.
+ * Codex may execute curated plugins from a `<marketplace>-remote` cache while
+ * retaining the unsuffixed marketplace ID in config, so prefer that runtime
+ * cache when present. Within a cache, resolve the highest version directory so
+ * re-installs that leave stale versions behind still surface the active copy.
  */
 async function resolveCachedPluginRoot(
   homeDir: string,
@@ -114,27 +116,33 @@ async function resolveCachedPluginRoot(
   if (atIndex <= 0 || atIndex === pluginId.length - 1) return undefined;
   const plugin = pluginId.slice(0, atIndex);
   const marketplace = pluginId.slice(atIndex + 1);
-  const cacheRoot = join(
-    homeDir,
-    ".codex",
-    "plugins",
-    "cache",
-    marketplace,
-    plugin,
-  );
-  let entries;
-  try {
-    entries = await readdir(cacheRoot, { withFileTypes: true });
-  } catch {
-    return undefined;
+  const marketplaces = marketplace.endsWith("-remote")
+    ? [marketplace]
+    : [`${marketplace}-remote`, marketplace];
+  for (const cacheMarketplace of marketplaces) {
+    const cacheRoot = join(
+      homeDir,
+      ".codex",
+      "plugins",
+      "cache",
+      cacheMarketplace,
+      plugin,
+    );
+    let entries;
+    try {
+      entries = await readdir(cacheRoot, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const versions = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort(compareVersionDirs);
+    if (versions.length === 0) continue;
+    if (versions.length > 1) warnings.push(staleVersionsWarning(cacheRoot));
+    return join(cacheRoot, versions[versions.length - 1]!);
   }
-  const versions = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort(compareVersionDirs);
-  if (versions.length === 0) return undefined;
-  if (versions.length > 1) warnings.push(staleVersionsWarning(cacheRoot));
-  return join(cacheRoot, versions[versions.length - 1]!);
+  return undefined;
 }
 
 /**
