@@ -313,4 +313,15 @@ describe("InsightsView", () => {
       2,
     );
   });
+
+  test("uses all-time copy without implying a trailing or prior window", () => {
+    const insights = baseInsights();
+    insights.capabilities.range = "all";
+    render(<InsightsView range="all" insights={insights} />);
+
+    expect(screen.getByLabelText("Insights range")).toBeVisible();
+    expect(document.body).toHaveTextContent("all time");
+    expect(screen.queryByText("last all time")).not.toBeInTheDocument();
+    expect(screen.queryByText("the last 30 days")).not.toBeInTheDocument();
+  });
 });

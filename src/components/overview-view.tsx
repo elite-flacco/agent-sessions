@@ -55,8 +55,14 @@ export function OverviewView({
   // The summary label follows the active range: "this week" at the default
   // 7-day view, "last 30 days" when widened. The toggle defaults to 7d, so an
   // absent param is treated as 7d rather than persisted.
-  const rangeLabel = range === "7d" ? "this week" : "last 30 days";
+  const rangeLabel =
+    range === "7d"
+      ? "this week"
+      : range === "30d"
+        ? "last 30 days"
+        : "all time";
   const daysLabel = rangeDaysLabel(range);
+  const trailingRangeLabel = range === "all" ? "all time" : `last ${daysLabel}`;
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -74,14 +80,19 @@ export function OverviewView({
           <p>
             {range === "7d"
               ? "Today and the last seven days across every agent."
-              : "Today and the last thirty days across every agent."}
+              : range === "30d"
+                ? "Today and the last thirty days across every agent."
+                : "Today and all recorded sessions across every agent."}
           </p>
         </div>
         <RangeSwitcher range={range} ariaLabel="Overview range" />
       </header>
 
       <div className="summary-grid" aria-label="Daily and weekly summary">
-        <Link className="metric metric-link" href="/sessions">
+        <Link
+          className="metric metric-link"
+          href={range === "7d" ? "/sessions" : `/sessions?range=${range}`}
+        >
           <span className="eyebrow">{`Sessions ${rangeLabel}`}</span>
           <strong>{overview.week.sessions}</strong>
           <span>{runtime(overview.week.runtimeMs)} total runtime</span>
@@ -99,7 +110,10 @@ export function OverviewView({
             {running.length ? "Live from local files" : "Nothing in flight"}
           </span>
         </Link>
-        <Link className="metric metric-link" href="/usage">
+        <Link
+          className="metric metric-link"
+          href={range === "7d" ? "/usage" : `/usage?range=${range}`}
+        >
           <span className="eyebrow">{`Cost ${rangeLabel}`}</span>
           <strong className="mono">
             {patterns.costWeek.costUsd === null
@@ -117,8 +131,15 @@ export function OverviewView({
       <div className="overview-grid">
         <div className="overview-column">
           <ActivityHeatmap cells={patterns.heatmap} />
-          <SessionLength length={patterns.length} rangeDaysLabel={daysLabel} />
-          <CostAtAGlance cost={patterns.costWeek} rangeLabel={rangeLabel} />
+          <SessionLength
+            length={patterns.length}
+            rangeLabel={trailingRangeLabel}
+          />
+          <CostAtAGlance
+            cost={patterns.costWeek}
+            range={range}
+            rangeLabel={rangeLabel}
+          />
         </div>
 
         <div className="overview-column">
@@ -322,10 +343,10 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
 
 function SessionLength({
   length,
-  rangeDaysLabel,
+  rangeLabel,
 }: {
   length: OverviewPatterns["length"];
-  rangeDaysLabel: string;
+  rangeLabel: string;
 }) {
   const maxBucket = Math.max(
     1,
@@ -337,7 +358,7 @@ function SessionLength({
         <h3>
           <Clock3 size={14} className="inline-icon" /> Session length
         </h3>
-        <span>{`last ${rangeDaysLabel} · ${length.sessionCount} sessions`}</span>
+        <span>{`${rangeLabel} · ${length.sessionCount} sessions`}</span>
       </div>
       <div className="grid gap-2">
         {length.buckets.map((bucket) => (
@@ -374,17 +395,19 @@ function SessionLength({
 
 function CostAtAGlance({
   cost,
+  range,
   rangeLabel,
 }: {
   cost: OverviewPatterns["costWeek"];
+  range: OverviewRange;
   rangeLabel: string;
 }) {
   const maxModel = Math.max(1, ...cost.topModels.map((model) => model.costUsd));
   return (
-    <section className="card overview-card" aria-label="Cost this week">
+    <section className="card overview-card" aria-label={`Cost ${rangeLabel}`}>
       <div className="overview-card-head">
         <h3>{`Cost ${rangeLabel}`}</h3>
-        <Link href="/usage">
+        <Link href={range === "7d" ? "/usage" : `/usage?range=${range}`}>
           Full breakdown{" "}
           <ArrowRight aria-hidden="true" className="inline-icon" size={12} />
         </Link>

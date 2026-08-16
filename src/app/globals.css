@@ -421,6 +421,12 @@
     display: inline-flex;
     gap: 0.25rem;
   }
+  .page-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
   .metric {
     display: grid;
     min-height: 6.9rem;
@@ -1743,6 +1749,9 @@
     gap: 0.12rem;
     padding-top: 0;
   }
+  .usage-spark-all {
+    gap: 0;
+  }
   .spark-slot {
     display: flex;
     align-items: flex-end;
@@ -2943,16 +2952,24 @@
     .page-header {
       align-items: center;
     }
-    .page-header > .btn {
+    .page-header .sync-button {
       width: 2.75rem;
       overflow: hidden;
       padding: 0;
       color: transparent;
       gap: 0;
     }
-    .page-header > .btn svg {
+    .page-header .sync-button svg {
       flex: 0 0 auto;
       color: var(--muted-foreground);
+    }
+    .sessions-page-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .sessions-page-header .page-header-actions {
+      width: 100%;
+      justify-content: space-between;
     }
     .summary-grid,
     .filter-row {

@@ -6,16 +6,18 @@ import type { OverviewRange } from "@/lib/queries";
 const RANGES: { value: OverviewRange; label: string }[] = [
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
+  { value: "all", label: "All time" },
 ];
 
-// Segmented 7d/30d toggle backed by the `?range=` URL param. The 7-day view is
+// Segmented range control backed by the `?range=` URL param. The 7-day view is
 // the default, so it is expressed by removing the param rather than persisting
-// it. Shared by Overview and Insights, which both read the same param.
+// it. A null range supports contextual states such as Sessions' Today deep link
+// without falsely marking one of the regular options as selected.
 export function RangeSwitcher({
   range,
   ariaLabel,
 }: {
-  range: OverviewRange;
+  range: OverviewRange | null;
   ariaLabel: string;
 }) {
   const router = useRouter();

@@ -26,6 +26,7 @@ import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { normalizeModel } from "@/lib/pricing";
 import type {
   ModelOption,
+  OverviewRange,
   ProjectOption,
   ProjectCostSummary,
   SessionFilters,
@@ -33,6 +34,7 @@ import type {
   UsageWindow,
 } from "@/lib/queries";
 import { StatusLabel } from "./status-label";
+import { RangeSwitcher } from "./range-switcher";
 
 export type WorkspaceView = "sessions" | "projects";
 
@@ -50,6 +52,8 @@ interface DashboardProps {
   syncState: { lastSyncedAt: string | null; errors: number; sources: number };
   costToday: UsageWindow;
   filters: SessionFilters;
+  range?: OverviewRange;
+  isTodayRange?: boolean;
   view: WorkspaceView;
 }
 
@@ -69,6 +73,8 @@ export function Dashboard({
   syncState,
   costToday,
   filters,
+  range = "7d",
+  isTodayRange = false,
   view,
 }: DashboardProps) {
   const router = useRouter();
@@ -134,28 +140,39 @@ export function Dashboard({
 
   return (
     <section className="relay-content">
-      <header className="page-header">
+      <header className="page-header sessions-page-header">
         <div>
           <h1>Sessions</h1>
           <p>Browse individual runs and project-level rollups in one place.</p>
         </div>
-        <button
-          className="btn btn-outline"
-          onClick={sync}
-          disabled={isSyncing}
-          aria-label="Sync agent activity"
-        >
-          {isSyncing ? (
-            <LoaderCircle className="animate-spin" size={14} />
-          ) : (
-            <RefreshCw size={14} />
+        <div className="page-header-actions">
+          {isTodayRange && (
+            <span className="badge border border-border bg-card text-foreground">
+              Showing today
+            </span>
           )}
-          {isSyncing
-            ? "Syncing…"
-            : syncState.lastSyncedAt
-              ? `Synced ${relativeTime(syncState.lastSyncedAt)}`
-              : "Sync activity"}
-        </button>
+          <RangeSwitcher
+            range={isTodayRange ? null : range}
+            ariaLabel="Sessions range"
+          />
+          <button
+            className="btn btn-outline sync-button"
+            onClick={sync}
+            disabled={isSyncing}
+            aria-label="Sync agent activity"
+          >
+            {isSyncing ? (
+              <LoaderCircle className="animate-spin" size={14} />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            {isSyncing
+              ? "Syncing…"
+              : syncState.lastSyncedAt
+                ? `Synced ${relativeTime(syncState.lastSyncedAt)}`
+                : "Sync activity"}
+          </button>
+        </div>
       </header>
 
       <div className="summary-grid" aria-label="Workspace summary">
@@ -251,18 +268,6 @@ export function Dashboard({
               label,
             })),
           ]}
-        />
-        <FilterSelect
-          label="Date range"
-          value={filters.range ?? "7d"}
-          onChange={(value) => updateParam("range", value)}
-          options={[
-            { value: "today", label: "Today" },
-            { value: "7d", label: "Last 7 days" },
-            { value: "30d", label: "Last 30 days" },
-            { value: "all", label: "All time" },
-          ]}
-          compact
         />
         <FilterSelect
           label="Sort sessions"

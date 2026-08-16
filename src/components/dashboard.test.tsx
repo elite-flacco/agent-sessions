@@ -7,6 +7,7 @@ import { Dashboard } from "./dashboard";
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sessions",
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 function session(
@@ -42,6 +43,40 @@ function session(
 }
 
 describe("Dashboard session rows", () => {
+  test("uses the shared range picker instead of a date filter", () => {
+    const html = renderToStaticMarkup(
+      <Dashboard
+        sessions={[]}
+        projects={[]}
+        projectOptions={[]}
+        modelOptions={[]}
+        summary={{
+          sessionsToday: 0,
+          activeNow: 0,
+          totalRuntimeMs: 0,
+          connectedAgents: 0,
+        }}
+        syncState={{ lastSyncedAt: null, errors: 0, sources: 0 }}
+        costToday={{
+          costUsd: 0,
+          tokens: 0,
+          cacheReadTokens: 0,
+          sessions: 0,
+          unpricedSessions: 0,
+        }}
+        filters={{ range: "today" }}
+        range="7d"
+        isTodayRange
+        view="sessions"
+      />,
+    );
+
+    expect(html).toContain('aria-label="Sessions range"');
+    expect(html).toContain("All time");
+    expect(html).toContain("Showing today");
+    expect(html).not.toContain('aria-label="Date range"');
+  });
+
   test("balances session filters before the desktop row overflows", () => {
     const styles = readFileSync(
       new URL("../app/globals.css", import.meta.url),

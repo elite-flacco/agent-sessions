@@ -215,6 +215,16 @@ describe("OverviewView", () => {
     expect(thirtyDayHtml).toContain("last thirty days");
   });
 
+  test("uses honest all-time copy without falling through to 30 days", () => {
+    const html = renderOverview([], [], "all");
+
+    expect(html).toContain("Sessions all time");
+    expect(html).toContain("Cost all time");
+    expect(html).toContain("all recorded sessions");
+    expect(html).not.toContain("Sessions last 30 days");
+    expect(html).not.toContain("last all time");
+  });
+
   test("does not render a heatmap intensity legend", () => {
     const html = renderOverview();
 

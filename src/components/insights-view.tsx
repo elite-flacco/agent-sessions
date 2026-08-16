@@ -19,7 +19,12 @@ interface InsightsViewProps {
 
 export function InsightsView({ range, insights }: InsightsViewProps) {
   const router = useRouter();
-  const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
+  const rangePeriodLabel =
+    range === "7d"
+      ? "this week"
+      : range === "30d"
+        ? "the last 30 days"
+        : "all time";
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -138,10 +143,11 @@ export function HeroStrip({
       : `${capabilities.used.length} used`;
   const capabilityRange = rangeDaysLabel(capabilities.range);
   const daysLabel = rangeDaysLabel(range);
+  const windowLabel = range === "all" ? "all time" : `last ${daysLabel}`;
   const adoptionDetail =
     capabilities.installedCount > 0
-      ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used in ${capabilityRange}`
-      : `${capabilities.used.length} capabilities used in ${capabilityRange}; no complete inventory denominator`;
+      ? `${capabilities.installedUsedCount} of ${capabilities.installedCount} installed capabilities used ${capabilities.range === "all" ? "across" : "in"} ${capabilityRange}`
+      : `${capabilities.used.length} capabilities used ${capabilities.range === "all" ? "across" : "in"} ${capabilityRange}; no complete inventory denominator`;
 
   return (
     <div className="summary-grid insight-hero">
@@ -152,14 +158,14 @@ export function HeroStrip({
         detail={
           cost.week.totalUsd === null
             ? "Unavailable when any usage is unpriced"
-            : `Priced total · last ${daysLabel}`
+            : `Priced total · ${windowLabel}`
         }
       />
       <KpiTile
         href="#insight-cache"
         label="Cache hit rate"
         value={hitValue}
-        detail={`Share of input served from cache · last ${daysLabel}`}
+        detail={`Share of input served from cache · ${windowLabel}`}
       />
       <KpiTile
         href="#insight-capability"
@@ -180,7 +186,13 @@ function CacheCard({
 }) {
   const { cache } = insights;
   const daysLabel = rangeDaysLabel(range);
-  const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
+  const windowLabel = range === "all" ? "all time" : `last ${daysLabel}`;
+  const rangePeriodLabel =
+    range === "7d"
+      ? "this week"
+      : range === "30d"
+        ? "the last 30 days"
+        : "across all time";
   const hitPct =
     cache.week.hitRate === null
       ? "—"
@@ -194,7 +206,7 @@ function CacheCard({
     >
       <div className="insight-card-head">
         <h3 className="text-sm">Cache effectiveness</h3>
-        <span className="mono">last {daysLabel}</span>
+        <span className="mono">{windowLabel}</span>
       </div>
 
       <div>
@@ -246,7 +258,13 @@ function CostCard({
 }) {
   const { cost } = insights;
   const daysLabel = rangeDaysLabel(range);
-  const rangePeriodLabel = range === "7d" ? "this week" : "the last 30 days";
+  const windowLabel = range === "all" ? "all time" : `last ${daysLabel}`;
+  const rangePeriodLabel =
+    range === "7d"
+      ? "this week"
+      : range === "30d"
+        ? "the last 30 days"
+        : "across all time";
   const maxOutlier = Math.max(...cost.outliers.map((o) => o.costUsd), 0);
 
   return (
@@ -257,7 +275,7 @@ function CostCard({
     >
       <div className="insight-card-head">
         <h3 className="text-sm">Cost outliers</h3>
-        <span className="mono">last {daysLabel}</span>
+        <span className="mono">{windowLabel}</span>
       </div>
 
       <div>
