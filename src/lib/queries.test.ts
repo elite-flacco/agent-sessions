@@ -382,6 +382,57 @@ describe("project and overview queries", () => {
     expect(detail?.project.repository).toBe("beacon");
   });
 
+  it("keeps only the five most recent project activity entries", () => {
+    const now = Date.now();
+    const insertSession = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, repository, branch, status, started_at, updated_at, ended_at)
+      VALUES (?, 'codex', ?, 'activity-limit', 'main', 'completed', ?, ?, ?)`);
+    const insertEvent = sqlite.prepare(`INSERT INTO activity_events
+      (session_id, external_id, kind, title, occurred_at)
+      VALUES (?, ?, 'completed', 'Session completed', ?)`);
+
+    for (let index = 1; index <= 6; index += 1) {
+      const occurredAt = new Date(now - index * 60_000).toISOString();
+      const result = insertSession.run(
+        `activity-limit-${index}`,
+        `Activity ${index}`,
+        occurredAt,
+        occurredAt,
+        occurredAt,
+      );
+      insertEvent.run(
+        Number(result.lastInsertRowid),
+        `activity-limit-event-${index}`,
+        occurredAt,
+      );
+    }
+
+    try {
+      expect(
+        queries
+          .getProjectDetail("activity-limit")
+          ?.activity.map((event) => event.sessionTitle),
+      ).toEqual([
+        "Activity 1",
+        "Activity 2",
+        "Activity 3",
+        "Activity 4",
+        "Activity 5",
+      ]);
+    } finally {
+      sqlite
+        .prepare(
+          "DELETE FROM activity_events WHERE external_id LIKE 'activity-limit-event-%'",
+        )
+        .run();
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id LIKE 'activity-limit-%'",
+        )
+        .run();
+    }
+  });
+
   it("scopes briefing rollups to the selected range", () => {
     const stale = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
     sqlite

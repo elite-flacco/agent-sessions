@@ -967,7 +967,7 @@ function projectActivity(key: string, since?: string): ProjectActivity[] {
       WHERE s.repository = ? ${rangeClause}
         AND e.kind IN ('started', 'file', 'command', 'completed')
       GROUP BY e.session_id
-      ORDER BY occurredAt DESC LIMIT 8`,
+      ORDER BY occurredAt DESC LIMIT 5`,
     )
     .all(staleCutoff(), ...(since ? [key, since] : [key])) as ProjectActivity[];
 }

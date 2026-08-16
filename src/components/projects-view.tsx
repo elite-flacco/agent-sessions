@@ -45,7 +45,7 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
       <header className="projects-header">
         <div>
           <h1>Projects</h1>
-          <p>All your projects at a glance.</p>
+          <p>All your projects at a glance</p>
         </div>
       </header>
       {projects.length ? (

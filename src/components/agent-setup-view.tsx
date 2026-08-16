@@ -331,7 +331,7 @@ export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
           <h1>Agent setup</h1>
           <p>
             Live global inventory for installed plugins, skills, MCPs, and
-            instruction files. Configuration details and secrets stay hidden.
+            instruction files
           </p>
         </div>
       </header>

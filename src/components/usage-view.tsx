@@ -39,10 +39,7 @@ export function UsageView({ usage, range }: UsageViewProps) {
       <header className="page-header">
         <div>
           <h1>Usage &amp; cost</h1>
-          <p>
-            API-equivalent estimates from public per-token rates; subscription
-            plans bill differently. Pi costs are provider-reported.
-          </p>
+          <p>API-equivalent estimates from public token pricing</p>
         </div>
         <RangeSwitcher range={range} ariaLabel="Usage range" />
       </header>

@@ -143,7 +143,9 @@ export function Dashboard({
       <header className="page-header sessions-page-header">
         <div>
           <h1>Sessions</h1>
-          <p>Browse individual runs and project-level rollups in one place.</p>
+          <p>
+            Browse individual sessions and project-level rollups in one place
+          </p>
         </div>
         <div className="page-header-actions">
           {isTodayRange && (
@@ -446,7 +448,7 @@ function SessionRow({
         >
           {relativeTime(session.updatedAt)}
         </span>
-        <span className="mono session-secondary">
+        <span className="mono session-secondary text-foreground">
           {hasMeaningfulDuration(session.status)
             ? elapsed(session.startedAt, session.endedAt ?? session.updatedAt)
             : "—"}
@@ -558,9 +560,6 @@ function ProjectsTable({
         <span>
           Showing {projectCount} projects
           {taskGroup ? ` · ${taskGroup.sessionCount} tasks` : ""}
-        </span>
-        <span>
-          {isPending ? "Updating…" : "Updated from filtered sessions"}
         </span>
       </footer>
     </section>

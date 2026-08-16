@@ -19,12 +19,6 @@ interface InsightsViewProps {
 
 export function InsightsView({ range, insights }: InsightsViewProps) {
   const router = useRouter();
-  const rangePeriodLabel =
-    range === "7d"
-      ? "this week"
-      : range === "30d"
-        ? "the last 30 days"
-        : "all time";
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -39,7 +33,7 @@ export function InsightsView({ range, insights }: InsightsViewProps) {
       <header className="page-header">
         <div>
           <h1>Insights</h1>
-          <p>Cost, cache, and capability usage for {rangePeriodLabel}.</p>
+          <p>Cost, cache, and capability usage</p>
         </div>
         <RangeSwitcher range={range} ariaLabel="Insights range" />
       </header>
