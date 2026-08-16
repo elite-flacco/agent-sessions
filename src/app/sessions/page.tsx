@@ -4,7 +4,7 @@ import { refreshIngestedData } from "@/lib/auto-sync";
 import {
   getModelOptions,
   getProjectOptions,
-  getProjects,
+  getProjectsWithCosts,
   getSessions,
   getSummary,
   getSyncState,
@@ -47,7 +47,7 @@ export default async function Home({ searchParams }: HomeProps) {
       />
       <Dashboard
         sessions={sessions}
-        projects={getProjects(filters)}
+        projects={getProjectsWithCosts(filters, sessions)}
         projectOptions={getProjectOptions()}
         modelOptions={getModelOptions()}
         summary={summary}

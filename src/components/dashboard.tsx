@@ -27,7 +27,7 @@ import { normalizeModel } from "@/lib/pricing";
 import type {
   ModelOption,
   ProjectOption,
-  ProjectSummary,
+  ProjectCostSummary,
   SessionFilters,
   SessionTreeItem,
   UsageWindow,
@@ -38,7 +38,7 @@ export type WorkspaceView = "sessions" | "projects";
 
 interface DashboardProps {
   sessions: SessionTreeItem[];
-  projects: ProjectSummary[];
+  projects: ProjectCostSummary[];
   projectOptions: ProjectOption[];
   modelOptions: ModelOption[];
   summary: {
@@ -468,7 +468,7 @@ function ProjectsTable({
   projects,
   isPending,
 }: {
-  projects: ProjectSummary[];
+  projects: ProjectCostSummary[];
   isPending: boolean;
 }) {
   const projectCount = projects.filter(
@@ -481,6 +481,7 @@ function ProjectsTable({
         <span>Project</span>
         <span>Agents</span>
         <span>Sessions</span>
+        <span>Total cost</span>
         <span>Runtime</span>
         <span>Last activity</span>
       </div>
@@ -517,6 +518,18 @@ function ProjectsTable({
               {project.activeCount > 0
                 ? ` (${project.activeCount} active)`
                 : ""}
+            </span>
+            <span
+              className="mono session-secondary"
+              title={
+                project.unpricedSessionCount
+                  ? `Excludes ${project.unpricedSessionCount} session${project.unpricedSessionCount === 1 ? "" : "s"} without complete pricing`
+                  : undefined
+              }
+            >
+              {project.totalCostUsd != null
+                ? formatCostUsd(project.totalCostUsd)
+                : "—"}
             </span>
             <span className="mono session-secondary">
               {runtime(project.totalRuntimeMs)}

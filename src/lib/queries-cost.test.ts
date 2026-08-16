@@ -216,3 +216,15 @@ describe("getSessions sorting", () => {
     expect(sessions.at(-1)?.costUsd ?? null).toBeNull();
   });
 });
+
+describe("getProjectsWithCosts", () => {
+  it("sums each filtered session tree once and reports excluded unpriced trees", () => {
+    const projects = queries.getProjectsWithCosts({ range: "all" });
+    const tasks = projects.find((project) => project.key === "(tasks)");
+
+    expect(tasks).toMatchObject({
+      totalCostUsd: 16.25,
+      unpricedSessionCount: 1,
+    });
+  });
+});

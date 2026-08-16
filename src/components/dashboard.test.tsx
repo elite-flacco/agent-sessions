@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import type { SessionTreeItem } from "@/lib/queries";
+import type { ProjectCostSummary, SessionTreeItem } from "@/lib/queries";
 import { Dashboard } from "./dashboard";
 
 vi.mock("next/navigation", () => ({
@@ -60,6 +60,57 @@ describe("Dashboard session rows", () => {
     expect(breakpoint).toContain(`.session-filter-row .search-control {
       grid-column: 1 / -1;
     }`);
+  });
+
+  test("shows project total cost between sessions and runtime", () => {
+    const project: ProjectCostSummary = {
+      key: "agent-sessions",
+      repository: "agent-sessions",
+      category: "project",
+      sessionCount: 3,
+      activeCount: 0,
+      providers: ["codex"],
+      branches: ["main"],
+      workdirs: ["/workspace/agent-sessions"],
+      totalCostUsd: 12.345,
+      unpricedSessionCount: 1,
+      totalRuntimeMs: 3_600_000,
+      lastActivityAt: "2026-07-15T12:05:00.000Z",
+    };
+    const html = renderToStaticMarkup(
+      <Dashboard
+        sessions={[]}
+        projects={[project]}
+        projectOptions={[]}
+        modelOptions={[]}
+        summary={{
+          sessionsToday: 0,
+          activeNow: 0,
+          totalRuntimeMs: 0,
+          connectedAgents: 1,
+        }}
+        syncState={{ lastSyncedAt: null, errors: 0, sources: 1 }}
+        costToday={{
+          costUsd: 0,
+          tokens: 0,
+          cacheReadTokens: 0,
+          sessions: 0,
+          unpricedSessions: 0,
+        }}
+        filters={{}}
+        view="projects"
+      />,
+    );
+
+    expect(html.indexOf("<span>Sessions</span>")).toBeLessThan(
+      html.indexOf("<span>Total cost</span>"),
+    );
+    expect(html.indexOf("<span>Total cost</span>")).toBeLessThan(
+      html.indexOf("<span>Runtime</span>"),
+    );
+    expect(html).toContain(
+      'title="Excludes 1 session without complete pricing">$12.35</span>',
+    );
   });
 
   test("uses the single-row desktop layout for all session filters", () => {

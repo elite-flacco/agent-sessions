@@ -399,6 +399,13 @@ export interface ProjectSummary {
   lastActivityAt: string;
 }
 
+export interface ProjectCostSummary extends ProjectSummary {
+  /** Spend from fully priced top-level session trees in the active filters. */
+  totalCostUsd: number | null;
+  /** Top-level session trees omitted because at least one usage row is unpriced. */
+  unpricedSessionCount: number;
+}
+
 export type ProjectState = "active" | "waiting" | "blocked" | "complete";
 
 /**
@@ -614,6 +621,55 @@ export function getProjects(filters?: SessionFilters): ProjectSummary[] {
     )
     .all(staleCutoff()) as ProjectRow[];
   return summarizeProjects(rows);
+}
+
+export function getProjectsWithCosts(
+  filters: SessionFilters,
+  sessions: SessionTreeItem[] = getSessions(filters),
+): ProjectCostSummary[] {
+  const projects = projectsFromSessions(sessions);
+  const projectKeys = new Set(
+    projects
+      .filter((project) => project.category === "project")
+      .map((project) => project.key),
+  );
+  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+  const totals = new Map<
+    string,
+    {
+      costUsd: number;
+      pricedSessionCount: number;
+      unpricedSessionCount: number;
+    }
+  >();
+
+  for (const session of sessions) {
+    const key =
+      session.repository && projectKeys.has(session.repository)
+        ? session.repository
+        : TASKS_PROJECT_KEY;
+    const total = totals.get(key) ?? {
+      costUsd: 0,
+      pricedSessionCount: 0,
+      unpricedSessionCount: 0,
+    };
+    const cost = costs.get(session.id);
+    if (cost === null) total.unpricedSessionCount += 1;
+    else if (cost !== undefined) {
+      total.costUsd += cost;
+      total.pricedSessionCount += 1;
+    }
+    totals.set(key, total);
+  }
+
+  return projects.map((project) => {
+    const total = totals.get(project.key);
+    return {
+      ...project,
+      totalCostUsd: total?.pricedSessionCount ? total.costUsd : null,
+      unpricedSessionCount: total?.unpricedSessionCount ?? 0,
+    };
+  });
 }
 
 /** Evidence list cap. Kept small enough to stay a scannable list, not a table. */
