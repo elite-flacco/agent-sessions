@@ -1786,7 +1786,7 @@
     white-space: nowrap;
   }
   .heat-cell {
-    height: 0.85rem;
+    height: 1rem;
     background: var(--heat-0);
   }
   .heat-fill-0 {

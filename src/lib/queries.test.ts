@@ -884,6 +884,46 @@ describe("overview patterns", () => {
     expect(patterns.length.longestMs).toBeGreaterThan(60 * 60_000);
   });
 
+  it("lists every priced model in the window ranked by cost", () => {
+    const now = new Date().toISOString();
+    const session = sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, status, started_at, updated_at)
+        VALUES ('overview-all-models', 'codex', 'Model census', 'completed', ?, ?)`,
+      )
+      .run(now, now);
+    const insertUsage = sqlite.prepare(
+      `INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, 1000, 100, 0, 0, ?)`,
+    );
+    // Five priced models in the window: the cost card renders the full list,
+    // not a top-N slice.
+    const fixtureModels = Array.from({ length: 5 }, (_, i) => `model-${i + 1}`);
+    fixtureModels.forEach((model, i) => {
+      insertUsage.run(Number(session.lastInsertRowid), model, i + 1);
+    });
+
+    try {
+      const models = queries.getOverviewPatterns().costWeek.models;
+      const names = models.map((bucket) => bucket.model);
+      expect(names).toEqual(
+        expect.arrayContaining(["gpt-5.5", ...fixtureModels]),
+      );
+      // Ranked most to least expensive.
+      const costs = models.map((bucket) => bucket.costUsd);
+      expect([...costs].sort((a, b) => b - a)).toEqual(costs);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM session_model_usage WHERE session_id = ?")
+        .run(Number(session.lastInsertRowid));
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("overview-all-models");
+    }
+  });
+
   it("sums priced sessions while excluding unpriced subagents", () => {
     const now = new Date().toISOString();
     const child = sqlite

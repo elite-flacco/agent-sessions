@@ -293,7 +293,7 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
   return (
     <section className="card overview-card" aria-label="Activity heatmap">
       <div className="overview-card-head">
-        <h3>When you&apos;re active</h3>
+        <h3 className="mb-2">When you&apos;re active</h3>
         <span>
           {first && last
             ? `${heatDayLabel(first)} – ${heatDayLabel(last)}`
@@ -345,7 +345,7 @@ function SessionLength({
   return (
     <section className="card overview-card" aria-label="Session length">
       <div className="overview-card-head">
-        <h3>
+        <h3 className="mb-2">
           <Clock3 size={14} className="inline-icon" /> Session length
         </h3>
         <span>{`${rangeLabel} · ${length.sessionCount} sessions`}</span>
@@ -392,7 +392,7 @@ function CostAtAGlance({
   range: OverviewRange;
   rangeLabel: string;
 }) {
-  const maxModel = Math.max(1, ...cost.topModels.map((model) => model.costUsd));
+  const maxModel = Math.max(1, ...cost.models.map((model) => model.costUsd));
   return (
     <section className="card overview-card" aria-label={`Cost ${rangeLabel}`}>
       <div className="overview-card-head">
@@ -412,8 +412,8 @@ function CostAtAGlance({
             : `estimated · ${formatTokens(cost.tokens)}`}
         </span>
       </div>
-      {cost.topModels.length > 0 &&
-        cost.topModels.map((model) => (
+      {cost.models.length > 0 &&
+        cost.models.map((model) => (
           <div
             key={model.model}
             className="cost-row"

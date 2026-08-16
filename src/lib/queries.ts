@@ -1024,7 +1024,8 @@ export interface OverviewPatterns {
   costWeek: {
     costUsd: number | null;
     tokens: number;
-    topModels: { model: string; costUsd: number }[];
+    /** Every priced model in the window, ranked by cost — never a top-N slice. */
+    models: { model: string; costUsd: number }[];
   };
 }
 
@@ -1770,13 +1771,10 @@ export function getOverviewPatterns(
       byModel.set(model, (byModel.get(model) ?? 0) + modelCostUsd);
     }
   }
-  const topModels = [...byModel.entries()]
-    .map(([model, modelCostUsd]) => ({
-      model,
-      costUsd: modelCostUsd,
-    }))
-    .sort((a, b) => b.costUsd - a.costUsd)
-    .slice(0, 3);
+  const models = Array.from(byModel, ([model, cost]) => ({
+    model,
+    costUsd: cost,
+  })).sort((a, b) => b.costUsd - a.costUsd);
 
   return {
     heatmap,
@@ -1790,7 +1788,7 @@ export function getOverviewPatterns(
     costWeek: {
       costUsd,
       tokens,
-      topModels,
+      models,
     },
   };
 }

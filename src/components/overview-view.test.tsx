@@ -44,7 +44,7 @@ function renderOverview(
           longTailShare: null,
           sessionCount: 0,
         },
-        costWeek: { costUsd: null, tokens: 0, topModels: [] },
+        costWeek: { costUsd: null, tokens: 0, models: [] },
       }}
       running={running}
       attention={[]}
