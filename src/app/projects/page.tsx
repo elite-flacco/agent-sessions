@@ -4,7 +4,7 @@ import { refreshIngestedData } from "@/lib/auto-sync";
 import {
   getCollectorHealth,
   getProjectDetail,
-  getProjects,
+  getProjectsWithCosts,
   parseOverviewRange,
   parseProjectEvidenceFilter,
 } from "@/lib/queries";
@@ -26,7 +26,7 @@ export default async function ProjectsPage({
   const range = parseOverviewRange(first(params.range));
   const evidence = parseProjectEvidenceFilter(first(params.evidence));
   const health = getCollectorHealth();
-  const projects = getProjects().filter(
+  const projects = getProjectsWithCosts({ range: "all" }).filter(
     (project) => project.category === "project",
   );
   return (

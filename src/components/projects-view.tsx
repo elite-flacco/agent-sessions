@@ -8,12 +8,12 @@ import {
   shortenHomePath,
 } from "@/lib/format";
 import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
-import type { ProjectDetail, ProjectSummary } from "@/lib/queries";
+import type { ProjectCostSummary, ProjectDetail } from "@/lib/queries";
 import { Sparkline } from "./charts";
 import { RangeSwitcher } from "./range-switcher";
 
 interface ProjectsViewProps {
-  projects: ProjectSummary[];
+  projects: ProjectCostSummary[];
   selected: ProjectDetail | null;
 }
 
@@ -40,7 +40,7 @@ export function ProjectsView({ projects, selected }: ProjectsViewProps) {
   return <ProjectsLanding projects={projects} />;
 }
 
-function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
+function ProjectsLanding({ projects }: { projects: ProjectCostSummary[] }) {
   return (
     <section className="relay-content projects-page">
       <header className="projects-header">
@@ -66,7 +66,10 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
                   </div>
                   <p className="text-muted-foreground text-xs">
                     {project.sessionCount} sessions ·{" "}
-                    {runtime(project.totalRuntimeMs)}
+                    {runtime(project.totalRuntimeMs)} ·{" "}
+                    {project.totalCostUsd != null
+                      ? `${formatCostUsd(project.totalCostUsd)}`
+                      : "Total cost unavailable"}
                   </p>
                   <div className="project-provider-list">
                     {project.providers.map((provider) => (
@@ -80,7 +83,7 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
                   </div>
                 </div>
                 <div className="text-muted-foreground text-xs">
-                  Updated {relativeTime(project.lastActivityAt)}
+                  Last updated {relativeTime(project.lastActivityAt)}
                 </div>
               </Link>
               {project.githubUrl && (

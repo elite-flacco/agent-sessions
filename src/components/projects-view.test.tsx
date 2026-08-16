@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { ProjectDetail, ProjectSummary } from "@/lib/queries";
+import type { ProjectCostSummary, ProjectDetail } from "@/lib/queries";
 import { ProjectsView } from "./projects-view";
 
 vi.mock("next/navigation", () => ({
@@ -14,7 +14,9 @@ vi.mock("next/navigation", () => ({
 
 afterEach(cleanup);
 
-function baseProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+function baseProject(
+  overrides: Partial<ProjectCostSummary> = {},
+): ProjectCostSummary {
   return {
     key: "relay",
     repository: "relay",
@@ -25,6 +27,8 @@ function baseProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     providers: ["claude"],
     branches: ["main"],
     workdirs: ["/repos/relay"],
+    totalCostUsd: 241.35,
+    unpricedSessionCount: 0,
     totalRuntimeMs: 3_600_000,
     lastActivityAt: "2026-08-03T10:00:00.000Z",
     ...overrides,
@@ -118,6 +122,23 @@ describe("ProjectsView landing", () => {
     expect(githubLink).toHaveAttribute("target", "_blank");
     expect(githubLink).toHaveAttribute("rel", "noreferrer");
     expect(githubLink.querySelector('[data-icon="github"]')).toBeVisible();
+  });
+
+  test("shows each project's total cost", () => {
+    render(
+      <ProjectsView
+        projects={[
+          baseProject({
+            totalCostUsd: 12.345,
+            unpricedSessionCount: 2,
+          }),
+        ]}
+        selected={null}
+      />,
+    );
+
+    const card = screen.getByRole("article");
+    expect(card).toHaveTextContent("209 sessions · 1h 0m · $12.35");
   });
 
   test("keeps the existing empty state when no projects have Git evidence", () => {

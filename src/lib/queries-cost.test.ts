@@ -227,6 +227,115 @@ describe("getProjectsWithCosts", () => {
       unpricedSessionCount: 1,
     });
   });
+
+  it("does not cap all-time project cost summaries at the session-table limit", () => {
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, repository, branch, status, started_at, updated_at, ended_at)
+      VALUES (?, 'codex', ?, ?, 'main', 'completed', ?, ?, ?)`);
+    const usage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, 'pi-model', 1000, 500, 0, 0, 3)`);
+    const oldAt = new Date(Date.now() - 20 * HOUR_MS).toISOString();
+    const old = insert.run(
+      "uncapped-project-cost",
+      "Older priced project session",
+      "uncapped-project",
+      oldAt,
+      oldAt,
+      oldAt,
+    );
+    usage.run(Number(old.lastInsertRowid));
+    const insertFillers = sqlite.transaction(() => {
+      for (let index = 0; index < 250; index += 1) {
+        const at = new Date(Date.now() - index * 1000).toISOString();
+        insert.run(
+          `project-cost-filler-${index}`,
+          `Newer filler ${index}`,
+          "filler-project",
+          at,
+          at,
+          at,
+        );
+      }
+    });
+    insertFillers();
+
+    try {
+      const project = queries
+        .getProjectsWithCosts({ range: "all" })
+        .find((candidate) => candidate.key === "uncapped-project");
+
+      expect(project).toMatchObject({
+        sessionCount: 1,
+        totalCostUsd: 3,
+        unpricedSessionCount: 0,
+      });
+    } finally {
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id = ? OR external_id LIKE 'project-cost-filler-%'",
+        )
+        .run("uncapped-project-cost");
+    }
+  });
+
+  it("matches project briefing rollups when a priced subagent has an unpriced parent", () => {
+    const now = Date.now();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, parent_external_id, session_kind, agent_depth,
+       title, repository, branch, status, started_at, updated_at, ended_at)
+      VALUES (?, 'codex', ?, ?, ?, ?, 'alignment', 'main', 'completed', ?, ?, ?)`);
+    const parent = insert.run(
+      "alignment-parent",
+      null,
+      "main",
+      0,
+      "Unpriced parent",
+      new Date(now - 2 * HOUR_MS).toISOString(),
+      new Date(now - 1 * HOUR_MS).toISOString(),
+      new Date(now - 1 * HOUR_MS).toISOString(),
+    );
+    const child = insert.run(
+      "alignment-child",
+      "alignment-parent",
+      "subagent",
+      1,
+      "Priced child",
+      new Date(now - 1 * HOUR_MS).toISOString(),
+      new Date(now - 0.5 * HOUR_MS).toISOString(),
+      new Date(now - 0.5 * HOUR_MS).toISOString(),
+    );
+    const usage = sqlite.prepare(`INSERT INTO session_model_usage
+      (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+      VALUES (?, ?, 1000, 500, 0, 0, ?)`);
+    usage.run(Number(parent.lastInsertRowid), "unknown-unpriced-model", null);
+    usage.run(Number(child.lastInsertRowid), "reported-model", 5);
+
+    try {
+      const table = queries
+        .getProjectsWithCosts({ range: "all" })
+        .find((project) => project.key === "alignment");
+      const briefing = queries.getProjectDetail("alignment", "all");
+
+      expect(table).toMatchObject({
+        sessionCount: 2,
+        totalRuntimeMs: 1.5 * HOUR_MS,
+        totalCostUsd: 5,
+        unpricedSessionCount: 1,
+      });
+      expect(table?.sessionCount).toBe(briefing?.windowSessionCount);
+      expect(table?.totalRuntimeMs).toBeCloseTo(
+        briefing?.windowRuntimeMs ?? 0,
+        -1,
+      );
+      expect(table?.totalCostUsd).toBe(briefing?.totalCostUsd);
+      expect(table?.unpricedSessionCount).toBe(briefing?.unpricedSessionCount);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE repository = 'alignment'")
+        .run();
+    }
+  });
 });
 
 describe("getUsageSummary ranges", () => {

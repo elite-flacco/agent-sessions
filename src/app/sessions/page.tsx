@@ -48,7 +48,7 @@ export default async function Home({ searchParams }: HomeProps) {
       />
       <Dashboard
         sessions={sessions}
-        projects={getProjectsWithCosts(filters, sessions)}
+        projects={getProjectsWithCosts(filters)}
         projectOptions={getProjectOptions()}
         modelOptions={getModelOptions()}
         summary={summary}

@@ -106,6 +106,6 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 
 - For trivial, fully specified changes—especially copy, token, and one-line styling edits—do not invoke brainstorming, create a design spec, or write an implementation plan. Implement directly and verify proportionately.
 - Skip a formal implementation plan for small, well-scoped changes.
-- When a plan is warranted, include `docs/superpowers/plan-dod.md`. Its final task must review `README.md` for user-facing changes and both `AGENTS.md` and `CLAUDE.md` for architecture or convention changes.
+- When a plan is warranted, its final task must review `README.md` for user-facing changes and both `AGENTS.md` and `CLAUDE.md` for architecture or convention changes.
 - Do not weaken the Definition of Done to fit a task.
 - After code changes, run `npm run verify`. If unrelated existing files make the format check fail, run targeted checks for changed files and report the exact pre-existing failure.

@@ -128,7 +128,11 @@ function sessionRuntimeMs(session: SessionListItem): number {
   );
 }
 
-export function getSessions(filters: SessionFilters): SessionTreeItem[] {
+function getSessionsMatchingFilters(
+  filters: SessionFilters,
+  limit: number | null,
+  includeSubtreeCosts = true,
+): SessionTreeItem[] {
   const status = statusExpression("status", "updated_at");
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -197,12 +201,18 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
       session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
       title, summary, repository, cwd, branch, ${status} status, status_reason statusReason,
     started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens, output_tokens outputTokens,
-    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY updated_at DESC LIMIT 250`,
+    cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd FROM sessions ${where} ORDER BY updated_at DESC${limit === null ? "" : " LIMIT ?"}`,
     )
-    .all(staleCutoff(), ...params) as SessionListItem[];
-  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
-  for (const session of sessions)
-    session.costUsd = costs.get(session.id) ?? null;
+    .all(
+      staleCutoff(),
+      ...params,
+      ...(limit === null ? [] : [limit]),
+    ) as SessionListItem[];
+  if (includeSubtreeCosts) {
+    const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+    for (const session of sessions)
+      session.costUsd = costs.get(session.id) ?? null;
+  }
   const roots = nestSessions(sessions);
   if (filters.sort === "started")
     roots.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
@@ -212,6 +222,10 @@ export function getSessions(filters: SessionFilters): SessionTreeItem[] {
     roots.sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1));
   else roots.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return roots;
+}
+
+export function getSessions(filters: SessionFilters): SessionTreeItem[] {
+  return getSessionsMatchingFilters(filters, 250);
 }
 
 export interface ProjectOption {
@@ -554,6 +568,16 @@ function projectsFromSessions(sessions: SessionListItem[]): ProjectSummary[] {
   return summarizeProjects(rows);
 }
 
+function flattenSessionTrees(sessions: SessionTreeItem[]): SessionListItem[] {
+  const flattened: SessionListItem[] = [];
+  const visit = (session: SessionTreeItem) => {
+    flattened.push(session);
+    for (const child of session.children) visit(child);
+  };
+  for (const session of sessions) visit(session);
+  return flattened;
+}
+
 function summarizeProjects(rows: ProjectRow[]): ProjectSummary[] {
   const summaries: ProjectSummary[] = rows.map((row) => {
     const workdirs = row.workdirs?.split(",") ?? [];
@@ -621,15 +645,18 @@ export function getProjects(filters?: SessionFilters): ProjectSummary[] {
 
 export function getProjectsWithCosts(
   filters: SessionFilters,
-  sessions: SessionTreeItem[] = getSessions(filters),
 ): ProjectCostSummary[] {
-  const projects = projectsFromSessions(sessions);
+  const sessions = getSessionsMatchingFilters(filters, null, false);
+  const projectSessions = flattenSessionTrees(sessions);
+  const projects = projectsFromSessions(projectSessions);
   const projectKeys = new Set(
     projects
       .filter((project) => project.category === "project")
       .map((project) => project.key),
   );
-  const costs = getSessionsCostUsd(sessions.map((session) => session.id));
+  const costs = getOwnSessionCostsUsd(
+    projectSessions.map((session) => session.id),
+  );
   const totals = new Map<
     string,
     {
@@ -639,7 +666,7 @@ export function getProjectsWithCosts(
     }
   >();
 
-  for (const session of sessions) {
+  for (const session of projectSessions) {
     const key =
       session.repository && projectKeys.has(session.repository)
         ? session.repository
@@ -1245,6 +1272,29 @@ function subtreeUsageRows(sessionIds: number[]): (UsageJoinRow & {
       JOIN session_model_usage u ON u.session_id = t.id`,
     )
     .all(...sessionIds) as (UsageJoinRow & { rootId: number })[];
+}
+
+/**
+ * Per-session cost without descendant roll-up. Aggregate views use this so
+ * every stored session is counted once and pricing gaps remain scoped to the
+ * session that contains them.
+ */
+function getOwnSessionCostsUsd(
+  sessionIds: number[],
+): Map<number, number | null> {
+  if (!sessionIds.length) return new Map();
+  const placeholders = sessionIds.map(() => "?").join(", ");
+  const rows = sqlite
+    .prepare(`${USAGE_JOIN} WHERE u.session_id IN (${placeholders})`)
+    .all(...sessionIds) as UsageJoinRow[];
+  const totals = new Map<number, number | null>();
+  for (const row of rows) {
+    const cost = rowCost(row);
+    const current = totals.get(row.sessionId);
+    if (cost === undefined || current === null) totals.set(row.sessionId, null);
+    else totals.set(row.sessionId, (current ?? 0) + cost);
+  }
+  return totals;
 }
 
 /**
