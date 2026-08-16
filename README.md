@@ -104,8 +104,9 @@ deliberate disable from a missing install); the Inventory catalog and rail
 counts show what is in effect. Inventory shows one provider and one Kind at a
 time, selected from a compact browsing rail. Search, Source, and Status filters
 remain above the catalog. Skills are grouped by management source: Standalone,
-Plugin-provided, Built-in, Marketplace, and Personal when present. Plugin-
-provided skills stay beneath a collapsible plugin parent even when only one
+Plugin-provided, Built-in, Marketplace, and Personal when present. Each source
+category starts expanded and can be collapsed independently. Plugin-provided
+skills stay beneath a collapsible plugin parent even when only one
 skill matches, because the plugin is the installation unit; non-plugin source
 groups use direct rows. Every row aligns name, package/source, status, and safe
 location/detail fields while retaining a small source label. Selecting a row

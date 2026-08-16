@@ -1014,15 +1014,15 @@ function CatalogSourceGroup({
   }
 
   return (
-    <section className="agent-source-group">
-      <header className="agent-source-group-heading">
-        <div>
+    <details className="agent-source-group" open>
+      <summary className="agent-source-group-heading">
+        <span className="agent-source-group-heading-copy">
           <SourceIcon aria-hidden="true" size={15} />
           <strong>{catalogSourceTitle(source, capabilities)}</strong>
           <span>{meta.description}</span>
-        </div>
+        </span>
         <span>{countLabel(capabilities.length, "item")}</span>
-      </header>
+      </summary>
       <div className="agent-source-group-body">
         {shouldGroupPlugins
           ? [...pluginGroups.entries()].map(([plugin, members]) => (
@@ -1045,7 +1045,7 @@ function CatalogSourceGroup({
               />
             ))}
       </div>
-    </section>
+    </details>
   );
 }
 

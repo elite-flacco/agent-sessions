@@ -2200,9 +2200,29 @@
     border-bottom: 1px solid var(--border);
     padding: 0.5rem 0.75rem;
     background: var(--muted);
+    cursor: pointer;
+    list-style: none;
+    transition: background 150ms ease;
   }
-  .agent-source-group-heading > div {
+  .agent-source-group-heading::-webkit-details-marker {
+    display: none;
+  }
+  .agent-source-group-heading::before {
+    content: "›";
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    transform: rotate(0deg);
+    transition: transform 150ms ease;
+  }
+  .agent-source-group[open] > .agent-source-group-heading::before {
+    transform: rotate(90deg);
+  }
+  .agent-source-group-heading:hover {
+    background: var(--card-hover);
+  }
+  .agent-source-group-heading-copy {
     display: flex;
+    flex: 1 1 auto;
     min-width: 0;
     align-items: center;
     gap: 0.5rem;
@@ -2218,7 +2238,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
-  .agent-source-group-heading > div > span,
+  .agent-source-group-heading-copy > span,
   .agent-source-group-heading > span {
     overflow: hidden;
     color: var(--muted-foreground);
@@ -3006,7 +3026,7 @@
     .agent-context-metrics {
       justify-content: flex-start;
     }
-    .agent-source-group-heading > div {
+    .agent-source-group-heading-copy {
       flex-wrap: wrap;
     }
     .agent-catalog-columns {

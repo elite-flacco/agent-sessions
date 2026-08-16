@@ -247,6 +247,20 @@ describe("AgentSetupView", () => {
     expect(
       container.querySelectorAll(".agent-catalog-row .agent-row-source"),
     ).toHaveLength(0);
+
+    const sourceGroups = container.querySelectorAll(
+      "details.agent-source-group",
+    );
+    expect(sourceGroups).toHaveLength(5);
+    for (const group of sourceGroups) {
+      expect(group.hasAttribute("open")).toBe(true);
+      expect(
+        group.querySelector(":scope > summary.agent-source-group-heading"),
+      ).not.toBeNull();
+      expect(
+        group.querySelector(":scope > .agent-source-group-body"),
+      ).not.toBeNull();
+    }
   });
 
   test("plugin-provided skills always stay under a collapsible plugin parent", () => {
@@ -275,6 +289,7 @@ describe("AgentSetupView", () => {
 
     const group = container.querySelector(".agent-plugin-group");
     expect(group).not.toBeNull();
+    expect(group?.closest("details.agent-source-group")).not.toBeNull();
     expect(group?.textContent).toContain("skill-creator@openai-curated");
     expect(group?.textContent).toContain("1 skill");
     expect(group?.querySelector(".agent-catalog-row")?.textContent).toContain(
@@ -1722,19 +1737,20 @@ describe("AgentSetupView", () => {
       ],
       warnings: [],
     };
-    const html = renderToStaticMarkup(
+    const { container } = render(
       <AgentSetupView
         inventories={[groupedInventory]}
         filters={{ view: "inventory" }}
       />,
     );
 
-    expect(html).toContain("3 skills");
-    const summaryEnd = html.indexOf("</summary>");
-    expect(summaryEnd).toBeGreaterThan(-1);
-    expect(html.slice(0, summaryEnd)).toContain(
-      'class="agent-unavailable-inline">Unavailable<',
+    const pluginSummary = container.querySelector(
+      ".agent-plugin-group > summary",
     );
+    expect(pluginSummary?.textContent).toContain("3 skills");
+    expect(
+      pluginSummary?.querySelector(".agent-unavailable-inline")?.textContent,
+    ).toBe("Unavailable");
   });
 
   test("inventory plugin summary stays unflagged when every member is in effect", () => {
