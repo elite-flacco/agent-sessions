@@ -102,7 +102,10 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
 
 function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
   const { project } = detail;
-  const windowLabel = `last ${rangeDaysLabel(detail.range)}`;
+  const windowLabel =
+    detail.range === "all"
+      ? "across all time"
+      : `in the last ${rangeDaysLabel(detail.range)}`;
   return (
     <section className="relay-content projects-page">
       <Link className="back-link" href="/projects">
@@ -192,8 +195,8 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
             </ol>
           ) : (
             <p className="project-muted">
-              No retained start, file, check, or completion events in the{" "}
-              {windowLabel}.
+              No retained start, file, check, or completion events {windowLabel}
+              .
             </p>
           )}
         </section>

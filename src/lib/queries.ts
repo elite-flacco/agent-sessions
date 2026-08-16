@@ -740,7 +740,10 @@ interface ProjectUsageRow extends UsageJoinRow {
  * roll-ups from `getSessionsCostUsd`, which would count a delegating parent
  * and its subagents twice over.
  */
-function projectUsageRows(key: string, since: string): ProjectUsageRow[] {
+function projectUsageRows(key: string, since?: string): ProjectUsageRow[] {
+  const where = since
+    ? "WHERE s.repository = ? AND s.updated_at >= ?"
+    : "WHERE s.repository = ?";
   return sqlite
     .prepare(
       `SELECT u.session_id sessionId, s.provider, s.repository, s.started_at startedAt,
@@ -748,9 +751,9 @@ function projectUsageRows(key: string, since: string): ProjectUsageRow[] {
         u.output_tokens outputTokens, u.cache_read_tokens cacheReadTokens,
         u.cache_write_tokens cacheWriteTokens, u.reported_cost_usd reportedCostUsd
       FROM session_model_usage u JOIN sessions s ON s.id = u.session_id
-      WHERE s.repository = ? AND s.updated_at >= ?`,
+      ${where}`,
     )
-    .all(key, since) as ProjectUsageRow[];
+    .all(...(since ? [key, since] : [key])) as ProjectUsageRow[];
 }
 
 /**
@@ -758,9 +761,15 @@ function projectUsageRows(key: string, since: string): ProjectUsageRow[] {
  * plus the previous six calendar days. UTC throughout, matching the
  * `slice(0, 10)` the trend buckets on.
  */
-function dateSpan(since: string, days: number): string[] {
-  const start = Date.parse(`${since.slice(0, 10)}T00:00:00.000Z`) + DAY_MS;
-  return Array.from({ length: days }, (_, index) =>
+function dateSpan(days: number, firstDate?: string | null): string[] {
+  const end = Date.parse(
+    `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
+  );
+  const start = firstDate
+    ? Date.parse(`${firstDate.slice(0, 10)}T00:00:00.000Z`)
+    : end - (days - 1) * DAY_MS;
+  const length = Math.max(1, Math.floor((end - start) / DAY_MS) + 1);
+  return Array.from({ length }, (_, index) =>
     new Date(start + index * DAY_MS).toISOString().slice(0, 10),
   );
 }
@@ -772,7 +781,7 @@ function dateSpan(since: string, days: number): string[] {
  */
 function largestCostSession(
   key: string,
-  since: string,
+  since?: string,
 ): SessionListItem | null {
   const windowSessions = getProjectSessions(key, { since, limit: -1 });
   const inWindow = new Set(
@@ -805,11 +814,11 @@ export function getProjectDetail(
     (candidate) => candidate.category === "project" && candidate.key === key,
   );
   if (!project) return null;
-  const days = range === "30d" ? 30 : 7;
-  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const days = overviewRangeDays(range);
+  const since = overviewRangeStart(range);
 
   const sessions = getProjectSessions(key, {
-    since,
+    since: since ?? undefined,
     limit: PROJECT_EVIDENCE_LIMIT + 1,
   });
   const sessionsTruncated = sessions.length > PROJECT_EVIDENCE_LIMIT;
@@ -818,13 +827,21 @@ export function getProjectDetail(
   for (const session of sessions)
     session.costUsd = costs.get(session.id) ?? null;
 
+  const windowWhere = since
+    ? "WHERE repository = ? AND updated_at >= ?"
+    : "WHERE repository = ?";
   const window = sqlite
     .prepare(
       `SELECT COUNT(*) sessionCount,
-        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs
-      FROM sessions WHERE repository = ? AND updated_at >= ?`,
+        COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs,
+        MIN(updated_at) firstAt
+      FROM sessions ${windowWhere}`,
     )
-    .get(key, since) as { sessionCount: number; runtimeMs: number };
+    .get(...(since ? [key, since] : [key])) as {
+    sessionCount: number;
+    runtimeMs: number;
+    firstAt: string | null;
+  };
 
   // Accumulate per session first: pricing trust is a per-session property, so
   // a session with one unpriced row must drop out of the dollar sums whole
@@ -836,7 +853,7 @@ export function getProjectDetail(
     priced: boolean;
   }
   const bySession = new Map<number, CostAccumulator>();
-  for (const row of projectUsageRows(key, since)) {
+  for (const row of projectUsageRows(key, since ?? undefined)) {
     const entry = bySession.get(row.sessionId) ?? {
       provider: row.provider,
       date: row.updatedAt.slice(0, 10),
@@ -875,10 +892,13 @@ export function getProjectDetail(
   const providerCounts = sqlite
     .prepare(
       `SELECT provider, COUNT(*) sessionCount FROM sessions
-       WHERE repository = ? AND updated_at >= ?
+       ${windowWhere}
        GROUP BY provider ORDER BY sessionCount DESC`,
     )
-    .all(key, since) as { provider: AgentProvider; sessionCount: number }[];
+    .all(...(since ? [key, since] : [key])) as {
+    provider: AgentProvider;
+    sessionCount: number;
+  }[];
 
   const worktrees = sqlite
     .prepare(
@@ -907,14 +927,16 @@ export function getProjectDetail(
     sessions: evidenceFilter === "attention" ? attention : sessions,
     sessionsTruncated:
       evidenceFilter === "attention" ? false : sessionsTruncated,
-    activity: projectActivity(key, since),
+    activity: projectActivity(key, since ?? undefined),
     totalCostUsd,
     unpricedSessionCount,
-    costTrend: dateSpan(since, days).map((date) => ({
-      date,
-      costUsd: byDate.get(date) ?? 0,
-    })),
-    largestCostSession: largestCostSession(key, since),
+    costTrend: dateSpan(days ?? 1, days === null ? window.firstAt : null).map(
+      (date) => ({
+        date,
+        costUsd: byDate.get(date) ?? 0,
+      }),
+    ),
+    largestCostSession: largestCostSession(key, since ?? undefined),
     byProvider: providerCounts.map((row) => ({
       provider: row.provider,
       sessionCount: row.sessionCount,
@@ -934,19 +956,20 @@ export function getProjectDetail(
  * by session is what makes the feed readable: the raw events all share a
  * handful of generic titles, so ungrouped they read as noise.
  */
-function projectActivity(key: string, since: string): ProjectActivity[] {
+function projectActivity(key: string, since?: string): ProjectActivity[] {
   const status = statusExpression("s.status", "s.updated_at");
+  const rangeClause = since ? "AND e.occurred_at >= ?" : "";
   return sqlite
     .prepare(
       `SELECT e.session_id sessionId, s.title sessionTitle, s.provider,
         ${status} status, e.kind, MAX(e.occurred_at) occurredAt
       FROM activity_events e JOIN sessions s ON s.id = e.session_id
-      WHERE s.repository = ? AND e.occurred_at >= ?
+      WHERE s.repository = ? ${rangeClause}
         AND e.kind IN ('started', 'file', 'command', 'completed')
       GROUP BY e.session_id
       ORDER BY occurredAt DESC LIMIT 8`,
     )
-    .all(staleCutoff(), key, since) as ProjectActivity[];
+    .all(staleCutoff(), ...(since ? [key, since] : [key])) as ProjectActivity[];
 }
 
 export interface OverviewPatterns {
@@ -978,8 +1001,9 @@ export interface OverviewData {
 }
 
 // URL-backed overview range. 7d is the default and preserves the page's
-// original "this week" behavior; 30d widens every time-windowed metric.
-export type OverviewRange = "7d" | "30d";
+// original "this week" behavior; 30d widens every time-windowed metric and
+// all removes the lower date boundary.
+export type OverviewRange = "7d" | "30d" | "all";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -990,46 +1014,58 @@ function startOfToday(): string {
 }
 
 export function parseOverviewRange(value: unknown): OverviewRange {
-  return value === "30d" ? "30d" : "7d";
+  return value === "30d" || value === "all" ? value : "7d";
+}
+
+function overviewRangeDays(range: OverviewRange): 7 | 30 | null {
+  return range === "7d" ? 7 : range === "30d" ? 30 : null;
+}
+
+function overviewRangeStart(range: OverviewRange): string | null {
+  const days = overviewRangeDays(range);
+  return days === null
+    ? null
+    : new Date(Date.now() - days * DAY_MS).toISOString();
 }
 
 export function getOverview(range: OverviewRange = "7d"): OverviewData {
   const todayStart = startOfToday();
-  const weekStart = new Date(
-    Date.now() - (range === "7d" ? 7 : 30) * DAY_MS,
-  ).toISOString();
+  const weekStart = overviewRangeStart(range);
   const status = statusExpression("status", "updated_at");
 
-  const windowStats = (since: string) =>
+  const windowStats = (since: string | null) =>
     sqlite
       .prepare(
         `SELECT COUNT(*) sessions,
           COALESCE(SUM((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000), 0) runtimeMs,
           COALESCE(SUM(CASE WHEN ${status} IN ('interrupted', 'needs_attention', 'failed') THEN 1 ELSE 0 END), 0) failures
-        FROM sessions WHERE started_at >= ?`,
+        FROM sessions ${since ? "WHERE started_at >= ?" : ""}`,
       )
-      .get(staleCutoff(), since) as {
+      .get(staleCutoff(), ...(since ? [since] : [])) as {
       sessions: number;
       runtimeMs: number;
       failures: number;
     };
-  const events = (since: string) =>
+  const events = (since: string | null) =>
     (
       sqlite
         .prepare(
-          "SELECT COUNT(*) count FROM activity_events WHERE occurred_at >= ?",
+          `SELECT COUNT(*) count FROM activity_events ${since ? "WHERE occurred_at >= ?" : ""}`,
         )
-        .get(since) as { count: number }
+        .get(...(since ? [since] : [])) as { count: number }
     ).count;
 
   const today = windowStats(todayStart);
   const week = windowStats(weekStart);
   const providerCounts = sqlite
     .prepare(
-      `SELECT provider, COUNT(*) count FROM sessions WHERE started_at >= ?
+      `SELECT provider, COUNT(*) count FROM sessions ${weekStart ? "WHERE started_at >= ?" : ""}
       GROUP BY provider ORDER BY count DESC`,
     )
-    .all(weekStart) as { provider: AgentProvider; count: number }[];
+    .all(...(weekStart ? [weekStart] : [])) as {
+    provider: AgentProvider;
+    count: number;
+  }[];
 
   const dailyRows = sqlite
     .prepare(
@@ -1318,6 +1354,8 @@ export interface UsageWindow {
 }
 
 export interface UsageSummary {
+  range: OverviewRange;
+  selected: UsageWindow;
   today: UsageWindow;
   week: UsageWindow;
   month: UsageWindow;
@@ -1327,22 +1365,22 @@ export interface UsageSummary {
   byProject: UsageBucket[];
 }
 
-const USAGE_DAYS = 30;
-
 /**
- * Aggregates the last 30 days of per-session per-model usage. Sessions with
- * any unpriced usage are excluded from dollar sums (and counted in
- * unpricedSessions) but still contribute to token totals. The by-model
- * buckets attribute dollars per model instead, so byModel cost can exceed
- * the window totals when priced and unpriced models share a session.
- * Buckets cover the full 30-day window; a session's usage is attributed to
- * its start date.
+ * Aggregates per-session per-model usage for the selected range. Sessions
+ * with any unpriced usage are excluded from dollar sums (and counted in
+ * unpricedSessions) but still contribute to token totals. The by-model buckets
+ * attribute dollars per model instead, so byModel cost can exceed the window
+ * total when priced and unpriced models share a session. The fixed windows are
+ * retained for now-scoped consumers such as the Sessions dashboard.
  */
-export function getUsageSummary(): UsageSummary {
-  const since = new Date(Date.now() - USAGE_DAYS * DAY_MS).toISOString();
+export function getUsageSummary(range: OverviewRange = "30d"): UsageSummary {
+  const selectedStart = overviewRangeStart(range);
+  const monthStart = overviewRangeStart("30d");
   const rows = sqlite
-    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
-    .all(since) as UsageJoinRow[];
+    .prepare(
+      `${USAGE_JOIN} ${range === "all" ? "" : "WHERE s.started_at >= ?"}`,
+    )
+    .all(...(range === "all" ? [] : [monthStart])) as UsageJoinRow[];
 
   interface SessionAccumulator {
     provider: AgentProvider;
@@ -1399,6 +1437,7 @@ export function getUsageSummary(): UsageSummary {
   const today = emptyWindow();
   const week = emptyWindow();
   const month = emptyWindow();
+  const selected = emptyWindow();
   const todayStart = startOfToday();
   const weekStart = new Date(Date.now() - 7 * DAY_MS).toISOString();
   const daily = new Map<string, { costUsd: number; tokens: number }>();
@@ -1420,7 +1459,10 @@ export function getUsageSummary(): UsageSummary {
 
   for (const session of bySession.values()) {
     const costUsd = session.priced ? session.costUsd : 0;
-    const windows = [month];
+    const windows: UsageWindow[] = [];
+    if (monthStart !== null && session.startedAt >= monthStart) {
+      windows.push(month);
+    }
     if (session.startedAt >= weekStart) windows.push(week);
     if (session.startedAt >= todayStart) windows.push(today);
     for (const window of windows) {
@@ -1430,6 +1472,12 @@ export function getUsageSummary(): UsageSummary {
       if (session.priced) window.costUsd += costUsd;
       else window.unpricedSessions += 1;
     }
+    if (selectedStart !== null && session.startedAt < selectedStart) continue;
+    selected.tokens += session.tokens;
+    selected.cacheReadTokens += session.cacheReadTokens;
+    selected.sessions += 1;
+    if (session.priced) selected.costUsd += costUsd;
+    else selected.unpricedSessions += 1;
     const day = session.startedAt.slice(0, 10);
     const dayEntry = daily.get(day) ?? { costUsd: 0, tokens: 0 };
     dayEntry.costUsd += costUsd;
@@ -1455,10 +1503,19 @@ export function getUsageSummary(): UsageSummary {
     }
   }
 
-  const dailySeries = Array.from({ length: USAGE_DAYS }, (_, index) => {
-    const date = new Date(Date.now() - (USAGE_DAYS - 1 - index) * DAY_MS)
-      .toISOString()
-      .slice(0, 10);
+  const firstSelectedAt = [...bySession.values()]
+    .filter(
+      (session) => selectedStart === null || session.startedAt >= selectedStart,
+    )
+    .reduce<string | null>(
+      (first, session) =>
+        first === null || session.startedAt < first ? session.startedAt : first,
+      null,
+    );
+  const dailySeries = dateSpan(
+    overviewRangeDays(range) ?? 1,
+    range === "all" ? firstSelectedAt : null,
+  ).map((date) => {
     return { date, ...(daily.get(date) ?? { costUsd: 0, tokens: 0 }) };
   });
   const ranked = (map: Map<string, UsageBucket>) =>
@@ -1467,6 +1524,8 @@ export function getUsageSummary(): UsageSummary {
     );
 
   return {
+    range,
+    selected,
     today,
     week,
     month,
@@ -1533,16 +1592,15 @@ const LENGTH_BUCKETS = [
  * Derives the three overview "pattern" views from existing session and
  * usage tables. The heatmap always spans the trailing 30 days in
  * America/New_York time (a week is too sparse for a useful day x band grid);
- * the length histogram and week cost follow the selected range (7d default,
- * 30d). The week cost reuses the pricing-trust rule (null when any usage row
- * is unpriced).
+ * the length histogram and period cost follow the selected range. The period
+ * cost reuses the pricing-trust rule (null when any usage row is unpriced).
  */
 export function getOverviewPatterns(
   range: OverviewRange = "7d",
 ): OverviewPatterns {
   // Length and cost windows track the selected range; the heatmap is always
   // 30 days because a 7-cell-wide grid is too sparse to read.
-  const windowDays = range === "7d" ? 7 : PATTERNS_HEATMAP_DAYS;
+  const windowStart = overviewRangeStart(range);
 
   // --- heatmap: session starts per day x 3-hour band, always 30 days ---
   // Fetch one extra day so timezone offsets never clip the oldest cell, then
@@ -1580,15 +1638,16 @@ export function getOverviewPatterns(
   );
 
   // --- length histogram: bucket runtime over the window ---
-  const lengthStart = new Date(Date.now() - windowDays * DAY_MS).toISOString();
   const lengthRows = sqlite
     .prepare(
       `SELECT
         CAST((julianday(COALESCE(ended_at, updated_at)) - julianday(started_at)) * 86400000 AS INTEGER) AS runtimeMs
        FROM sessions
-       WHERE started_at >= ? AND started_at <= ?`,
+       WHERE ${windowStart ? "started_at >= ? AND " : ""}started_at <= ?`,
     )
-    .all(lengthStart, new Date().toISOString()) as { runtimeMs: number }[];
+    .all(...(windowStart ? [windowStart] : []), new Date().toISOString()) as {
+    runtimeMs: number;
+  }[];
   const runtimes = lengthRows.map((row) => row.runtimeMs).sort((a, b) => a - b);
   const buckets = LENGTH_BUCKETS.map((bucket) => ({
     label: bucket.label,
@@ -1604,11 +1663,10 @@ export function getOverviewPatterns(
   const longTailShare =
     totalRuntimeMs > 0 ? longRuntimeMs / totalRuntimeMs : null;
 
-  // --- week cost: reuse pricing-trust rule over the window ---
-  const weekStart = new Date(Date.now() - windowDays * DAY_MS).toISOString();
+  // --- period cost: reuse pricing-trust rule over the window ---
   const usageRows = sqlite
-    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
-    .all(weekStart) as UsageJoinRow[];
+    .prepare(`${USAGE_JOIN} ${windowStart ? "WHERE s.started_at >= ?" : ""}`)
+    .all(...(windowStart ? [windowStart] : [])) as UsageJoinRow[];
   let costUsd = 0;
   let tokens = 0;
   let priced = true;
@@ -1791,9 +1849,7 @@ function capabilityInsights(
   range: OverviewRange,
   inventories: AgentInventory[],
 ): CapabilitiesInsight {
-  const rangeStart = new Date(
-    Date.now() - (range === "7d" ? 7 : 30) * DAY_MS,
-  ).toISOString();
+  const rangeStart = overviewRangeStart(range);
   // Grouped per provider so the by-provider grid can shade each cell. Session
   // counts stay exact when folded because a session belongs to exactly one
   // provider, so the per-provider distinct counts never overlap.
@@ -1804,10 +1860,10 @@ function capabilityInsights(
         COUNT(DISTINCT session_id) sessionCount,
         MAX(occurred_at) lastUsedAt
        FROM session_capability_usage
-       WHERE occurred_at >= ? AND kind IN ('skill', 'mcp')
+       WHERE ${rangeStart ? "occurred_at >= ? AND " : ""}kind IN ('skill', 'mcp')
        GROUP BY kind, LOWER(TRIM(capability_name)), provider`,
     )
-    .all(rangeStart) as CapabilityAggregateRow[];
+    .all(...(rangeStart ? [rangeStart] : [])) as CapabilityAggregateRow[];
 
   const scanRows = sqlite
     .prepare(
@@ -1926,7 +1982,7 @@ function capabilityInsights(
       current.lastUsedAt = row.lastUsedAt;
     }
     current.neverObserved = false;
-    if (row.lastUsedAt >= rangeStart) {
+    if (rangeStart === null || row.lastUsedAt >= rangeStart) {
       current.usedInRange = true;
       installedUsedKeys.add(groupKey);
     }
@@ -2104,21 +2160,25 @@ export function getInsights(
   range: OverviewRange = "7d",
   inventories: AgentInventory[] = [],
 ): Insights {
-  const rangeDays = range === "7d" ? 7 : 30;
-  const rangeStart = new Date(Date.now() - rangeDays * DAY_MS).toISOString();
-  const priorRangeStart = new Date(
-    Date.now() - rangeDays * 2 * DAY_MS,
-  ).toISOString();
+  const rangeDays = overviewRangeDays(range);
+  const rangeStart = overviewRangeStart(range);
+  const priorRangeStart =
+    rangeDays === null
+      ? null
+      : new Date(Date.now() - rangeDays * 2 * DAY_MS).toISOString();
   const trendStart = new Date(
     Date.now() - INSIGHTS_TREND_DAYS * DAY_MS,
   ).toISOString();
 
   const weekRows = sqlite
-    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
-    .all(rangeStart) as UsageJoinRow[];
-  const priorRows = sqlite
-    .prepare(`${USAGE_JOIN} WHERE s.started_at >= ? AND s.started_at < ?`)
-    .all(priorRangeStart, rangeStart) as UsageJoinRow[];
+    .prepare(`${USAGE_JOIN} ${rangeStart ? "WHERE s.started_at >= ?" : ""}`)
+    .all(...(rangeStart ? [rangeStart] : [])) as UsageJoinRow[];
+  const priorRows =
+    priorRangeStart && rangeStart
+      ? (sqlite
+          .prepare(`${USAGE_JOIN} WHERE s.started_at >= ? AND s.started_at < ?`)
+          .all(priorRangeStart, rangeStart) as UsageJoinRow[])
+      : [];
   const trendRows = sqlite
     .prepare(`${USAGE_JOIN} WHERE s.started_at >= ?`)
     .all(trendStart) as UsageJoinRow[];
@@ -2139,15 +2199,15 @@ export function getInsights(
       `SELECT s.id, s.external_id externalId, s.parent_external_id parentExternalId,
         s.title, s.model, s.provider, s.started_at startedAt,
         CAST((julianday(COALESCE(s.ended_at, s.updated_at)) - julianday(s.started_at)) * 86400000 AS INTEGER) AS runtimeMs
-       FROM sessions s WHERE s.started_at >= ?`,
+       FROM sessions s ${rangeStart ? "WHERE s.started_at >= ?" : ""}`,
     )
-    .all(rangeStart) as CostRow[];
+    .all(...(rangeStart ? [rangeStart] : [])) as CostRow[];
 
   // --- cache effectiveness ---
   const weekCache = aggregateCache(weekRows);
   const priorCache = aggregateCache(priorRows);
   const hitRateDeltaPts =
-    weekCache.hitRate !== null && priorCache.hitRate !== null
+    range !== "all" && weekCache.hitRate !== null && priorCache.hitRate !== null
       ? (weekCache.hitRate - priorCache.hitRate) * 100
       : null;
   const cacheSignal: InsightSignal | null =
@@ -2228,11 +2288,11 @@ export function getInsights(
       anyUnpriced = true;
       continue;
     }
-    weekTotalUsd += cost; // accumulate the priced grand total
+    weekTotalUsd += cost;
     const rootId = rootIdOf(row.sessionId);
     sessionCost.set(rootId, (sessionCost.get(rootId) ?? 0) + cost);
   }
-  if (anyUnpriced) weekTotalUsd = null; // trust rule: null when any row unpriced
+  if (anyUnpriced) weekTotalUsd = null;
 
   // Outliers: top 5 by rolled-up session cost. usdPerMin measures the whole
   // delegated tree against the main session's wall clock, since subagents run
@@ -2262,14 +2322,14 @@ export function getInsights(
         : null;
   }
 
-  // Pareto: share of week cost held by the top 3 sessions. Null when the
-  // week total is unpriced (trust rule) or there is no priced spend.
+  // Pareto: share of period cost held by the top 3 sessions. Null when the
+  // period total is unpriced (trust rule) or there is no priced spend.
   const top3Cost = outliers.slice(0, 3).reduce((sum, o) => sum + o.costUsd, 0);
   let paretoSharePct: number | null = null;
   if (weekTotalUsd !== null && weekTotalUsd > 0) {
     paretoSharePct = (top3Cost / weekTotalUsd) * 100;
   }
-  // Top-5 headline share: share of week cost held by the top 5 sessions (a
+  // Top-5 headline share: share of period cost held by the top 5 sessions (a
   // distinct figure from the top-3 signal threshold above). Null under the
   // same trust rule.
   const top5Cost = outliers.slice(0, 5).reduce((sum, o) => sum + o.costUsd, 0);
@@ -2281,14 +2341,14 @@ export function getInsights(
     paretoSharePct !== null && paretoSharePct >= 50
       ? {
           tone: "warning",
-          text: `Three sessions drove ${Math.round(paretoSharePct)}% of ${range === "7d" ? "this week's" : "the last 30 days'"} cost — inspect them for loops or retries.`,
+          text: `Three sessions drove ${Math.round(paretoSharePct)}% of ${range === "7d" ? "this week's" : range === "30d" ? "the last 30 days'" : "all-time"} cost — inspect them for loops or retries.`,
         }
       : null;
 
   // Cost trend reuses the existing getUsageSummary daily series rather than
   // recomputing it (keeps a single source of truth for daily cost).
-  // Priced-only daily series (matches /usage); a partially-unpriced week still
-  // shows a populated trend alongside a null headline total.
+  // Priced-only daily series (matches /usage); a partially-unpriced period
+  // still shows a populated trend alongside a null headline total.
   const costTrend = getUsageSummary().daily.map((d) => ({
     day: d.date,
     costUsd: d.costUsd,

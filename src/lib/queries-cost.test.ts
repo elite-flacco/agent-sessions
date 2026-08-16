@@ -228,3 +228,40 @@ describe("getProjectsWithCosts", () => {
     });
   });
 });
+
+describe("getUsageSummary ranges", () => {
+  it("scopes totals, buckets, and daily history to all time", () => {
+    const startedAt = new Date(Date.now() - 45 * 24 * HOUR_MS).toISOString();
+    const result = sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, repository, status, started_at, updated_at, ended_at)
+        VALUES ('usage-all-time', 'zcode', 'Historical usage', 'archive', 'completed', ?, ?, ?)`,
+      )
+      .run(startedAt, startedAt, startedAt);
+    sqlite
+      .prepare(
+        `INSERT INTO session_model_usage
+        (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+        VALUES (?, 'historical-model', 100, 50, 25, 0, 2)`,
+      )
+      .run(Number(result.lastInsertRowid));
+
+    try {
+      const month = queries.getUsageSummary("30d");
+      const all = queries.getUsageSummary("all");
+
+      expect(all.selected.sessions).toBe(month.selected.sessions + 1);
+      expect(all.selected.costUsd).toBeCloseTo(month.selected.costUsd + 2, 6);
+      expect(all.byProvider.map((bucket) => bucket.key)).toContain("zcode");
+      expect(month.byProvider.map((bucket) => bucket.key)).not.toContain(
+        "zcode",
+      );
+      expect(all.daily[0]?.date).toBe(startedAt.slice(0, 10));
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = 'usage-all-time'")
+        .run();
+    }
+  });
+});

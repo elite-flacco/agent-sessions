@@ -9,6 +9,7 @@ import {
   getSummary,
   getSyncState,
   getUsageSummary,
+  parseOverviewRange,
   type SessionFilters,
 } from "@/lib/queries";
 
@@ -54,6 +55,8 @@ export default async function Home({ searchParams }: HomeProps) {
         syncState={syncState}
         costToday={getUsageSummary().today}
         filters={filters}
+        range={parseOverviewRange(filters.range)}
+        isTodayRange={filters.range === "today"}
         view={view}
       />
     </main>

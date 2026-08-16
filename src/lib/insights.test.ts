@@ -268,7 +268,20 @@ describe("getInsights — capability usage", () => {
   it("uses the shared Insights range parser", () => {
     expect(queries.parseOverviewRange(undefined)).toBe("7d");
     expect(queries.parseOverviewRange("30d")).toBe("30d");
-    expect(queries.parseOverviewRange("all")).toBe("7d");
+    expect(queries.parseOverviewRange("all")).toBe("all");
+  });
+
+  it("includes older capability observations in the all-time range", () => {
+    expect(
+      queries
+        .getInsights("30d", inventories)
+        .capabilities.used.map((item) => item.name),
+    ).not.toContain("review-code-changes");
+    expect(
+      queries
+        .getInsights("all", inventories)
+        .capabilities.used.map((item) => item.name),
+    ).toContain("review-code-changes");
   });
 
   it("ranks canonical capability usage and derives unused installations", () => {

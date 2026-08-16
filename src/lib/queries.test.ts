@@ -407,6 +407,40 @@ describe("project and overview queries", () => {
     }
   });
 
+  it("includes sessions older than 30 days in all-time rollups", () => {
+    const old = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const overviewBefore = queries.getOverview("all").week.sessions;
+    const patternsBefore =
+      queries.getOverviewPatterns("all").length.sessionCount;
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, title, repository, branch, status, started_at, updated_at)
+        VALUES (?, 'codex', ?, 'beacon', 'feature/beacon', 'completed', ?, ?)`,
+      )
+      .run("project-all-time", "Old all-time beacon run", old, old);
+
+    try {
+      expect(queries.getOverview("30d").week.sessions).toBeLessThan(
+        queries.getOverview("all").week.sessions,
+      );
+      expect(queries.getOverview("all").week.sessions).toBe(overviewBefore + 1);
+      expect(
+        queries.getProjectDetail("beacon", "all")?.windowSessionCount,
+      ).toBe(
+        (queries.getProjectDetail("beacon", "30d")?.windowSessionCount ?? 0) +
+          1,
+      );
+      expect(queries.getOverviewPatterns("all").length.sessionCount).toBe(
+        patternsBefore + 1,
+      );
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("project-all-time");
+    }
+  });
+
   it("ends the seven-day project cost trend on today", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-16T17:00:00.000Z"));

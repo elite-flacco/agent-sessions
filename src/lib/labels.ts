@@ -10,7 +10,7 @@ import type {
 // phrasings ("this week", "the last 30 days") stay inline at their call sites
 // because they vary by surrounding grammar.
 export function rangeDaysLabel(range: OverviewRange): string {
-  return range === "7d" ? "7 days" : "30 days";
+  return range === "7d" ? "7 days" : range === "30d" ? "30 days" : "all time";
 }
 
 export const providerLabels: Record<AgentProvider, string> = {

@@ -116,6 +116,16 @@ describe("ProjectsView briefing", () => {
     expect(rollup).toHaveTextContent("$241.35");
   });
 
+  test("labels all-time briefing evidence without saying last all time", () => {
+    render(
+      <ProjectsView projects={[]} selected={baseDetail({ range: "all" })} />,
+    );
+
+    expect(screen.getByLabelText("Project range")).toBeVisible();
+    expect(screen.getByText(/events across all time/)).toBeVisible();
+    expect(screen.queryByText(/last all time/)).not.toBeInTheDocument();
+  });
+
   test("names the most expensive session rather than leading with its cost", () => {
     render(
       <ProjectsView
