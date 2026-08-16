@@ -42,11 +42,11 @@ export function InsightsView({ range, insights }: InsightsViewProps) {
       <HeroStrip range={range} insights={insights} />
 
       <div className="insights-grid">
-        <CacheCard range={range} insights={insights} />
-        <CostCard range={range} insights={insights} />
         <div id="insight-capability" className="insight-capability-wrap">
           <CapabilityUsageCard capabilities={insights.capabilities} />
         </div>
+        <CacheCard range={range} insights={insights} />
+        <CostCard range={range} insights={insights} />
       </div>
     </section>
   );

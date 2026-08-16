@@ -95,14 +95,16 @@ function UnusedCapabilityRow({
 }) {
   return (
     <li className="capability-unused-row">
-      <span className="capability-name">{capability.name}</span>
-      <span className="capability-usage-meta">
+      <div className="flex gap-2 items-center">
+        <span className="capability-name">{capability.name}</span>
         <span className="badge badge-5">
           {capability.kind === "skill" ? "Skill" : "MCP"}
         </span>
+      </div>
+      <span className="capability-usage-meta">
         <span>
           {capability.neverObserved || capability.lastUsedAt === null
-            ? "No recorded use in available history"
+            ? "Never used"
             : `Last used ${relativeTime(capability.lastUsedAt)}`}
         </span>
         <ProviderBadges providers={capability.providers} />
@@ -232,7 +234,6 @@ export function CapabilityUsageCard({
     (highest, item) => Math.max(highest, ...Object.values(item.byProvider), 0),
     0,
   );
-  const rangeLabel = rangeDaysLabel(capabilities.range);
 
   return (
     <section
@@ -247,20 +248,15 @@ export function CapabilityUsageCard({
               {capabilities.installedUsedCount}
               <small>
                 {" "}
-                of {capabilities.installedCount} installed capabilities used ·{" "}
-                {rangeLabel}
+                of {capabilities.installedCount} installed capabilities used
               </small>
             </p>
           ) : (
             <p className="capability-headline">
               {capabilities.used.length}
-              <small> capabilities used · {rangeLabel}</small>
+              <small> capabilities used</small>
             </p>
           )}
-          <p className="capability-evidence-note">
-            Used skills plus used MCPs plus unused equals the installed total.
-            Providers with incomplete scan coverage are excluded.
-          </p>
         </div>
       </div>
 

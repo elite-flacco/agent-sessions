@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  CircleDot,
-  FolderKanban,
-  GitBranch,
-  ListChecks,
-} from "lucide-react";
+import { ArrowLeft, CircleDot, FolderKanban, GitBranch } from "lucide-react";
 import Link from "next/link";
 import {
   absoluteTime,
@@ -37,7 +31,7 @@ const stateLabels: Record<ProjectState, string> = {
   active: "Active",
   waiting: "Waiting on you",
   blocked: "Blocked",
-  complete: "Complete",
+  complete: "Idle",
 };
 
 export function ProjectsView({ projects, selected }: ProjectsViewProps) {
@@ -50,16 +44,12 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
     <section className="relay-content projects-page">
       <header className="projects-header">
         <div>
-          <span className="eyebrow">Local workspaces</span>
           <h1>Projects</h1>
-          <p>
-            A calm view of work Relay can connect through a repository and local
-            Git evidence.
-          </p>
+          <p>All your projects at a glance.</p>
         </div>
       </header>
       {projects.length ? (
-        <div className="projects-list" aria-label="Projects with Git evidence">
+        <div className="projects-grid" aria-label="Projects with Git evidence">
           {projects.map((project) => (
             <Link
               key={project.key}
@@ -69,10 +59,10 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
               <div>
                 <div className="project-card-title">
                   <FolderKanban size={17} />
-                  <h2>{project.repository}</h2>
+                  <h4>{project.repository}</h4>
                   {project.activeCount > 0 && <CircleDot size={13} />}
                 </div>
-                <p>
+                <p className="text-muted-foreground text-xs">
                   {project.sessionCount} sessions ·{" "}
                   {runtime(project.totalRuntimeMs)}
                 </p>
@@ -87,9 +77,9 @@ function ProjectsLanding({ projects }: { projects: ProjectSummary[] }) {
                   ))}
                 </div>
               </div>
-              <time title={absoluteTime(project.lastActivityAt)}>
+              <div className="text-muted-foreground text-xs">
                 Updated {relativeTime(project.lastActivityAt)}
-              </time>
+              </div>
             </Link>
           ))}
         </div>
@@ -141,12 +131,12 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
         <Metric
           label="Sessions"
           value={String(detail.windowSessionCount)}
-          note={`of ${project.sessionCount} all time · ${windowLabel}`}
+          note={`of ${project.sessionCount} all time`}
         />
         <Metric
           label="Elapsed time"
           value={runtime(detail.windowRuntimeMs)}
-          note={`Recorded session time · ${windowLabel}`}
+          note={`Recorded session time`}
         />
         <Metric
           label="Cost"
@@ -154,7 +144,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
           note={
             detail.unpricedSessionCount
               ? `${detail.unpricedSessionCount} unpriced sessions excluded`
-              : `Complete local pricing · ${windowLabel}`
+              : `Complete local pricing`
           }
         />
         <Metric
@@ -169,15 +159,15 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
         />
       </div>
 
-      <ProjectSpendCard detail={detail} windowLabel={windowLabel} />
+      <ProjectSpendCard detail={detail} />
 
-      <div className="project-briefing-grid">
+      <div className="project-briefing-grid items-stretch">
         <section
           className="card project-briefing-card"
           aria-labelledby="changes-title"
         >
           <span className="eyebrow">What changed recently</span>
-          <h2 id="changes-title">Recent local activity</h2>
+          <h2 id="changes-title">Recent activity</h2>
           {detail.activity.length ? (
             <ol className="project-timeline">
               {detail.activity.map((event) => (
@@ -240,7 +230,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
         aria-labelledby="context-title"
       >
         <span className="eyebrow">Established local context</span>
-        <h2 id="context-title">Repository and worktrees</h2>
+        <h2 id="context-title">Branches and worktrees</h2>
         {detail.worktrees.length ? (
           <ul className="project-worktree-list">
             {detail.worktrees.map((worktree) => (
@@ -262,53 +252,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
             ))}
           </ul>
         ) : (
-          <p className="project-muted">
-            No local working directory recorded. Relay does not infer a project
-            goal or save notes until you provide durable project context.
-          </p>
-        )}
-      </section>
-
-      <section
-        className="card project-evidence"
-        aria-labelledby="sessions-title"
-      >
-        <header className="projects-header">
-          <div>
-            <span className="eyebrow">Evidence</span>
-            <h2 id="sessions-title">
-              {detail.evidenceFilter === "attention"
-                ? `${detail.attention.length} needing attention`
-                : `${detail.sessions.length}${detail.sessionsTruncated ? "+" : ""} sessions · ${windowLabel}`}
-            </h2>
-          </div>
-          <EvidenceFilter detail={detail} />
-        </header>
-        {detail.sessions.length ? (
-          <div className="project-session-list">
-            {detail.sessions.map((session) => (
-              <Link key={session.id} href={`/sessions/${session.id}`}>
-                <ListChecks size={15} />
-                <div>
-                  <strong>{session.title}</strong>
-                  <p>
-                    {providerLabels[session.provider]} · Updated{" "}
-                    {relativeTime(session.updatedAt)}
-                  </p>
-                </div>
-                <span className={`status-label status-${session.status}`}>
-                  <i />
-                  {statusDisplay(session.status, session.statusReason)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="project-muted">
-            {detail.evidenceFilter === "attention"
-              ? "No sessions need attention in this range."
-              : "No sessions in this range."}
-          </p>
+          <p className="project-muted">No local working directory recorded.</p>
         )}
       </section>
     </section>
@@ -323,74 +267,36 @@ const activityLabels: Record<ProjectActivity["kind"], string> = {
 };
 
 /**
- * Links rather than buttons: the filter is a distinct server-rendered view, and
- * a link keeps it shareable and back-button friendly without a client bundle.
- */
-function EvidenceFilter({ detail }: { detail: ProjectDetail }) {
-  const base = `/projects?project=${encodeURIComponent(detail.project.key)}${
-    detail.range === "7d" ? "" : `&range=${detail.range}`
-  }`;
-  const options = [
-    { value: "all" as const, label: "All" },
-    {
-      value: "attention" as const,
-      label: `Needs attention (${detail.attention.length})`,
-    },
-  ];
-  return (
-    <div className="overview-range" aria-label="Evidence filter">
-      {options.map((option) => (
-        <Link
-          key={option.value}
-          className={`btn ${
-            detail.evidenceFilter === option.value
-              ? "btn-accent"
-              : "btn-outline"
-          }`}
-          href={option.value === "all" ? base : `${base}&evidence=attention`}
-          aria-current={detail.evidenceFilter === option.value}
-        >
-          {option.label}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-/**
  * Daily spend across the selected range. The single total answers "how much",
  * the trend answers "is this getting more expensive" — which the total alone
  * cannot, and which is the question a project owner actually asks.
  */
-function ProjectSpendCard({
-  detail,
-  windowLabel,
-}: {
-  detail: ProjectDetail;
-  windowLabel: string;
-}) {
+function ProjectSpendCard({ detail }: { detail: ProjectDetail }) {
   const peak = detail.costTrend.reduce(
     (max, day) => (day.costUsd > max ? day.costUsd : max),
     0,
   );
   return (
-    <div className="project-briefing-grid">
-      <section className="card project-briefing-card" aria-label="Spend trend">
+    <div className="project-briefing-grid items-stretch">
+      <section
+        className="card project-briefing-card flex flex-col"
+        aria-label="Spend trend"
+      >
         <span className="eyebrow">Spend over time</span>
-        <h2>Daily cost · {windowLabel}</h2>
+        <h2>Daily cost</h2>
         {peak > 0 ? (
           <>
             <Sparkline
-              className="project-spark"
+              className="project-spark grow"
               values={detail.costTrend.map((day) => day.costUsd)}
-              label={`Daily cost for the ${windowLabel}`}
+              label={`Daily cost`}
               slotTitle={(index) =>
                 `${detail.costTrend[index].date} · ${formatCostUsd(
                   detail.costTrend[index].costUsd,
                 )}`
               }
             />
-            <p className="project-muted">
+            <p className="project-muted mt-2">
               Peak day {formatCostUsd(peak)}
               {detail.unpricedSessionCount
                 ? ` · ${detail.unpricedSessionCount} unpriced sessions excluded`
@@ -407,7 +313,7 @@ function ProjectSpendCard({
         aria-label="Provider split"
       >
         <span className="eyebrow">Who did the work</span>
-        <h2>Sessions by agent · {windowLabel}</h2>
+        <h2>Sessions by agent</h2>
         {detail.byProvider.length ? (
           <ul className="project-provider-split">
             {detail.byProvider.map((row) => (
@@ -415,7 +321,7 @@ function ProjectSpendCard({
                 <span className={`badge ${providerBadges[row.provider]}`}>
                   {providerLabels[row.provider]}
                 </span>
-                <strong>{row.sessionCount} sessions</strong>
+                <p>{row.sessionCount} sessions</p>
                 <span
                   title={
                     row.unpricedSessionCount

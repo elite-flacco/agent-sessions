@@ -75,9 +75,7 @@ describe("CapabilityUsageCard", () => {
     expect(
       screen.getByRole("heading", { name: "Capability adoption" }),
     ).toBeVisible();
-    expect(
-      screen.getByText(/of 11 installed capabilities used · 30 days/),
-    ).toBeVisible();
+    expect(screen.getByText(/of 11 installed capabilities used/)).toBeVisible();
     expect(tab(/Used skills/)).toHaveAttribute("aria-selected", "true");
     expect(tab(/Used skills/)).toBeVisible();
     expect(tab(/Used MCPs/)).toBeVisible();
@@ -97,7 +95,7 @@ describe("CapabilityUsageCard", () => {
       />,
     );
 
-    expect(screen.getByText(/capabilities used · 30 days/)).toBeVisible();
+    expect(screen.getByText(/capabilities used/)).toBeVisible();
     expect(
       screen.queryByText(/installed capabilities/),
     ).not.toBeInTheDocument();
@@ -144,14 +142,7 @@ describe("CapabilityUsageCard", () => {
     expect(tab(/Unused/)).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("frontend-rules")).not.toBeInTheDocument();
 
-    expect(
-      screen.getByText(
-        /used skills plus used MCPs plus unused equals the installed total/i,
-      ),
-    ).toBeVisible();
-    const neverObserved = screen.getAllByText(
-      "No recorded use in available history",
-    );
+    const neverObserved = screen.getAllByText("Never used");
     expect(neverObserved).toHaveLength(9);
     expect(neverObserved[0]).toBeVisible();
     expect(neverObserved[8]).not.toBeVisible();
@@ -205,12 +196,9 @@ describe("CapabilityUsageCard", () => {
     expect(screen.queryByText(/Pi coverage partial/)).not.toBeInTheDocument();
   });
 
-  test("displays the selected page range without a second range control", () => {
+  test("does not add a second range control", () => {
     render(<CapabilityUsageCard capabilities={fixtureCapabilities} />);
 
     expect(screen.queryByLabelText("Capability usage range")).toBeNull();
-    expect(
-      screen.getByText(/of 11 installed capabilities used · 30 days/),
-    ).toBeVisible();
   });
 });

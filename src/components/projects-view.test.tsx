@@ -56,6 +56,57 @@ function baseDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   };
 }
 
+describe("ProjectsView landing", () => {
+  test("renders project summaries as links in the projects grid", () => {
+    render(
+      <ProjectsView
+        projects={[
+          baseProject(),
+          baseProject({
+            key: "ai-compass",
+            repository: "ai-compass",
+            activeCount: 0,
+            providers: ["codex", "zcode"],
+            sessionCount: 42,
+            totalRuntimeMs: 7_200_000,
+          }),
+        ]}
+        selected={null}
+      />,
+    );
+
+    const grid = screen.getByLabelText("Projects with Git evidence");
+    expect(grid).toHaveClass("projects-grid");
+    expect(within(grid).getByRole("link", { name: /relay/i })).toHaveAttribute(
+      "href",
+      "/projects?project=relay",
+    );
+    expect(
+      within(grid).getByRole("link", { name: /ai-compass/i }),
+    ).toHaveAttribute("href", "/projects?project=ai-compass");
+    expect(grid).toHaveTextContent("209 sessions");
+    expect(grid).toHaveTextContent("Claude");
+    expect(grid).toHaveTextContent("Codex");
+    expect(grid).toHaveTextContent("Zcode");
+  });
+
+  test("keeps the existing empty state when no projects have Git evidence", () => {
+    render(<ProjectsView projects={[]} selected={null} />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "No projects with local Git evidence yet",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Browse sessions" }),
+    ).toHaveAttribute("href", "/sessions");
+    expect(
+      screen.queryByLabelText("Projects with Git evidence"),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("ProjectsView briefing", () => {
   test("scopes the headline metrics to the selected range", () => {
     render(<ProjectsView projects={[]} selected={baseDetail()} />);
@@ -135,22 +186,6 @@ describe("ProjectsView briefing", () => {
       />,
     );
     expect(screen.getByText("main, claude/feat/projects")).toBeInTheDocument();
-  });
-
-  test("keeps the range in the evidence filter links", () => {
-    render(
-      <ProjectsView
-        projects={[]}
-        selected={baseDetail({ range: "30d", attention: [] })}
-      />,
-    );
-    const filter = screen.getByLabelText("Evidence filter");
-    expect(
-      within(filter).getByRole("link", { name: /Needs attention/ }),
-    ).toHaveAttribute(
-      "href",
-      "/projects?project=relay&range=30d&evidence=attention",
-    );
   });
 
   test("shows the spend trend only when the range has priced spend", () => {

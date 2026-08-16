@@ -305,17 +305,12 @@ describe("InsightsView", () => {
     );
   });
 
-  test("uses the shared range in all card labels", () => {
+  test("uses the shared range in range-scoped card labels", () => {
     render(<InsightsView range="30d" insights={baseInsights()} />);
 
     expect(screen.getByLabelText("Insights range")).toBeVisible();
     expect(screen.getAllByText("last 30 days").length).toBeGreaterThanOrEqual(
       2,
     );
-    expect(
-      screen.getByText(
-        /Cost, cache, and capability usage for the last 30 days/,
-      ),
-    ).toBeVisible();
   });
 });
