@@ -754,11 +754,12 @@ function projectUsageRows(key: string, since: string): ProjectUsageRow[] {
 }
 
 /**
- * Oldest-first list of every ISO date in the window, so gaps stay visible as
- * empty bars. UTC throughout, matching the `slice(0, 10)` the trend buckets on.
+ * Oldest-first list of ISO dates ending today, so a 7d range represents today
+ * plus the previous six calendar days. UTC throughout, matching the
+ * `slice(0, 10)` the trend buckets on.
  */
 function dateSpan(since: string, days: number): string[] {
-  const start = Date.parse(`${since.slice(0, 10)}T00:00:00.000Z`);
+  const start = Date.parse(`${since.slice(0, 10)}T00:00:00.000Z`) + DAY_MS;
   return Array.from({ length: days }, (_, index) =>
     new Date(start + index * DAY_MS).toISOString().slice(0, 10),
   );

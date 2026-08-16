@@ -407,6 +407,52 @@ describe("project and overview queries", () => {
     }
   });
 
+  it("ends the seven-day project cost trend on today", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-16T17:00:00.000Z"));
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, title, repository, branch, status, started_at, updated_at)
+      VALUES (?, 'codex', ?, 'calendar-test', 'main', 'completed', ?, ?)`);
+    insert.run(
+      "calendar-today",
+      "Today's priced run",
+      "2026-08-16T16:00:00.000Z",
+      "2026-08-16T16:30:00.000Z",
+    );
+    sqlite
+      .prepare(
+        `INSERT INTO session_model_usage
+        (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+        SELECT id, 'gpt-5.6-sol', 0, 0, 0, 0, 1
+        FROM sessions WHERE external_id = ?`,
+      )
+      .run("calendar-today");
+
+    try {
+      expect(
+        queries
+          .getProjectDetail("calendar-test", "7d")
+          ?.costTrend.map((day) => day.date),
+      ).toEqual([
+        "2026-08-10",
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+        "2026-08-14",
+        "2026-08-15",
+        "2026-08-16",
+      ]);
+      expect(
+        queries.getProjectDetail("calendar-test", "7d")?.costTrend.at(-1),
+      ).toEqual({ date: "2026-08-16", costUsd: 1 });
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("calendar-today");
+      vi.useRealTimers();
+    }
+  });
+
   it("counts each session once in the project cost rollup", () => {
     // A parent and its subagent both live in the project. Summing the subtree
     // roll-ups would bill the child's spend twice.
