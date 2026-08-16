@@ -3,27 +3,16 @@
 import {
   AlertTriangle,
   ChevronDown,
-  CircleDot,
   Database,
   FolderKanban,
   LoaderCircle,
   RefreshCw,
   Search,
 } from "lucide-react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import {
-  absoluteTime,
-  elapsed,
-  formatCostUsd,
-  hasMeaningfulDuration,
-  relativeTime,
-  runtime,
-} from "@/lib/format";
-import { providerBadges, providerLabels, statusLabels } from "@/lib/labels";
-import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
-import { normalizeModel } from "@/lib/pricing";
+import { formatCostUsd, relativeTime, runtime } from "@/lib/format";
+import { providerLabels, statusLabels } from "@/lib/labels";
 import type {
   ModelOption,
   OverviewRange,
@@ -33,8 +22,11 @@ import type {
   SessionTreeItem,
   UsageWindow,
 } from "@/lib/queries";
-import { StatusLabel } from "./status-label";
+import { Metric } from "./metric";
+import { ProjectsTable } from "./projects-table";
 import { RangeSwitcher } from "./range-switcher";
+import { sessionCount, SessionsTable } from "./sessions-table";
+import { useDashboardPolling } from "./use-dashboard-polling";
 
 export type WorkspaceView = "sessions" | "projects";
 
@@ -57,13 +49,6 @@ interface DashboardProps {
   view: WorkspaceView;
 }
 
-function sessionCount(sessions: SessionTreeItem[]): number {
-  return sessions.reduce(
-    (total, session) => total + 1 + sessionCount(session.children),
-    0,
-  );
-}
-
 export function Dashboard({
   sessions,
   projects,
@@ -83,6 +68,8 @@ export function Dashboard({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useDashboardPolling();
 
   useEffect(() => {
     function focusSearch(event: globalThis.KeyboardEvent): void {
@@ -119,14 +106,6 @@ export function Dashboard({
     // The URL should update only when the controlled input changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
-
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => router.refresh(),
-      DASHBOARD_REFRESH_INTERVAL_MS,
-    );
-    return () => window.clearInterval(timer);
-  }, [router]);
 
   async function sync(): Promise<void> {
     setIsSyncing(true);
@@ -338,248 +317,6 @@ export function Dashboard({
   );
 }
 
-function SessionsTable({
-  sessions,
-  filters,
-  isPending,
-  onSync,
-}: {
-  sessions: SessionTreeItem[];
-  filters: SessionFilters;
-  isPending: boolean;
-  onSync: () => void;
-}) {
-  return (
-    <section
-      className="session-panel workspace-table"
-      aria-label="Agent sessions"
-    >
-      <div className="session-table-head">
-        <span>Session</span>
-        <span>Agent</span>
-        <span>Status</span>
-        <span>Started</span>
-        <span>Updated</span>
-        <span>Duration</span>
-        <span>Model</span>
-        <span title="Includes the cost of any subagents the session spawned">
-          Cost
-        </span>
-      </div>
-      {sessions.length ? (
-        sessions.map((session) => (
-          <SessionRow key={session.id} session={session} depth={0} />
-        ))
-      ) : (
-        <EmptyState
-          hasFilters={Boolean(
-            filters.q ||
-            filters.provider ||
-            filters.status ||
-            filters.project ||
-            filters.model,
-          )}
-          onSync={onSync}
-        />
-      )}
-      <footer className="session-footer">
-        <span>Showing {sessionCount(sessions)} sessions</span>
-        <span>{isPending ? "Updating…" : "Updated from local files"}</span>
-      </footer>
-    </section>
-  );
-}
-
-function SessionRow({
-  session,
-  depth,
-}: {
-  session: SessionTreeItem;
-  depth: number;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <>
-      <div className={depth ? "session-row session-child-row" : "session-row"}>
-        <div className="session-primary">
-          <div className="session-title-actions">
-            <Link href={`/sessions/${session.id}`}>{session.title}</Link>
-          </div>
-          <span className="mono session-meta">
-            <span className="session-meta-text">
-              {session.sessionKind === "subagent"
-                ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
-                : (session.repository ?? "Unknown workspace")}
-            </span>
-            {session.children.length > 0 && (
-              <button
-                className="subagent-toggle"
-                onClick={() => setExpanded((value) => !value)}
-                aria-expanded={expanded}
-              >
-                <ChevronDown
-                  size={12}
-                  className={expanded ? "" : "chevron-collapsed"}
-                />
-                {session.children.length} subagent
-                {session.children.length === 1 ? "" : "s"}
-              </button>
-            )}
-          </span>
-        </div>
-        <div>
-          <span className={`badge ${providerBadges[session.provider]}`}>
-            {providerLabels[session.provider]}
-          </span>
-        </div>
-        <StatusLabel status={session.status} reason={session.statusReason} />
-        <span
-          className="mono session-secondary"
-          title={absoluteTime(session.startedAt)}
-        >
-          {relativeTime(session.startedAt)}
-        </span>
-        <span
-          className="mono session-secondary"
-          title={absoluteTime(session.updatedAt)}
-        >
-          {relativeTime(session.updatedAt)}
-        </span>
-        <span className="mono session-secondary text-foreground">
-          {hasMeaningfulDuration(session.status)
-            ? elapsed(session.startedAt, session.endedAt ?? session.updatedAt)
-            : "—"}
-        </span>
-        <span
-          className="mono session-secondary"
-          title={session.model ?? undefined}
-        >
-          {session.model ? normalizeModel(session.model) : "—"}
-        </span>
-        <span className="mono session-secondary text-foreground">
-          {session.costUsd != null ? formatCostUsd(session.costUsd) : "—"}
-        </span>
-      </div>
-      {expanded &&
-        session.children.map((child) => (
-          <SessionRow key={child.id} session={child} depth={depth + 1} />
-        ))}
-    </>
-  );
-}
-
-function ProjectsTable({ projects }: { projects: ProjectCostSummary[] }) {
-  const projectCount = projects.filter(
-    (project) => project.category === "project",
-  ).length;
-  const taskGroup = projects.find((project) => project.category === "task");
-  return (
-    <section className="session-panel workspace-table" aria-label="Projects">
-      <div className="project-table-head session-table-head">
-        <span>Project</span>
-        <span>Agents</span>
-        <span>Sessions</span>
-        <span>Total cost</span>
-        <span>Runtime</span>
-        <span>Last activity</span>
-      </div>
-      {projects.length ? (
-        projects.map((project) => (
-          <div key={project.key} className="project-row session-row">
-            <div className="session-primary">
-              <strong>
-                {project.category === "task" ? "Tasks" : project.repository}
-                {project.activeCount > 0 && (
-                  <span className="project-active-dot" aria-hidden />
-                )}
-              </strong>
-              <span className="mono">
-                {project.category === "task"
-                  ? `${project.workdirs.length} one-off workspaces without Git context`
-                  : project.workdirs.length
-                    ? project.workdirs.join(" · ")
-                    : "No working directory recorded"}
-              </span>
-            </div>
-            <div className="project-badges">
-              {project.providers.map((provider) => (
-                <span
-                  key={provider}
-                  className={`badge ${providerBadges[provider]}`}
-                >
-                  {providerLabels[provider]}
-                </span>
-              ))}
-            </div>
-            <span className="mono session-secondary">
-              {project.sessionCount}
-              {project.activeCount > 0
-                ? ` (${project.activeCount} active)`
-                : ""}
-            </span>
-            <span
-              className="mono session-secondary"
-              title={
-                project.unpricedSessionCount
-                  ? `Excludes ${project.unpricedSessionCount} session${project.unpricedSessionCount === 1 ? "" : "s"} without complete pricing`
-                  : undefined
-              }
-            >
-              {project.totalCostUsd != null
-                ? formatCostUsd(project.totalCostUsd)
-                : "—"}
-            </span>
-            <span className="mono session-secondary">
-              {runtime(project.totalRuntimeMs)}
-            </span>
-            <span
-              className="mono session-secondary"
-              title={absoluteTime(project.lastActivityAt)}
-            >
-              {relativeTime(project.lastActivityAt)}
-            </span>
-          </div>
-        ))
-      ) : (
-        <div className="empty-state">
-          <FolderKanban size={24} />
-          <h3>No matching projects</h3>
-          <p>Adjust the shared filters to widen the project rollup.</p>
-        </div>
-      )}
-      <footer className="session-footer">
-        <span>
-          Showing {projectCount} projects
-          {taskGroup ? ` · ${taskGroup.sessionCount} tasks` : ""}
-        </span>
-      </footer>
-    </section>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  note,
-  accent,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  accent?: boolean;
-}) {
-  return (
-    <article className="metric">
-      <span className="eyebrow">{label}</span>
-      <strong>{value}</strong>
-      <span className={accent ? "metric-accent" : ""}>
-        {accent && <CircleDot size={10} />}
-        {note}
-      </span>
-    </article>
-  );
-}
-
 interface FilterSelectProps {
   label: string;
   value: string;
@@ -613,31 +350,5 @@ function FilterSelect({
       </select>
       <ChevronDown size={13} />
     </label>
-  );
-}
-
-function EmptyState({
-  hasFilters,
-  onSync,
-}: {
-  hasFilters: boolean;
-  onSync: () => void;
-}) {
-  return (
-    <div className="empty-state">
-      <Database size={24} />
-      <h3>{hasFilters ? "No matching sessions" : "No sessions indexed yet"}</h3>
-      <p>
-        {hasFilters
-          ? "Try clearing a filter or widening the date range."
-          : "Import local agent activity to populate Relay."}
-      </p>
-      {!hasFilters && (
-        <button className="btn btn-primary" onClick={onSync}>
-          <RefreshCw size={14} />
-          Sync activity
-        </button>
-      )}
-    </div>
   );
 }
