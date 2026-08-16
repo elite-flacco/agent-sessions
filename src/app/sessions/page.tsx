@@ -2,6 +2,7 @@ import { Dashboard, type WorkspaceView } from "@/components/dashboard";
 import { Sidebar } from "@/components/sidebar";
 import { refreshIngestedData } from "@/lib/auto-sync";
 import {
+  firstParam,
   getModelOptions,
   getProjectOptions,
   getProjectsWithCosts,
@@ -19,25 +20,21 @@ interface HomeProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 export default async function Home({ searchParams }: HomeProps) {
   await refreshIngestedData();
   const params = await searchParams;
   const filters: SessionFilters = {
-    q: first(params.q),
-    provider: first(params.provider),
-    status: first(params.status),
-    range: first(params.range),
-    sort: first(params.sort),
-    project: first(params.project),
-    model: first(params.model),
+    q: firstParam(params.q),
+    provider: firstParam(params.provider),
+    status: firstParam(params.status),
+    range: firstParam(params.range),
+    sort: firstParam(params.sort),
+    project: firstParam(params.project),
+    model: firstParam(params.model),
   };
   const sessions = getSessions(filters);
   const view: WorkspaceView =
-    first(params.view) === "projects" ? "projects" : "sessions";
+    firstParam(params.view) === "projects" ? "projects" : "sessions";
   const summary = getSummary();
   const syncState = getSyncState();
   return (

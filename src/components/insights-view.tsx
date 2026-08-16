@@ -2,15 +2,14 @@
 
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { formatCostUsd, runtime } from "@/lib/format";
 import { rangeDaysLabel } from "@/lib/labels";
-import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import type { Insights, InsightSignal, OverviewRange } from "@/lib/queries";
 import { CapabilityUsageCard } from "./capability-usage-card";
 import { Meter, Sparkline } from "./charts";
+import { Metric } from "./metric";
 import { RangeSwitcher } from "./range-switcher";
+import { useDashboardPolling } from "./use-dashboard-polling";
 
 interface InsightsViewProps {
   range: OverviewRange;
@@ -18,15 +17,7 @@ interface InsightsViewProps {
 }
 
 export function InsightsView({ range, insights }: InsightsViewProps) {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => router.refresh(),
-      DASHBOARD_REFRESH_INTERVAL_MS,
-    );
-    return () => window.clearInterval(timer);
-  }, [router]);
+  useDashboardPolling();
 
   return (
     <section className="relay-content">
@@ -95,26 +86,6 @@ export function InsightSparkline({
   return <Sparkline values={values} label={label} className="insight-spark" />;
 }
 
-function KpiTile({
-  href,
-  label,
-  value,
-  detail,
-}: {
-  href: string;
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <a className="metric metric-link" href={href}>
-      <span className="eyebrow">{label}</span>
-      <strong>{value}</strong>
-      <span>{detail}</span>
-    </a>
-  );
-}
-
 export function HeroStrip({
   range,
   insights,
@@ -145,27 +116,27 @@ export function HeroStrip({
 
   return (
     <div className="summary-grid insight-hero">
-      <KpiTile
+      <Metric
         href="#insight-cost"
         label="Cost"
         value={costValue}
-        detail={
+        note={
           cost.week.totalUsd === null
             ? "Unavailable when any usage is unpriced"
             : `Priced total · ${windowLabel}`
         }
       />
-      <KpiTile
+      <Metric
         href="#insight-cache"
         label="Cache hit rate"
         value={hitValue}
-        detail={`Share of input served from cache · ${windowLabel}`}
+        note={`Share of input served from cache · ${windowLabel}`}
       />
-      <KpiTile
+      <Metric
         href="#insight-capability"
         label="Capability adoption"
         value={adoptionValue}
-        detail={adoptionDetail}
+        note={adoptionDetail}
       />
     </div>
   );

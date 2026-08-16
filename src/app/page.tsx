@@ -9,6 +9,7 @@ import {
   getOverviewPatterns,
   getProjects,
   getRunningSessions,
+  firstParam,
   parseOverviewRange,
 } from "@/lib/queries";
 
@@ -18,16 +19,12 @@ interface OverviewPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 export default async function OverviewPage({
   searchParams,
 }: OverviewPageProps) {
   await refreshIngestedData(DASHBOARD_REFRESH_INTERVAL_MS);
   const health = getCollectorHealth();
-  const range = parseOverviewRange(first((await searchParams).range));
+  const range = parseOverviewRange(firstParam((await searchParams).range));
   return (
     <main className="relay-shell">
       <Sidebar

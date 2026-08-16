@@ -72,6 +72,25 @@ export function runtime(value: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+// Bare plural word for inline copy (`pluralize(3, "session")`). Irregular
+// plurals pass their own form.
+export function pluralize(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return count === 1 ? singular : plural;
+}
+
+// Counted copy (`countLabel(3, "item")` -> "3 items").
+export function countLabel(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return `${count} ${pluralize(count, singular, plural)}`;
+}
+
 // Quantize a value to a 0–10 fill step. `Meter`/`Sparkline` turn the result
 // into an inline percent (width/height); the heatmap turns it into a
 // `heat-fill-N` class. Any positive value lands on at least step 1 so a

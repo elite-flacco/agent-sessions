@@ -9,10 +9,10 @@ import {
   FolderKanban,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Fragment, useEffect } from "react";
+import { Fragment } from "react";
 import {
   absoluteTime,
+  countLabel,
   elapsed,
   formatCostUsd,
   formatTokens,
@@ -21,7 +21,6 @@ import {
   relativeTime,
   runtime,
 } from "@/lib/format";
-import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
 import { providerLabels, rangeDaysLabel, statusDisplay } from "@/lib/labels";
 import type {
   OverviewData,
@@ -31,7 +30,9 @@ import type {
   SessionListItem,
 } from "@/lib/queries";
 import { Meter } from "./charts";
+import { Metric } from "./metric";
 import { RangeSwitcher } from "./range-switcher";
+import { useDashboardPolling } from "./use-dashboard-polling";
 
 interface OverviewViewProps {
   range: OverviewRange;
@@ -50,7 +51,7 @@ export function OverviewView({
   attention,
   recentProjects,
 }: OverviewViewProps) {
-  const router = useRouter();
+  useDashboardPolling();
 
   // The summary label follows the active range: "this week" at the default
   // 7-day view, "last 30 days" when widened. The toggle defaults to 7d, so an
@@ -63,14 +64,6 @@ export function OverviewView({
         : "all time";
   const daysLabel = rangeDaysLabel(range);
   const trailingRangeLabel = range === "all" ? "all time" : `last ${daysLabel}`;
-
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => router.refresh(),
-      DASHBOARD_REFRESH_INTERVAL_MS,
-    );
-    return () => window.clearInterval(timer);
-  }, [router]);
 
   return (
     <section className="relay-content">
@@ -89,43 +82,40 @@ export function OverviewView({
       </header>
 
       <div className="summary-grid" aria-label="Daily and weekly summary">
-        <Link
-          className="metric metric-link"
+        <Metric
+          label={`Sessions ${rangeLabel}`}
+          value={String(overview.week.sessions)}
+          note={`${runtime(overview.week.runtimeMs)} total runtime`}
           href={range === "7d" ? "/sessions" : `/sessions?range=${range}`}
-        >
-          <span className="eyebrow">{`Sessions ${rangeLabel}`}</span>
-          <strong>{overview.week.sessions}</strong>
-          <span>{runtime(overview.week.runtimeMs)} total runtime</span>
-        </Link>
-        <Link className="metric metric-link" href="/sessions?range=today">
-          <span className="eyebrow">Sessions today</span>
-          <strong>{overview.today.sessions}</strong>
-          <span>{overview.today.events} activity events</span>
-        </Link>
-        <Link className="metric metric-link" href="/sessions?status=running">
-          <span className="eyebrow">Running now</span>
-          <strong>{running.length}</strong>
-          <span className={running.length ? "metric-accent" : ""}>
-            {running.length > 0 && <CircleDot size={10} />}
-            {running.length ? "Live from local files" : "Nothing in flight"}
-          </span>
-        </Link>
-        <Link
-          className="metric metric-link"
-          href={range === "7d" ? "/usage" : `/usage?range=${range}`}
-        >
-          <span className="eyebrow">{`Cost ${rangeLabel}`}</span>
-          <strong className="mono">
-            {patterns.costWeek.costUsd === null
+        />
+        <Metric
+          label="Sessions today"
+          value={String(overview.today.sessions)}
+          note={`${overview.today.events} activity events`}
+          href="/sessions?range=today"
+        />
+        <Metric
+          label="Running now"
+          value={String(running.length)}
+          note={running.length ? "Live from local files" : "Nothing in flight"}
+          accent={running.length > 0}
+          href="/sessions?status=running"
+        />
+        <Metric
+          label={`Cost ${rangeLabel}`}
+          value={
+            patterns.costWeek.costUsd === null
               ? "—"
-              : formatCostUsd(patterns.costWeek.costUsd)}
-          </strong>
-          <span>
-            {patterns.costWeek.costUsd === null
+              : formatCostUsd(patterns.costWeek.costUsd)
+          }
+          valueClassName="mono"
+          note={
+            patterns.costWeek.costUsd === null
               ? `Unavailable · ${formatTokens(patterns.costWeek.tokens)}`
-              : `estimated · ${formatTokens(patterns.costWeek.tokens)}`}
-          </span>
-        </Link>
+              : `estimated · ${formatTokens(patterns.costWeek.tokens)}`
+          }
+          href={range === "7d" ? "/usage" : `/usage?range=${range}`}
+        />
       </div>
 
       <div className="overview-grid">
@@ -324,7 +314,7 @@ function ActivityHeatmap({ cells }: { cells: OverviewPatterns["heatmap"] }) {
                 <span
                   key={`${day}-${band}`}
                   className={`heat-cell heat-fill-${level(cell.count, maxCount)}`}
-                  title={`${heatDayLabel(day)} · ${HEAT_BAND_RANGES[band]} — ${cell.count} session${cell.count === 1 ? "" : "s"}`}
+                  title={`${heatDayLabel(day)} · ${HEAT_BAND_RANGES[band]} — ${countLabel(cell.count, "session")}`}
                 />
               );
             })}

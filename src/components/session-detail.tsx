@@ -7,13 +7,14 @@ import {
   formatTokens,
   relativeTime,
 } from "@/lib/format";
-import { costSourceLabels, providerBadges, providerLabels } from "@/lib/labels";
+import { costSourceLabels } from "@/lib/labels";
 import type {
   SessionDetail,
   SessionListItem,
   SessionUsageDetail,
 } from "@/lib/queries";
 import type { SessionTranscript } from "@/lib/transcript";
+import { ProviderBadge } from "./provider-badge";
 import { StatusLabel } from "./status-label";
 import { TranscriptView } from "./transcript-view";
 
@@ -51,9 +52,7 @@ export function SessionDetailView({
           </span>
           <h1>{session.title}</h1>
           <div className="inspector-badges">
-            <span className={`badge ${providerBadges[session.provider]}`}>
-              {providerLabels[session.provider]}
-            </span>
+            <ProviderBadge provider={session.provider} />
             <StatusLabel
               status={session.status}
               reason={session.statusReason}

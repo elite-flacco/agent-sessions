@@ -454,6 +454,17 @@ export interface ProjectWorktree {
 /** Which evidence sessions the briefing lists. URL-backed, like `range`. */
 export type ProjectEvidenceFilter = "all" | "attention";
 
+/**
+ * First value of a Next.js search param, which arrives as a string or a
+ * string[] depending on how the URL was built. Shared by every page-level
+ * filter parser.
+ */
+export function firstParam(
+  value: string | string[] | undefined,
+): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export function parseProjectEvidenceFilter(
   value: unknown,
 ): ProjectEvidenceFilter {

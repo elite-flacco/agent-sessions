@@ -2,15 +2,14 @@
 
 import { BarChart3, FolderKanban } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { formatCostUsd, formatTokens } from "@/lib/format";
-import { providerBadges, providerLabels } from "@/lib/labels";
-import { DASHBOARD_REFRESH_INTERVAL_MS } from "@/lib/polling";
+import { formatCostUsd, formatTokens, pluralize } from "@/lib/format";
 import type { OverviewRange, UsageBucket, UsageSummary } from "@/lib/queries";
 import type { AgentProvider } from "@/lib/types";
 import { Meter, Sparkline } from "./charts";
+import { Metric } from "./metric";
+import { ProviderBadge } from "./provider-badge";
 import { RangeSwitcher } from "./range-switcher";
+import { useDashboardPolling } from "./use-dashboard-polling";
 
 interface UsageViewProps {
   usage: UsageSummary;
@@ -18,15 +17,7 @@ interface UsageViewProps {
 }
 
 export function UsageView({ usage, range }: UsageViewProps) {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => router.refresh(),
-      DASHBOARD_REFRESH_INTERVAL_MS,
-    );
-    return () => window.clearInterval(timer);
-  }, [router]);
+  useDashboardPolling();
 
   const maxProvider = Math.max(
     ...usage.byProvider.map((bucket) => bucket.costUsd),
@@ -44,34 +35,34 @@ export function UsageView({ usage, range }: UsageViewProps) {
       </header>
 
       <div className="summary-grid" aria-label="Selected usage summary">
-        <UsageMetric
-          label={`Estimated cost`}
+        <Metric
+          label="Estimated cost"
           value={formatCostUsd(usage.selected.costUsd)}
           note={
             usage.selected.unpricedSessions
-              ? `${usage.selected.unpricedSessions} session${usage.selected.unpricedSessions === 1 ? "" : "s"} without pricing`
+              ? `${usage.selected.unpricedSessions} ${pluralize(usage.selected.unpricedSessions, "session")} without pricing`
               : "API-equivalent estimate"
           }
         />
-        <UsageMetric
-          label={`Tokens`}
+        <Metric
+          label="Tokens"
           value={formatTokens(usage.selected.tokens)}
           note={`${usage.selected.sessions} sessions with usage`}
         />
-        <UsageMetric
-          label={`Sessions`}
+        <Metric
+          label="Sessions"
           value={String(usage.selected.sessions)}
           note="Sessions with recorded token usage"
         />
-        <div className="metric">
-          <span className="eyebrow">{`Cache reads`}</span>
-          <strong>{formatTokens(usage.selected.cacheReadTokens)}</strong>
-          <span>
-            {usage.selected.tokens
+        <Metric
+          label="Cache reads"
+          value={formatTokens(usage.selected.cacheReadTokens)}
+          note={
+            usage.selected.tokens
               ? `${Math.round((usage.selected.cacheReadTokens / usage.selected.tokens) * 100)}% of all tokens`
-              : "No usage recorded"}
-          </span>
-        </div>
+              : "No usage recorded"
+          }
+        />
       </div>
 
       <div className="overview-grid">
@@ -125,11 +116,7 @@ export function UsageView({ usage, range }: UsageViewProps) {
                   className="dist-row dist-row-wide"
                   href={`/sessions?provider=${bucket.key}${range === "7d" ? "" : `&range=${range}`}`}
                 >
-                  <span
-                    className={`badge ${providerBadges[bucket.key as AgentProvider]}`}
-                  >
-                    {providerLabels[bucket.key as AgentProvider]}
-                  </span>
+                  <ProviderBadge provider={bucket.key as AgentProvider} />
                   <Meter value={bucket.costUsd} max={maxProvider} />
                   <span className="mono">{formatCostUsd(bucket.costUsd)}</span>
                 </Link>
@@ -177,24 +164,6 @@ export function UsageView({ usage, range }: UsageViewProps) {
 
 function maxModel(usage: UsageSummary): number {
   return Math.max(...usage.byModel.map((bucket) => bucket.costUsd), 0);
-}
-
-function UsageMetric({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note: string;
-}) {
-  return (
-    <div className="metric">
-      <span className="eyebrow">{label}</span>
-      <strong>{value}</strong>
-      <span>{note}</span>
-    </div>
-  );
 }
 
 function BucketRow({

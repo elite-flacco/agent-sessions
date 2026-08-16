@@ -1,5 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { absoluteTime, relativeTime, runtime, shortenHomePath } from "./format";
+import {
+  absoluteTime,
+  countLabel,
+  pluralize,
+  relativeTime,
+  runtime,
+  shortenHomePath,
+} from "./format";
+
+describe("pluralize", () => {
+  it("uses the singular for one", () => {
+    expect(pluralize(1, "session")).toBe("session");
+  });
+
+  it("appends s by default", () => {
+    expect(pluralize(3, "session")).toBe("sessions");
+  });
+
+  it("accepts an irregular plural", () => {
+    expect(pluralize(0, "copy", "copies")).toBe("copies");
+  });
+});
+
+describe("countLabel", () => {
+  it("counts a singular item", () => {
+    expect(countLabel(1, "item")).toBe("1 item");
+  });
+
+  it("counts plural items", () => {
+    expect(countLabel(5, "item")).toBe("5 items");
+  });
+
+  it("counts with an irregular plural", () => {
+    expect(countLabel(2, "fix", "fixes")).toBe("2 fixes");
+  });
+});
 
 describe("relativeTime", () => {
   // Mid-afternoon local time so same-day/date boundaries are stable.

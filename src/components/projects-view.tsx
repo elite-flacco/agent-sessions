@@ -7,9 +7,11 @@ import {
   runtime,
   shortenHomePath,
 } from "@/lib/format";
-import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
+import { providerLabels, rangeDaysLabel } from "@/lib/labels";
 import type { ProjectCostSummary, ProjectDetail } from "@/lib/queries";
 import { Sparkline } from "./charts";
+import { Metric } from "./metric";
+import { ProviderBadge } from "./provider-badge";
 import { RangeSwitcher } from "./range-switcher";
 
 interface ProjectsViewProps {
@@ -73,12 +75,7 @@ function ProjectsLanding({ projects }: { projects: ProjectCostSummary[] }) {
                   </p>
                   <div className="project-provider-list">
                     {project.providers.map((provider) => (
-                      <span
-                        key={provider}
-                        className={`badge ${providerBadges[provider]}`}
-                      >
-                        {providerLabels[provider]}
-                      </span>
+                      <ProviderBadge key={provider} provider={provider} />
                     ))}
                   </div>
                 </div>
@@ -153,7 +150,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
         <Metric
           label="Elapsed time"
           value={runtime(detail.windowRuntimeMs)}
-          note={`Recorded session time`}
+          note="Recorded session time"
         />
         <Metric
           label="Cost"
@@ -338,9 +335,7 @@ function ProjectSpendCard({ detail }: { detail: ProjectDetail }) {
           <ul className="project-provider-split">
             {detail.byProvider.map((row) => (
               <li key={row.provider}>
-                <span className={`badge ${providerBadges[row.provider]}`}>
-                  {providerLabels[row.provider]}
-                </span>
+                <ProviderBadge provider={row.provider} />
                 <p>{row.sessionCount} sessions</p>
                 <span
                   title={
@@ -359,27 +354,6 @@ function ProjectSpendCard({ detail }: { detail: ProjectDetail }) {
           <p className="project-muted">No sessions in this range.</p>
         )}
       </section>
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  note,
-  /** Set when the value is prose rather than a figure, so it steps down a size. */
-  textual,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-  textual?: boolean;
-}) {
-  return (
-    <div className={textual ? "metric metric-textual" : "metric"}>
-      <span className="eyebrow">{label}</span>
-      <strong title={textual ? value : undefined}>{value}</strong>
-      {note && <span>{note}</span>}
     </div>
   );
 }

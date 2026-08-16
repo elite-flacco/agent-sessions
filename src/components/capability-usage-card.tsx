@@ -1,8 +1,8 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { relativeTime } from "@/lib/format";
-import { providerBadges, providerLabels, rangeDaysLabel } from "@/lib/labels";
+import { pluralize, relativeTime } from "@/lib/format";
+import { providerLabels } from "@/lib/labels";
 import type {
   CapabilitiesInsight,
   CapabilityCoverage,
@@ -11,6 +11,7 @@ import type {
 } from "@/lib/queries";
 import { type AgentProvider, agentProviders } from "@/lib/types";
 import { Meter } from "./charts";
+import { ProviderBadge } from "./provider-badge";
 
 interface CapabilityUsageCardProps {
   capabilities: CapabilitiesInsight;
@@ -46,9 +47,7 @@ function heatLevel(value: number, max: number): number {
 
 function ProviderBadges({ providers }: { providers: AgentProvider[] }) {
   return providers.map((provider) => (
-    <span className={`badge ${providerBadges[provider]}`} key={provider}>
-      {providerLabels[provider]}
-    </span>
+    <ProviderBadge key={provider} provider={provider} />
   ));
 }
 
@@ -63,9 +62,7 @@ function UsedCapabilityRow({
   capability: CapabilityInsight;
   max: number;
 }) {
-  const useLabel = capability.invocations === 1 ? "use" : "uses";
-  const sessionLabel = capability.sessionCount === 1 ? "session" : "sessions";
-  const detail = `${capability.invocations} ${useLabel} · ${capability.sessionCount} ${sessionLabel} · last used ${relativeTime(capability.lastUsedAt)}`;
+  const detail = `${capability.invocations} ${pluralize(capability.invocations, "use")} · ${capability.sessionCount} ${pluralize(capability.sessionCount, "session")} · last used ${relativeTime(capability.lastUsedAt)}`;
 
   return (
     <li className="capability-ladder-row">
@@ -80,7 +77,8 @@ function UsedCapabilityRow({
       />
       <span className="capability-bar-value">{capability.invocations}</span>
       <span className="capability-ladder-meta">
-        {capability.sessionCount} {sessionLabel} ·{" "}
+        {capability.sessionCount}{" "}
+        {pluralize(capability.sessionCount, "session")} ·{" "}
         {relativeTime(capability.lastUsedAt)}
         <ProviderBadges providers={capability.providers} />
       </span>
