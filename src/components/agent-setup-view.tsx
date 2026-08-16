@@ -31,7 +31,11 @@ import {
   type ScheduledTask,
 } from "@/lib/agent-inventory";
 import { compareScheduledTasks } from "@/lib/agent-inventory/schedule";
-import { providerBadges, providerLabels } from "@/lib/labels";
+import {
+  providerBadges,
+  providerDotColors,
+  providerLabels,
+} from "@/lib/labels";
 import { shortenHomePath } from "@/lib/format";
 import { agentProviders, type AgentProvider } from "@/lib/types";
 
@@ -100,11 +104,16 @@ const statusLabels: Record<CapabilityStatus, string> = {
   unavailable: "Unavailable",
 };
 
+/**
+ * Status chips draw from the status ramp, not the numbered badge palette, so
+ * "Enabled" can no longer wear the same colour as a provider badge sitting in
+ * the next column. The enabled/disabled grouping is unchanged.
+ */
 const statusBadges: Record<CapabilityStatus, string> = {
-  enabled: "badge-1",
-  installed: "badge-1",
-  disabled: "badge-4",
-  unavailable: "badge-4",
+  enabled: "badge-status-ok",
+  installed: "badge-status-ok",
+  disabled: "badge-status-warn",
+  unavailable: "badge-status-warn",
 };
 
 const originLabels: Record<AgentCapability["origin"], string> = {
@@ -806,7 +815,7 @@ function InventoryView({
                   }
                 >
                   <span
-                    className={`agent-provider-dot ${providerBadges[entry.provider]}`}
+                    className={`agent-provider-dot ${providerDotColors[entry.provider]}`}
                     aria-hidden="true"
                   />
                   <span>{providerLabels[entry.provider]}</span>
@@ -1527,7 +1536,7 @@ function DuplicatesSection({
                   {duplicate.identicalContent ? (
                     <span className="agent-duplicate-verdict">Redundant</span>
                   ) : (
-                    <span className="badge badge-4">Shadowed</span>
+                    <span className="badge badge-status-warn">Shadowed</span>
                   )}
                   <span className="agent-duplicate-hint">
                     {duplicate.identicalContent
@@ -1724,10 +1733,10 @@ const scheduledStatusLabels: Record<ScheduledTask["status"], string> = {
 };
 
 const scheduledStatusBadges: Record<ScheduledTask["status"], string> = {
-  active: "badge-1",
-  paused: "badge-4",
-  disabled: "badge-4",
-  unknown: "badge-5",
+  active: "badge-status-ok",
+  paused: "badge-status-warn",
+  disabled: "badge-status-warn",
+  unknown: "badge-status-muted",
 };
 
 function scheduledTasksFor(inventories: AgentInventory[]): ScheduledTask[] {

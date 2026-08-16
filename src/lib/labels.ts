@@ -20,11 +20,24 @@ export const providerLabels: Record<AgentProvider, string> = {
   pi: "Pi",
 };
 
+/**
+ * Provider identity badges. These deliberately do not use the numbered
+ * `badge-N` palette: those slots are shared with other roles, which is how a
+ * provider and a status ended up wearing the same colour. Identity now owns a
+ * dedicated band (see `--agent-*` in globals.css).
+ */
 export const providerBadges: Record<AgentProvider, string> = {
-  codex: "badge-1",
-  claude: "badge-4",
-  zcode: "badge-3",
-  pi: "badge-2",
+  codex: "badge-agent-codex",
+  claude: "badge-agent-claude",
+  zcode: "badge-agent-zcode",
+  pi: "badge-agent-pi",
+};
+
+export const providerDotColors: Record<AgentProvider, string> = {
+  codex: "bg-agent-codex-foreground",
+  claude: "bg-agent-claude-foreground",
+  zcode: "bg-agent-zcode-foreground",
+  pi: "bg-agent-pi-foreground",
 };
 
 export const costSourceLabels: Record<CostSource, string> = {

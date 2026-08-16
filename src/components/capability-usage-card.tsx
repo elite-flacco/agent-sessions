@@ -97,7 +97,7 @@ function UnusedCapabilityRow({
     <li className="capability-unused-row">
       <div className="flex gap-2 items-center">
         <span className="capability-name">{capability.name}</span>
-        <span className="badge badge-5">
+        <span className="badge badge-neutral">
           {capability.kind === "skill" ? "Skill" : "MCP"}
         </span>
       </div>
@@ -242,7 +242,9 @@ export function CapabilityUsageCard({
     >
       <div className="capability-insight-head">
         <div>
-          <h3 id="capability-insight-title">Capability adoption</h3>
+          <h3 id="capability-insight-title" className="text-sm">
+            Capability adoption
+          </h3>
           {capabilities.installedCount > 0 ? (
             <p className="capability-headline">
               {capabilities.installedUsedCount}

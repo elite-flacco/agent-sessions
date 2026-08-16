@@ -1030,7 +1030,7 @@ describe("AgentSetupView", () => {
     // Active states render as a filled chip; muted states render as a bare
     // icon-only glyph, and missing keeps its own hook class.
     expect(html).toContain(
-      'class="agent-status-tag agent-status-tag--chip badge-1"',
+      'class="agent-status-tag agent-status-tag--chip badge-status-ok"',
     );
     expect(html).toContain('class="agent-missing agent-status-tag--bare"');
 
@@ -1275,6 +1275,25 @@ describe("AgentSetupView", () => {
     expect(summary.textContent).toContain("2 skills");
     expect(summary.textContent).toContain("2 sources");
     expect(summary.textContent).toContain("AGENTS.md");
+  });
+
+  test("uses the bright provider identity colors for inventory rail dots", () => {
+    const { container } = render(
+      <AgentSetupView
+        inventories={inventories}
+        filters={{ view: "inventory", provider: "codex" }}
+      />,
+    );
+
+    const dots = Array.from(
+      container.querySelectorAll<HTMLElement>(".agent-provider-dot"),
+    );
+    expect(dots.map((dot) => dot.className)).toEqual([
+      "agent-provider-dot bg-agent-codex-foreground",
+      "agent-provider-dot bg-agent-claude-foreground",
+      "agent-provider-dot bg-agent-zcode-foreground",
+      "agent-provider-dot bg-agent-pi-foreground",
+    ]);
   });
 
   test("keeps the Instructions rail entry when another kind is selected", () => {

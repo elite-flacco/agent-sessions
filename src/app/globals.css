@@ -15,6 +15,14 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-agent-codex: var(--agent-codex);
+  --color-agent-codex-foreground: var(--agent-codex-foreground);
+  --color-agent-pi: var(--agent-pi);
+  --color-agent-pi-foreground: var(--agent-pi-foreground);
+  --color-agent-zcode: var(--agent-zcode);
+  --color-agent-zcode-foreground: var(--agent-zcode-foreground);
+  --color-agent-claude: var(--agent-claude);
+  --color-agent-claude-foreground: var(--agent-claude-foreground);
   --color-badge-1: var(--badge-1);
   --color-badge-1-foreground: var(--badge-1-foreground);
   --color-badge-2: var(--badge-2);
@@ -48,10 +56,29 @@
   --primary: #b8f34a;
   --primary-foreground: #10130b;
   --accent: #b8f34a;
-  --success: #70c98e;
-  --warning: #d4a85c;
-  --danger: #e67483;
-  --info: #6fa8dc;
+  /* Status ramp. One formula: OKLCH L84 C0.130, hues 154/75/25/250. Status is
+     the only role that may use the green-amber-red band; provider identity
+     lives in the separate --agent-* band below and must never borrow these. */
+  --success: #81e3a3;
+  --warning: #fcbe62;
+  --danger: #ffa89f;
+  --info: #86d0ff;
+  /* Filled status chips (agent inventory, scheduled tasks) pair the ramp above
+     with a dark same-hue ground at L24 C0.055. */
+  --status-ok-surface: #042713;
+  --status-warn-surface: #2e1b00;
+  --status-danger-surface: #351311;
+  /* Provider identity. Codex mirrors the default pet's navy face and
+     periwinkle body; the other providers use the separate OKLCH identity
+     ramp. These are identity only: never use them to signal health. */
+  --agent-codex: #1a2451;
+  --agent-codex-foreground: #8bbaf9;
+  --agent-pi: #132341;
+  --agent-pi-foreground: #97beff;
+  --agent-zcode: #311935;
+  --agent-zcode-foreground: #dfa6e8;
+  --agent-claude: #3c1712;
+  --agent-claude-foreground: #fda293;
   --badge-1: #17382d;
   --badge-1-foreground: #8ed7b5;
   --badge-2: #172d43;
@@ -236,8 +263,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 9999px;
-    padding: 0.3rem 0.65rem;
+    border-radius: 0.25rem;
+    padding: 0.2rem 0.5rem;
     font-size: var(--text-xs);
     white-space: nowrap;
   }
@@ -261,6 +288,50 @@
   .badge-5 {
     background: var(--badge-5);
     color: var(--badge-5-foreground);
+  }
+
+  /* Provider identity badges. One class per provider rather than a numbered
+     palette slot, so a provider can never accidentally share a colour with a
+     status. */
+  .badge-agent-codex {
+    background: var(--agent-codex);
+    color: var(--agent-codex-foreground);
+  }
+  .badge-agent-pi {
+    background: var(--agent-pi);
+    color: var(--agent-pi-foreground);
+  }
+  .badge-agent-zcode {
+    background: var(--agent-zcode);
+    color: var(--agent-zcode-foreground);
+  }
+  .badge-agent-claude {
+    background: var(--agent-claude);
+    color: var(--agent-claude-foreground);
+  }
+
+  /* Filled status chips. Same geometry as `.badge`, drawn from the status ramp
+     so health never borrows an identity colour. */
+  .badge-status-ok {
+    background: var(--status-ok-surface);
+    color: var(--success);
+  }
+  .badge-status-warn {
+    background: var(--status-warn-surface);
+    color: var(--warning);
+  }
+  .badge-status-muted {
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+
+  /* Taxonomy chips (Skill / MCP and friends) classify rather than signal, so
+     they carry no hue. Visually identical to `.badge-status-muted` today, but
+     kept separate because the two roles may diverge. */
+  .badge-neutral {
+    background: var(--muted);
+    color: var(--muted-foreground);
+    border: 1px solid var(--border);
   }
 
   .eyebrow {
@@ -597,7 +668,7 @@
     overflow: hidden;
     color: var(--foreground);
     font-size: var(--text-sm);
-    font-weight: 600;
+    font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -741,8 +812,7 @@
     font-size: var(--text-xs);
   }
   .project-card-title,
-  .project-provider-list,
-  .project-state {
+  .project-provider-list {
     display: flex;
     align-items: center;
     gap: 0.45rem;
@@ -751,8 +821,7 @@
     font-size: var(--text-lg);
     overflow-wrap: anywhere;
   }
-  .project-card-title svg:last-child,
-  .project-state-active {
+  .project-card-title svg:last-child {
     color: var(--success);
   }
   .project-provider-list {
@@ -761,18 +830,6 @@
   }
   .project-briefing-header {
     margin-top: 1.5rem;
-  }
-  .project-state {
-    font-size: var(--text-sm);
-  }
-  .project-state-waiting {
-    color: var(--info);
-  }
-  .project-state-blocked {
-    color: var(--warning);
-  }
-  .project-state-complete {
-    color: var(--muted-foreground);
   }
   .project-briefing-grid {
     display: grid;
@@ -792,21 +849,17 @@
     margin-top: 0.35rem;
     font-size: var(--text-sm);
   }
-  .project-timeline,
-  .project-session-list {
+  .project-timeline {
     display: grid;
     gap: 0.65rem;
     margin: 0.9rem 0 0;
     padding: 0;
     list-style: none;
   }
-  .project-timeline li,
-  .project-session-list > a {
+  .project-timeline li {
     display: grid;
     align-items: start;
     gap: 0.55rem;
-  }
-  .project-timeline li {
     grid-template-columns: var(--status-dot-size) minmax(0, 1fr) auto;
   }
   .project-timeline strong {
@@ -814,21 +867,9 @@
     font-size: var(--text-xs);
     font-weight: 600;
   }
-  .project-session-list strong {
-    display: block;
-    overflow: hidden;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .project-timeline p,
-  .project-session-list p {
+  .project-timeline p {
     color: var(--muted-foreground);
     font-size: var(--text-xs);
-  }
-  .project-session-list a:hover strong {
-    color: var(--foreground);
   }
   /* Grid items default to min-width: auto, so without this the value and note
      push the track wider than the cell and clip mid-word instead of ellipsing.
@@ -908,11 +949,6 @@
     font-family: var(--font-geist-mono), ui-monospace, monospace;
     font-size: var(--text-xs);
     white-space: nowrap;
-  }
-  .project-session-list > a {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    border-top: 1px solid var(--border);
-    padding-top: 0.65rem;
   }
 
   .inspector-badges {
@@ -1382,12 +1418,6 @@
     font-size: var(--text-sm);
     letter-spacing: 0;
   }
-  .capability-evidence-note {
-    max-inline-size: 46rem;
-    margin-top: 0.35rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-  }
   .capability-tabs {
     display: flex;
     flex-wrap: wrap;
@@ -1400,8 +1430,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
+    border-left: 1px solid var(--border);
     background: transparent;
     padding: 0.3rem 0.7rem;
     color: var(--muted-foreground);
@@ -1431,7 +1460,7 @@
     background: var(--badge-2-foreground);
   }
   .capability-tab.is-mcps .capability-tab-key {
-    background: var(--badge-3-foreground);
+    background: var(--badge-4-foreground);
   }
   /* The card spans the insights grid, but a 70rem-wide bar reads as noise —
      cap the measure so bar lengths stay comparable at a glance. */
