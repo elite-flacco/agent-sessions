@@ -106,6 +106,7 @@ describe("OverviewView", () => {
         {
           key: "agent-sessions",
           repository: "agent-sessions",
+          githubUrl: null,
           category: "project",
           sessionCount: 3,
           activeCount: 0,

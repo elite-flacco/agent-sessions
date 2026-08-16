@@ -103,6 +103,7 @@ describe("Dashboard session rows", () => {
     const project: ProjectCostSummary = {
       key: "agent-sessions",
       repository: "agent-sessions",
+      githubUrl: null,
       category: "project",
       sessionCount: 3,
       activeCount: 0,

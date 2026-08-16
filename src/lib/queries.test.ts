@@ -340,6 +340,7 @@ describe("project and overview queries", () => {
       activeCount: 1,
       providers: ["codex"],
     });
+    expect(beacon).toHaveProperty("githubUrl", null);
     const tasks = projects.find((project) => project.key === "(tasks)");
     expect(tasks).toMatchObject({
       repository: null,

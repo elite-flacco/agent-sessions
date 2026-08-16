@@ -703,6 +703,7 @@
     margin-top: 1.5rem;
   }
   .project-card {
+    position: relative;
     display: flex;
     min-width: 0;
     flex-direction: column;
@@ -711,7 +712,20 @@
     gap: 1rem;
     padding: 1rem 1.1rem;
   }
-  .project-card > div,
+  .project-card-link {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .project-card-link::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+  }
+  .project-card-link > div,
   .project-card-title {
     min-width: 0;
   }

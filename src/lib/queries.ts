@@ -1,9 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
 import { sqlite } from "@/db/client";
 import { canonicalCapabilityName } from "./agent-inventory/normalize";
 import type { AgentInventory } from "./agent-inventory/types";
 import { findPricing, normalizeModel, usageCostUsd } from "./pricing";
+import { findGitRoot, resolveProjectGitHubUrl } from "./project-github";
 import {
   agentProviders,
   UNKNOWN_PROJECT_KEY,
@@ -389,6 +388,7 @@ export function countSessions(): number {
 export interface ProjectSummary {
   key: string;
   repository: string | null;
+  githubUrl: string | null;
   category: "project" | "task";
   sessionCount: number;
   activeCount: number;
@@ -496,16 +496,6 @@ interface ProjectRow {
   lastActivityAt: string;
 }
 
-function gitRoot(cwd: string): string | null {
-  let current = path.resolve(cwd);
-  while (true) {
-    if (fs.existsSync(path.join(current, ".git"))) return current;
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
-}
-
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
@@ -517,7 +507,7 @@ function isRepositoryBacked(row: ProjectRow): boolean {
     )
   )
     return true;
-  return (row.workdirs?.split(",") ?? []).some((cwd) => gitRoot(cwd));
+  return (row.workdirs?.split(",") ?? []).some((cwd) => findGitRoot(cwd));
 }
 
 function projectsFromSessions(sessions: SessionListItem[]): ProjectSummary[] {
@@ -565,18 +555,22 @@ function projectsFromSessions(sessions: SessionListItem[]): ProjectSummary[] {
 }
 
 function summarizeProjects(rows: ProjectRow[]): ProjectSummary[] {
-  const summaries: ProjectSummary[] = rows.map((row) => ({
-    key: row.repository ?? UNKNOWN_PROJECT_KEY,
-    repository: row.repository,
-    category: isRepositoryBacked(row) ? "project" : "task",
-    sessionCount: row.sessionCount,
-    activeCount: row.activeCount,
-    providers: (row.providers?.split(",") ?? []) as AgentProvider[],
-    branches: row.branches?.split(",") ?? [],
-    workdirs: row.workdirs?.split(",") ?? [],
-    totalRuntimeMs: row.totalRuntimeMs,
-    lastActivityAt: row.lastActivityAt,
-  }));
+  const summaries: ProjectSummary[] = rows.map((row) => {
+    const workdirs = row.workdirs?.split(",") ?? [];
+    return {
+      key: row.repository ?? UNKNOWN_PROJECT_KEY,
+      repository: row.repository,
+      githubUrl: resolveProjectGitHubUrl(workdirs),
+      category: isRepositoryBacked(row) ? "project" : "task",
+      sessionCount: row.sessionCount,
+      activeCount: row.activeCount,
+      providers: (row.providers?.split(",") ?? []) as AgentProvider[],
+      branches: row.branches?.split(",") ?? [],
+      workdirs,
+      totalRuntimeMs: row.totalRuntimeMs,
+      lastActivityAt: row.lastActivityAt,
+    };
+  });
   const projects = summaries.filter(
     (summary) => summary.category === "project",
   );
@@ -587,6 +581,7 @@ function summarizeProjects(rows: ProjectRow[]): ProjectSummary[] {
     {
       key: TASKS_PROJECT_KEY,
       repository: null,
+      githubUrl: null,
       category: "task",
       sessionCount: tasks.reduce((total, task) => total + task.sessionCount, 0),
       activeCount: tasks.reduce((total, task) => total + task.activeCount, 0),

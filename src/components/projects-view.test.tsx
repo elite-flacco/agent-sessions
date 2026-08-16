@@ -18,6 +18,7 @@ function baseProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
     key: "relay",
     repository: "relay",
+    githubUrl: null,
     category: "project",
     sessionCount: 209,
     activeCount: 1,
@@ -89,6 +90,34 @@ describe("ProjectsView landing", () => {
     expect(grid).toHaveTextContent("Claude");
     expect(grid).toHaveTextContent("Codex");
     expect(grid).toHaveTextContent("Zcode");
+    expect(
+      within(grid).queryByRole("link", { name: /open .* on github/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("links a detected GitHub origin separately from the Relay briefing", () => {
+    render(
+      <ProjectsView
+        projects={[
+          baseProject({ githubUrl: "https://github.com/openai/relay" }),
+        ]}
+        selected={null}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Open relay project briefing" }),
+    ).toHaveAttribute("href", "/projects?project=relay");
+    const githubLink = screen.getByRole("link", {
+      name: "Open relay on GitHub",
+    });
+    expect(githubLink).toHaveAttribute(
+      "href",
+      "https://github.com/openai/relay",
+    );
+    expect(githubLink).toHaveAttribute("target", "_blank");
+    expect(githubLink).toHaveAttribute("rel", "noreferrer");
+    expect(githubLink.querySelector('[data-icon="github"]')).toBeVisible();
   });
 
   test("keeps the existing empty state when no projects have Git evidence", () => {
