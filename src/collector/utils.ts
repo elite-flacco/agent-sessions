@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { SessionStatus, StatusReason, TerminalStatus } from "@/lib/types";
@@ -82,7 +83,37 @@ export function safeTitle(value: unknown, fallback: string): string {
 }
 
 export function repositoryFromCwd(cwd?: string): string | undefined {
-  return cwd ? path.basename(cwd) : undefined;
+  if (!cwd) return undefined;
+  let current = path.resolve(cwd);
+  while (true) {
+    const gitPath = path.join(current, ".git");
+    try {
+      const stat = fsSync.statSync(gitPath);
+      if (stat.isDirectory()) return path.basename(current);
+      if (stat.isFile()) {
+        const gitdir = fsSync
+          .readFileSync(gitPath, "utf8")
+          .match(/^gitdir:\s*(.+)\s*$/m)?.[1];
+        if (gitdir) {
+          const resolvedGitdir = path.resolve(current, gitdir);
+          const worktreesMarker = `${path.sep}worktrees${path.sep}`;
+          const markerIndex = resolvedGitdir.lastIndexOf(worktreesMarker);
+          if (markerIndex >= 0) {
+            const commonGitDirectory = resolvedGitdir.slice(0, markerIndex);
+            if (path.basename(commonGitDirectory) === ".git") {
+              return path.basename(path.dirname(commonGitDirectory));
+            }
+          }
+        }
+        return path.basename(current);
+      }
+    } catch {
+      // Keep walking; provider data may reference a removed checkout.
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return path.basename(path.resolve(cwd));
+    current = parent;
+  }
 }
 
 export function staleStatus(

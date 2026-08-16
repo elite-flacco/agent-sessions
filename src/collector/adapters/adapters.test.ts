@@ -425,6 +425,49 @@ describe("provider adapters", () => {
     ).toBe(true);
   });
 
+  it("attributes a linked worktree session to its parent repository", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "relay-worktree-"),
+    );
+    temporaryDirectories.push(directory);
+    const repository = path.join(directory, "agent-sessions");
+    const worktree = path.join(
+      repository,
+      ".worktrees",
+      "backend-review-fixes",
+    );
+    const gitDirectory = path.join(repository, ".git");
+    await fs.mkdir(
+      path.join(gitDirectory, "worktrees", "backend-review-fixes"),
+      {
+        recursive: true,
+      },
+    );
+    await fs.mkdir(worktree, { recursive: true });
+    await fs.writeFile(
+      path.join(worktree, ".git"),
+      `gitdir: ${path.join(gitDirectory, "worktrees", "backend-review-fixes")}\n`,
+    );
+
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-worktree",
+        cwd: worktree,
+        gitBranch: "zcode/fix/backend-review-fixes",
+        timestamp: "2026-08-04T22:46:19.726Z",
+        message: { role: "user", content: "Review the backend changes" },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      repository: "agent-sessions",
+      cwd: worktree,
+      branch: "zcode/fix/backend-review-fixes",
+    });
+  });
+
   it("normalizes Claude skill and MCP calls without retaining arguments", async () => {
     const result = await parse(claudeAdapter, [
       {
