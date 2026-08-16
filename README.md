@@ -1,6 +1,6 @@
 # Relay
 
-Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into SQLite. Detailed session pages read messages and tool payloads from local provider storage on demand without copying them into Relay's database.
+Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into a local SQLite database. Detailed session pages read messages and tool payloads from local provider storage on demand — nothing is copied into Relay's database.
 
 ## Requirements
 
@@ -9,16 +9,23 @@ Relay is a private, local-only operations dashboard for coding-agent sessions. I
 
 ## Run locally
 
+One-time setup after cloning:
+
 ```bash
 npm ci
 npm run db:migrate
 npm run collect
+```
+
+Then, whenever you want to use the dashboard:
+
+```bash
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Relay refreshes dashboard data and checks for changed local source files every 5 seconds. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Relay refreshes dashboard data and checks for changed local source files every 5 seconds while a page is open, so the setup commands do not need to be repeated. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line. `npm ci` installs exactly the versions pinned in `package-lock.json` (`npm install` also works, but may update the lockfile); re-run it only after pulling dependency changes, and re-run `npm run db:migrate` after pulling commits that add migrations in `drizzle/`.
 
-For continuous collection in a second terminal:
+Optional: to keep collecting even when no dashboard page is open, run a watcher in a second terminal:
 
 ```bash
 npm run collect:watch
@@ -28,21 +35,84 @@ Only one watcher can ingest at a time: a durable lease in the database makes a s
 
 ## Pages
 
-| Route            | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`              | Overview — daily/weekly summaries, running and needs-attention sessions, and a patterns section (day-by-time-of-day heatmap (always 30 days), session-length histogram, and cost-at-a-glance). A 7-day/30-day/all-time range toggle in the header drives the time-windowed KPIs, session-length histogram, and cost card; the heatmap always shows 30 days, and "today", "running now", "needs attention", and "recent projects" stay fixed. Cards link into matching filtered views.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `/sessions`      | Shared summary cards and a 7-day/30-day/all-time header range toggle, plus URL-backed search/provider/project/model/status filters with switchable Sessions and Projects tables. The Overview's Sessions today card retains a contextual Today drilldown. The Sessions table shows each run's model (snapshot and prefix variants grouped into one canonical name), and the model filter narrows by it, with an "(unknown)" option for runs whose model wasn't recorded. Sessions sort by last update by default and show both started and updated timestamps. While open, it ingests changed local source files and refreshes every 5 seconds. Subagent runs are nested beneath their main session. Session titles open a dedicated detail page.                                                                                                                                                                                                                        |
-| `/sessions/[id]` | A full-width session detail view with metadata, links between main and subagent sessions, and an on-demand transcript of user/assistant messages, tool arguments, and tool results. Common credential shapes are redacted; raw reasoning records are excluded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `/projects`      | Projects — repository-backed workspaces built from local Git evidence. The responsive grid shows session counts, runtime, API-equivalent total cost, pricing exclusions, and the agents that worked in each; when every observed worktree agrees on one GitHub origin, the card also links to that repository. Selecting one opens a briefing whose 7-day/30-day/all-time range toggle drives the headline metrics, daily spend sparkline, per-agent session and cost split, activity feed, and evidence list together; the worktree context is always all-time. Activity is the newest retained lifecycle event per session, identified by the session it belongs to. Cost follows the usage page's rule — sessions with incomplete pricing are excluded from dollar sums and reported as excluded — and each session is counted once, so delegated subagent spend is not double-counted. The evidence list is URL-backed and filterable to sessions needing attention. |
-| `/usage`         | Usage & cost — a 7-day/30-day/all-time header range toggle scopes the cost, token, session, and cache-read metrics; daily cost history; and breakdowns by model, agent, and project together. All time begins at the earliest locally recorded usage date.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `/insights`      | Insights — actionable efficiency signals. A page-level 7-day/30-day/all-time range toggle drives cache effectiveness, cost outliers, and capability adoption together. The page opens with three jump-linked KPI tiles for cost, cache hit rate, and capability adoption, then shows cache avoided-spend estimates, hit rate by model, cost concentration and expensive sessions with their share of the selected period total, plus capability tabs for Skills, MCPs, Not observed, and By provider. Capability tabs remain independently URL-backed. "Not observed" refers only to available local history; providers with incomplete source coverage are excluded from that conclusion, and Zcode remains incomplete until its latest authoritative capability reconciliation succeeds. Cache hit rate is always available, while dollar figures follow the pricing-trust rule.                                                                                       |
-| `/agents`        | Agent setup — a live, read-only global inventory of plugins, skills, MCP servers, and instruction files for Codex, Claude Code, Zcode, and Pi. Each tab opens with a slim view-specific summary instead of repeated provider cards. Inventory is a compact per-provider catalog with provider and Kind rails, source-grouped Skills, source/status filters, expandable plugin parents, and safe selected-item details. Compare provides the consensus Needs-attention view plus the full provider-by-provider matrix. Scheduled tasks is a schedule-first table of recurring jobs from Codex automations, Claude scheduled-tasks dirs, and Zcode workflow definitions, sorted by cadence and flagging tasks whose target project the agent no longer lists.                                                                                                                                                                                                              |
+Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-day / 30-day / all-time** range toggle in the header that scopes that page's metrics to the same window.
 
-Session status is derived from provider lifecycle records. **Interrupted** is reserved for an explicit abort or cancellation marker. A session without a terminal marker is **Running** while its source is active and becomes **Incomplete** after 10 minutes without updates. A trailing user message with no assistant completion therefore becomes Incomplete rather than Interrupted. Zcode sessions with an unresolved `AskUserQuestion` tool are **Awaiting input** until the question is answered — this is the only "needs a human" state that means the session is waiting on you. A session that ends on a genuine error is **Failed**, labeled with the specific reason (e.g. _Failed · Usage limit_, _Failed · Network error_, _Failed · Execution failed_). Overview includes attention sessions — Awaiting input, Failed, and Interrupted — from today and the previous two local calendar days, avoiding rolling-window cutoffs within the three-day view.
+### `/` — Overview
 
-Costs are **API-equivalent estimates**: tokens are priced against a checked-in table of public per-token rates (`src/lib/pricing.ts`, with effective dates and source URLs), because subscription plans don't bill per token. Pi sessions carry the provider's own recorded cost and show as **Reported**. A session whose model has no pricing entry shows **Unavailable** rather than a partial dollar figure; updating the pricing table re-prices history automatically because costs are computed at read time. When Zcode's session database is available, its model and usage records are authoritative; because Zcode prunes its rollout log files, these figures can exceed what earlier rollout-only imports recorded.
+- Daily and weekly summaries, plus running, needs-attention, and recent-project cards; cards link into matching filtered views.
+- A patterns section: a day × time-of-day activity heatmap, a session-length histogram, and cost-at-a-glance. The histogram and cost card follow the selected range; the heatmap always shows the previous 30 days.
+- "Today", "running now", "needs attention", and "recent projects" stay range-independent.
 
-A session's cost **includes the subagents it spawned**. The cost column on `/sessions` and the Cost figure on a session's detail page show the total for that session plus every subagent beneath it, at any depth; when a session delegated work, the detail page also breaks it out as _main_ vs _subagents_, and each nested subagent row still shows its own subtree total. Because one unpriced model anywhere in the tree makes the total unavailable, a main session can read **Unavailable** even when its own usage is priced. The Insights cost-outlier list ranks main sessions the same way, so a session that delegated heavily is listed once with its whole tree's spend instead of its subagents crowding the list. Dollar _totals_ are unaffected — `/usage`, the overview cost card, and the Insights week total count every session once, subagents included.
+### `/sessions` — Sessions
+
+- Shared summary cards, URL-backed search, and provider/project/model/status filters, with switchable Sessions and Projects tables.
+- Runs sort by last update, show started and updated timestamps, and nest subagent runs beneath their main session. Titles open the detail page.
+- Each run shows its model as one canonical name (snapshot and prefix variants grouped into one name); the model filter narrows by that name, with an "(unknown)" option for runs whose model wasn't recorded.
+- While open, the page ingests changed source files and refreshes every 5 seconds. The Overview's Sessions-today card links here with a contextual Today drilldown.
+
+### `/sessions/[id]` — Session detail
+
+- Full-width view with session metadata and links between main and subagent sessions.
+- An on-demand transcript of user/assistant messages, tool arguments, and tool results, read straight from provider storage (see [Privacy boundary](#privacy-boundary)).
+
+### `/projects` — Projects
+
+- Repository-backed workspaces built from local Git evidence, showing session counts, runtime, API-equivalent total cost, pricing exclusions, and the agents that worked in each.
+- Cards link to the GitHub repository when every observed worktree agrees on one origin.
+- Selecting a project opens a briefing — headline metrics, daily spend sparkline, per-agent session and cost split, activity feed, and evidence list — all scoped by the range toggle; the worktree context is always all-time.
+- The activity feed shows the newest retained lifecycle event per session.
+- Costs follow the usage-page rules with each session counted once, so delegated subagent spend is not double-counted. The evidence list can be filtered to sessions needing attention.
+
+### `/usage` — Usage & cost
+
+- Cost, token, session, and cache-read metrics; daily cost history; and breakdowns by model, agent, and project — all scoped by the range toggle.
+- All-time begins at the earliest locally recorded usage date.
+
+### `/insights` — Insights
+
+- Jump-linked KPI tiles for cost, cache hit rate, and capability adoption.
+- Cache avoided-spend estimates, hit rate by model, cost concentration, and expensive sessions with their share of the period total.
+- Capability adoption tabs — Skills, MCPs, Not observed, By provider — independently URL-backed.
+- "Not observed" judges only available local history: providers with incomplete source coverage are excluded, and Zcode stays incomplete until its latest capability reconciliation succeeds.
+- Cache hit rate is always available; dollar figures follow the pricing-trust rule.
+
+### `/agents` — Agent setup
+
+- A live, read-only global inventory of plugins, skills, MCP servers, and instruction files for Codex, Claude Code, Zcode, and Pi.
+- **Inventory**: a per-provider catalog with provider and Kind rails, search/source/status filters, source-grouped skills, expandable plugin parents, and safe selected-item details.
+- **Compare**: the consensus Needs-attention view plus the full provider-by-provider matrix.
+- **Scheduled tasks**: a schedule-first table of recurring jobs from Codex automations, Claude scheduled-task directories, and Zcode workflow definitions, sorted by cadence and flagging tasks whose target project the agent no longer lists.
+
+Rules and interpretation details: [Agent setup](#agent-setup).
+
+## Session statuses
+
+Statuses come from provider lifecycle records, never guessed from inactivity alone.
+
+| Status         | Meaning                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Completed      | Explicit completion evidence.                                                                                      |
+| Running        | Unfinished and updated within the last 10 minutes.                                                                 |
+| Incomplete     | Unfinished and stale — no updates for 10 minutes. A trailing user message with no assistant completion lands here. |
+| Interrupted    | An explicit abort or cancellation marker — nothing less.                                                           |
+| Awaiting input | An unresolved Zcode `AskUserQuestion`; the session is waiting on you.                                              |
+| Failed         | A genuine error, labeled with its reason — e.g. _Failed · Usage limit_, _Failed · Network error_.                  |
+
+The Overview includes attention sessions — Awaiting input, Failed, and Interrupted — from today and the two previous calendar days.
+
+## Costs
+
+Costs are **API-equivalent estimates**; subscription plans don't bill per token.
+
+- Tokens are priced against a checked-in table of public per-token rates (`src/lib/pricing.ts`, with effective dates and source URLs). Pi sessions instead carry the provider's own recorded cost, shown as **Reported**.
+- A model with no pricing entry shows **Unavailable** rather than a partial dollar figure. Costs are computed at read time, so updating the pricing table re-prices history automatically.
+- When Zcode's session database is available, its model and usage records are authoritative — because Zcode prunes its rollout logs, these figures can exceed earlier rollout-only imports.
+
+Subagent rollups:
+
+- A session's cost includes every subagent it spawned, at any depth. Detail pages break that out as _main_ vs. _subagents_, and each nested subagent row shows its own subtree total.
+- One unpriced model anywhere in the tree makes the whole total unavailable — a main session can read **Unavailable** even when its own usage is priced.
+- Dollar totals on `/usage`, the overview cost card, and the Insights period total count each session once, so subagents are never double-counted. The Insights expensive-session list credits a subtree to its topmost in-window session, so heavily delegating sessions appear once with their whole tree's spend instead of crowding the list.
 
 ## Data sources
 
@@ -53,34 +123,21 @@ A session's cost **includes the subagents it spawned**. The cost column on `/ses
 | Zcode       | `~/.zcode/cli/rollout/**/*.jsonl`, `~/.zcode/cli/agents/**/*.jsonl`, and `~/.zcode/cli/db/db.sqlite` when available |
 | Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                                                                   |
 
-Relay stores its normalized database at `data/relay.db`. Override this with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
+- Relay stores its normalized database at `data/relay.db`. Override with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
+- Titles prefer provider-authored values: Codex titles come from the read-only `threads.title` field in its state database; Claude Code prefers the latest JSONL `custom-title`, then the latest `ai-title`; both fall back to the first meaningful user message. Collection passes also reconcile Codex title-only changes that don't touch the rollout JSONL.
+- Zcode's rollout files carry model usage but no working directory and incomplete conversation data, so Relay uses Zcode's own session database (read-only) for authoritative titles, parent/subagent relationships, project metadata, user-input waits, database-only sessions, and on-demand transcripts. Rollout JSONL is the fallback. Codex parent-thread metadata and Claude sidechain records provide the equivalent hierarchy for those providers.
 
-Relay prefers provider-authored display titles when they are available. Codex titles come from the read-only `threads.title` field in the Codex state database listed above; Claude Code prefers the latest JSONL `custom-title`, then the latest `ai-title`. Both fall back to the first meaningful user message when an authoritative title is unavailable. A collection pass also reconciles Codex title-only changes that do not modify the rollout JSONL.
+## Agent setup
 
-Zcode's rollout (`model_io`) files carry model usage but no working directory and incomplete conversation data, so Relay uses Zcode's own session database (`~/.zcode/cli/db/db.sqlite`, read-only) for authoritative titles, parent/subagent relationships, missing project/workspace metadata, user-input waits, database-only sessions, and on-demand transcripts. JSONL remains the transcript fallback when that database is unavailable. Codex parent thread metadata and Claude Code sidechain records provide the equivalent hierarchy for those providers.
+The **Agent setup** page reads global configuration live when `/agents` is opened; it is never persisted in Relay's database. This first version is global-only — project-level configuration is not included yet.
 
-## Agent setup sources
+**Needs attention** evaluates every capability type across the three primary agents (Pi stays contextual):
 
-The **Agent setup** page reads global configuration live when `/agents` is
-opened; it does not persist the inventory in Relay's database. This first
-version is global-only. Project-level configuration is not included yet.
-
-**Needs attention** evaluates every capability type across the three primary
-agents (Pi stays contextual). **Fix** is reserved for genuinely broken state:
-capabilities whose install files are missing on disk (unavailable), missing
-global instructions, and skills.sh-managed skills absent from one agent —
-skills.sh installs exist to be synced everywhere. Other partial installs and
-configuration or content drift are **Review** items: skill drift compares
-whitespace-normalized SKILL.md fingerprints, so identically named skills with
-different content are flagged while line-ending differences are not.
-Deliberately disabled capabilities count as present (drift, not a missing
-install). The attention view also lists configuration warnings (malformed
-sources, stale plugin cache versions, skills.sh lockfile entries with no
-installed skill) and per-agent duplicate installs, distinguishing identical
-redundant copies from same-name copies with different content. Capabilities
-found on only one provider remain contextual in **Complete matrix** instead of
-being treated as errors. These labels are read-only heuristics and never
-modify agent configuration.
+- **Fix** — genuinely broken state: install files missing on disk, missing global instructions, or skills.sh-managed skills absent from one agent (they exist to be synced everywhere).
+- **Review** — other partial installs and configuration or content drift. Skill drift compares whitespace-normalized `SKILL.md` fingerprints, so identically named skills with different content are flagged while line-ending differences are not. Deliberately disabled capabilities count as present (drift, not a missing install).
+- The attention view also lists configuration warnings — malformed sources, stale plugin cache versions, skills.sh lockfile entries with no installed skill — and per-agent duplicate installs, distinguishing identical redundant copies from same-name copies with different content.
+- Capabilities found on only one provider remain contextual in **Complete matrix** instead of being treated as errors.
+- These labels are read-only heuristics; Relay never modifies agent configuration.
 
 | Provider    | Global sources                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -89,35 +146,16 @@ modify agent configuration.
 | Zcode       | `~/.zcode/cli/config.json`, `~/.zcode/cli/plugins/installed_plugins.json`, `~/.zcode/skills`, plugin directories, and `~/.zcode/AGENTS.md` |
 | Pi          | `~/.pi/agent/settings.json`, `~/.pi/agent/extensions`, `~/.pi/agent/skills`, `~/.agents/skills`, and `~/.pi/agent/AGENTS.md`               |
 
-Standalone skills installed by the skills.sh CLI are identified from
-`~/.agents/.skill-lock.json`. Locally linked skills, skills contributed by
-plugins, built-in skills, and unknown sources are labeled separately. Broken
-skill links and plugins whose install directories are gone remain visible as
-unavailable so the comparison can expose drift. Plugins missing from a
-provider's enabled-plugins map read as **Installed** (state unknown) rather
-than disabled; only an explicit disable reads as **Disabled**. Codex per-skill
-disables (`[[skills.config]]` entries in `config.toml`) are applied on top of
-the plugin's state, so individually disabled plugin skills read as Disabled
-too. Disabled
-capabilities appear only in the Compare view (where they distinguish a
-deliberate disable from a missing install); the Inventory catalog and rail
-counts show what is in effect. Inventory shows one provider and one Kind at a
-time, selected from a compact browsing rail. Search, Source, and Status filters
-remain above the catalog. Skills are grouped by management source: Standalone,
-Plugin-provided, Built-in, Marketplace, and Personal when present. Each source
-category starts expanded and can be collapsed independently. Plugin-provided
-skills stay beneath a collapsible plugin parent even when only one
-skill matches, because the plugin is the installation unit; non-plugin source
-groups use direct rows. Every row aligns name, package/source, status, and safe
-location/detail fields while retaining a small source label. Selecting a row
-opens a focused inspector with parent-plugin and duplicate-install context;
-the Compare view remains a flat table.
+How the inventory is interpreted:
 
-The page allowlists display fields: capability name and type, enabled or
-installed status, packaging, provenance, source repository, and safe local
-paths. Global instruction Markdown is shown in full. MCP commands, arguments,
-environment variables, credentials, and raw configuration blocks are never
-returned to the page.
+- Standalone skills installed by the skills.sh CLI are identified from `~/.agents/.skill-lock.json`; locally linked skills, plugin-contributed skills, built-ins, and unknown sources are labeled separately.
+- Broken skill links and plugins whose install directories are gone remain visible as unavailable, so the comparison can expose drift.
+- Plugins missing from a provider's enabled-plugins map read as **Installed** (state unknown) rather than disabled; only an explicit disable reads as **Disabled**. Codex per-skill disables (`[[skills.config]]` in `config.toml`) apply on top of the plugin's state.
+- Disabled capabilities appear only in Compare, where a deliberate disable is distinguished from a missing install. The Inventory catalog and rail counts show what is in effect, one provider and one Kind at a time.
+- Skills are grouped by management source — Standalone, Plugin-provided, Built-in, Marketplace, and Personal when present — each starting expanded and independently collapsible. Plugin-provided skills stay beneath a collapsible plugin parent even when only one skill matches, because the plugin is the installation unit.
+- Selecting a row opens a focused inspector with parent-plugin and duplicate-install context; Compare remains a flat table.
+
+The page allowlists display fields: capability name and type, enabled or installed status, packaging, provenance, source repository, and safe local paths. Global instruction Markdown is shown in full. MCP commands, arguments, environment variables, credentials, and raw configuration blocks are never returned.
 
 ## Commands
 
@@ -131,6 +169,7 @@ returned to the page.
 
 ## Privacy boundary
 
-The adapters derive short task titles, workspace metadata, timestamps, model/usage summaries when trustworthy, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are not written to Relay's database.
-
-Each session stores only the path of its original local source file. When `/sessions/[id]` is opened, Relay reads provider storage on demand and normalizes supported user messages, assistant messages, tool arguments, and tool results for display. Most providers use the source JSONL; Zcode prefers its read-only `message` and `part` tables so sessions remain readable when rollout files are absent or contain only model-I/O telemetry. Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view. Provider-injected context can still appear when a provider records it as part of a user or assistant message.
+- Adapters derive short task titles, workspace metadata, timestamps, trustworthy model/usage summaries, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are never written to Relay's database.
+- Each session stores only the path of its original local source file. Opening `/sessions/[id]` reads provider storage on demand and normalizes user and assistant messages, tool arguments, and tool results for display. Zcode prefers its read-only `message` and `part` tables so sessions stay readable even when rollout files are absent.
+- Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view.
+- Provider-injected context can still appear when a provider records it as part of a user or assistant message.
