@@ -51,3 +51,5 @@ next-env.d.ts
 
 # nested git worktrees for concurrent agents
 /.worktrees/
+
+/docs
