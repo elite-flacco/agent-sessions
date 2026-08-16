@@ -1593,7 +1593,8 @@ const LENGTH_BUCKETS = [
  * usage tables. The heatmap always spans the trailing 30 days in
  * America/New_York time (a week is too sparse for a useful day x band grid);
  * the length histogram and period cost follow the selected range. The period
- * cost reuses the pricing-trust rule (null when any usage row is unpriced).
+ * cost includes fully priced sessions and excludes sessions with any unpriced
+ * usage, matching the aggregate behavior on the Usage page.
  */
 export function getOverviewPatterns(
   range: OverviewRange = "7d",
@@ -1663,14 +1664,15 @@ export function getOverviewPatterns(
   const longTailShare =
     totalRuntimeMs > 0 ? longRuntimeMs / totalRuntimeMs : null;
 
-  // --- period cost: reuse pricing-trust rule over the window ---
+  // --- period cost: sum fully priced sessions over the window ---
   const usageRows = sqlite
     .prepare(`${USAGE_JOIN} ${windowStart ? "WHERE s.started_at >= ?" : ""}`)
     .all(...(windowStart ? [windowStart] : [])) as UsageJoinRow[];
-  let costUsd = 0;
   let tokens = 0;
-  let priced = true;
-  const byModel = new Map<string, { costUsd: number; priced: boolean }>();
+  const bySession = new Map<
+    number,
+    { costUsd: number; priced: boolean; byModel: Map<string, number> }
+  >();
   for (const row of usageRows) {
     const rowTokens =
       row.inputTokens +
@@ -1680,20 +1682,35 @@ export function getOverviewPatterns(
     tokens += rowTokens;
     const cost = rowCost(row);
     const modelKey = normalizeModel(row.model);
-    const model = byModel.get(modelKey) ?? { costUsd: 0, priced: true };
+    const session = bySession.get(row.sessionId) ?? {
+      costUsd: 0,
+      priced: true,
+      byModel: new Map(),
+    };
     if (cost === undefined) {
-      priced = false;
-      model.priced = false;
+      session.priced = false;
     } else {
-      costUsd += cost;
-      model.costUsd += cost;
+      session.costUsd += cost;
+      session.byModel.set(
+        modelKey,
+        (session.byModel.get(modelKey) ?? 0) + cost,
+      );
     }
-    byModel.set(modelKey, model);
+    bySession.set(row.sessionId, session);
+  }
+  let costUsd = 0;
+  const byModel = new Map<string, number>();
+  for (const session of bySession.values()) {
+    if (!session.priced) continue;
+    costUsd += session.costUsd;
+    for (const [model, modelCostUsd] of session.byModel) {
+      byModel.set(model, (byModel.get(model) ?? 0) + modelCostUsd);
+    }
   }
   const topModels = [...byModel.entries()]
-    .map(([model, totals]) => ({
+    .map(([model, modelCostUsd]) => ({
       model,
-      costUsd: totals.priced ? totals.costUsd : 0,
+      costUsd: modelCostUsd,
     }))
     .sort((a, b) => b.costUsd - a.costUsd)
     .slice(0, 3);
@@ -1708,7 +1725,7 @@ export function getOverviewPatterns(
       sessionCount: runtimes.length,
     },
     costWeek: {
-      costUsd: priced ? costUsd : null,
+      costUsd,
       tokens,
       topModels,
     },
@@ -2152,9 +2169,10 @@ function aggregateCache(rows: UsageJoinRow[]) {
 
 /**
  * Two actionable efficiency cards derived from existing usage data.
- * Cache hit rate is token-only and always available; $-saved and all cost
- * figures follow the pricing-trust rule (null when any row is unpriced).
- * Signals are curated and rule-based.
+ * Cache hit rate is token-only and always available. Cache $-saved follows
+ * the all-rows pricing-trust rule; period cost totals include fully priced
+ * sessions and exclude sessions with any unpriced usage. Signals are curated
+ * and rule-based.
  */
 export function getInsights(
   range: OverviewRange = "7d",
@@ -2253,8 +2271,9 @@ export function getInsights(
   // usage plus every descendant subagent's. Attribution is resolved *within
   // selected window* — a session whose parent started before the window is
   // its own root here — so the roll-ups still sum to exactly periodTotalUsd and
-  // Pareto shares stay bounded. Unpriced rows contribute nothing to a
-  // session's cost. runtimeMs comes from costSessionRows.
+  // Pareto shares stay bounded. Sessions with any unpriced usage contribute
+  // nothing to the period total or outlier roll-ups. runtimeMs comes from
+  // costSessionRows.
   const runtimeById = new Map(costSessionRows.map((row) => [row.id, row]));
   const byExternalId = new Map(
     costSessionRows.map((row) => [`${row.provider}:${row.externalId}`, row]),
@@ -2279,20 +2298,32 @@ export function getInsights(
     return root;
   };
 
-  const sessionCost = new Map<number, number>();
-  let weekTotalUsd: number | null = 0;
-  let anyUnpriced = false;
+  const ownSessionCosts = new Map<
+    number,
+    { costUsd: number; priced: boolean }
+  >();
   for (const row of weekRows) {
+    const session = ownSessionCosts.get(row.sessionId) ?? {
+      costUsd: 0,
+      priced: true,
+    };
     const cost = rowCost(row);
     if (cost === undefined) {
-      anyUnpriced = true;
-      continue;
+      session.priced = false;
+    } else {
+      session.costUsd += cost;
     }
-    weekTotalUsd += cost;
-    const rootId = rootIdOf(row.sessionId);
-    sessionCost.set(rootId, (sessionCost.get(rootId) ?? 0) + cost);
+    ownSessionCosts.set(row.sessionId, session);
   }
-  if (anyUnpriced) weekTotalUsd = null;
+
+  const sessionCost = new Map<number, number>();
+  let weekTotalUsd = 0;
+  for (const [sessionId, session] of ownSessionCosts) {
+    if (!session.priced) continue;
+    weekTotalUsd += session.costUsd;
+    const rootId = rootIdOf(sessionId);
+    sessionCost.set(rootId, (sessionCost.get(rootId) ?? 0) + session.costUsd);
+  }
 
   // Outliers: top 5 by rolled-up session cost. usdPerMin measures the whole
   // delegated tree against the main session's wall clock, since subagents run
@@ -2322,16 +2353,15 @@ export function getInsights(
         : null;
   }
 
-  // Pareto: share of period cost held by the top 3 sessions. Null when the
-  // period total is unpriced (trust rule) or there is no priced spend.
+  // Pareto: share of period cost held by the top 3 sessions. Null when there
+  // is no priced spend.
   const top3Cost = outliers.slice(0, 3).reduce((sum, o) => sum + o.costUsd, 0);
   let paretoSharePct: number | null = null;
   if (weekTotalUsd !== null && weekTotalUsd > 0) {
     paretoSharePct = (top3Cost / weekTotalUsd) * 100;
   }
-  // Top-5 headline share: share of period cost held by the top 5 sessions (a
-  // distinct figure from the top-3 signal threshold above). Null under the
-  // same trust rule.
+  // Top-5 headline share: share of week cost held by the top 5 sessions (a
+  // distinct figure from the top-3 signal threshold above).
   const top5Cost = outliers.slice(0, 5).reduce((sum, o) => sum + o.costUsd, 0);
   const top5SharePct =
     weekTotalUsd !== null && weekTotalUsd > 0
@@ -2347,8 +2377,7 @@ export function getInsights(
 
   // Cost trend reuses the existing getUsageSummary daily series rather than
   // recomputing it (keeps a single source of truth for daily cost).
-  // Priced-only daily series (matches /usage); a partially-unpriced period
-  // still shows a populated trend alongside a null headline total.
+  // Priced-only daily series (matches /usage).
   const costTrend = getUsageSummary().daily.map((d) => ({
     day: d.date,
     costUsd: d.costUsd,

@@ -127,6 +127,13 @@ beforeAll(async () => {
     iso(0),
   );
   insertUsage.run(4, "mystery-model", 100, 0, 100, 0, null);
+  sqlite
+    .prepare(
+      `UPDATE sessions
+       SET parent_external_id = 's1', session_kind = 'subagent', agent_depth = 1
+       WHERE external_id = 's4'`,
+    )
+    .run();
 
   const insertCapabilitySession = sqlite.prepare(`INSERT INTO sessions
     (external_id, provider, title, status, started_at, updated_at, ended_at)
@@ -1000,22 +1007,21 @@ describe("getInsights — cost outliers", () => {
     insertUsage.run(grandchildId, "gpt-5.5", 10_000, 0, 0, 0, 2.0);
   });
 
-  it("reports null week totals when any this-week session is unpriced", () => {
-    // s4 (mystery-model) is unpriced and in this-week window.
+  it("sums priced sessions while excluding an unpriced subagent", () => {
+    // s4 is an unpriced child of priced parent s1. The parent and every other
+    // fully priced session contribute; the child does not.
     const { cost } = queries.getInsights();
-    expect(cost.week.totalUsd).toBeNull();
-    expect(cost.week.paretoSharePct).toBeNull();
+    expect(cost.week.totalUsd).toBeCloseTo(4.01615);
+    expect(cost.week.paretoSharePct).not.toBeNull();
   });
 
-  it("lists cost outliers with $/min even when the week total is unpriced", () => {
-    // Outliers are ranked by per-row cost; pricing-trust does not gate the
-    // list (rows with a cost contribute, rows without are skipped).
+  it("lists cost outliers with shares of the priced-session total", () => {
     const { cost } = queries.getInsights();
     expect(cost.outliers.length).toBeGreaterThan(0);
     const big = cost.outliers.find((o) => o.title === "Big spend");
     expect(big).toBeDefined();
     expect(big!.costUsd).toBe(1.0);
-    expect(big!.shareOfPeriodPct).toBeNull();
+    expect(big!.shareOfPeriodPct).toBeCloseTo((1 / 4.01615) * 100);
     expect(big!.usdPerMin).toBeGreaterThanOrEqual(0);
   });
 
@@ -1034,11 +1040,9 @@ describe("getInsights — cost outliers", () => {
 
   it("exposes distinct top-5 (headline) and top-3 (signal) share fields", () => {
     const { cost } = queries.getInsights();
-    // Both are null here because the shared fixture's unpriced s4 forces the
-    // trust rule, but the fields must both exist as distinct values.
     expect(cost.week).toHaveProperty("top5SharePct");
     expect(cost.week).toHaveProperty("paretoSharePct");
-    expect(cost.week.top5SharePct).toBeNull();
-    expect(cost.week.paretoSharePct).toBeNull();
+    expect(cost.week.top5SharePct).toBeCloseTo(100);
+    expect(cost.week.paretoSharePct).toBeLessThan(cost.week.top5SharePct ?? 0);
   });
 });

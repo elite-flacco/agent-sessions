@@ -793,23 +793,60 @@ describe("overview patterns", () => {
     expect(patterns.length.longestMs).toBeGreaterThan(60 * 60_000);
   });
 
-  it("reports week cost as null when any usage row is unpriced", () => {
-    const patterns = queries.getOverviewPatterns();
-    // Session 3 ("Stale runner", mystery-model) is in the 7-day window and
-    // unpriced, so the week total must be unavailable even though other
-    // sessions are priced.
-    expect(patterns.costWeek.costUsd).toBeNull();
-    // Token total still shows regardless of pricing.
-    expect(patterns.costWeek.tokens).toBeGreaterThan(0);
+  it("sums priced sessions while excluding unpriced subagents", () => {
+    const now = new Date().toISOString();
+    const child = sqlite
+      .prepare(
+        `INSERT INTO sessions
+        (external_id, provider, parent_external_id, session_kind, title, status, started_at, updated_at)
+        VALUES ('overview-unpriced-child', 'codex', '1', 'subagent', 'Unpriced guardian', 'completed', ?, ?)`,
+      )
+      .run(now, now);
+    sqlite
+      .prepare(
+        `INSERT INTO session_model_usage
+        (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reported_cost_usd)
+        VALUES (?, 'codex-auto-review', 1000, 100, 0, 0, NULL)`,
+      )
+      .run(Number(child.lastInsertRowid));
+
+    try {
+      const patterns = queries.getOverviewPatterns();
+      // The priced parent contributes $8. The guardian and the fixture's
+      // other unpriced session are excluded without invalidating that total.
+      expect(patterns.costWeek.costUsd).toBeCloseTo(8);
+      // Token total still includes usage from the excluded sessions.
+      expect(patterns.costWeek.tokens).toBeGreaterThan(1_101_100);
+    } finally {
+      sqlite
+        .prepare("DELETE FROM sessions WHERE external_id = ?")
+        .run("overview-unpriced-child");
+    }
   });
 
   it("buckets heatmap sessions in America/New_York time", () => {
-    // Two hours from now, UTC may already be tomorrow while Eastern time is
-    // still today. Whatever instant we pick inside the window, the session
-    // must land on its Eastern-time calendar day.
-    const instant = "2026-07-14T00:30:00.000Z"; // Monday 20:30 EDT
-    const easternDay = "2026-07-13";
-    const easternBand = 6; // 20:30 falls in the 6–9 PM band
+    // At 00:30 UTC the Eastern calendar day is still the day before, so the
+    // session must land on the previous day's row rather than the UTC one.
+    // Anchor a few days back (never a literal date) so the instant always
+    // stays inside the trailing 30-day heatmap window.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const anchor = new Date(Date.now() - 3 * dayMs);
+    const instantDate = new Date(
+      Date.UTC(
+        anchor.getUTCFullYear(),
+        anchor.getUTCMonth(),
+        anchor.getUTCDate(),
+        0,
+        30,
+      ),
+    );
+    const instant = instantDate.toISOString();
+    // One UTC day back: 00:30 UTC is the prior evening in Eastern time.
+    const easternDay = new Date(instantDate.getTime() - dayMs)
+      .toISOString()
+      .slice(0, 10);
+    // 20:30 EDT and 19:30 EST both fall in the 6–9 PM band.
+    const easternBand = 6;
     const before = queries.getOverviewPatterns("30d");
     const beforeCount =
       before.heatmap.find(
