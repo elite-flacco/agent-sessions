@@ -30,7 +30,7 @@ export default async function SessionPage({ params }: SessionPageProps) {
   for (const child of subagents)
     child.costUsd = subagentCosts.get(child.id) ?? null;
   return (
-    <main className="relay-shell">
+    <main className="agentarium-shell">
       <Sidebar
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}

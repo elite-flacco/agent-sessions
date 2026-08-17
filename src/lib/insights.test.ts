@@ -55,8 +55,8 @@ const inventories: AgentInventory[] = [
 ];
 
 beforeAll(async () => {
-  directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-insights-"));
-  process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), "agentarium-insights-"));
+  process.env.AGENTARIUM_DATABASE_PATH = path.join(directory, "agentarium.db");
   process.env.ZCODE_DB_PATH = path.join(directory, "missing-zcode.db");
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
@@ -266,7 +266,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   sqlite.close();
-  delete process.env.RELAY_DATABASE_PATH;
+  delete process.env.AGENTARIUM_DATABASE_PATH;
   delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });

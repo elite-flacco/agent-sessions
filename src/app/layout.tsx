@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Relay — Agent Operations",
+  title: "Agentarium — Agent Operations",
   description: "A private local activity dashboard for coding agents.",
 };
 

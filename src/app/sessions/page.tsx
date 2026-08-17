@@ -38,7 +38,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const summary = getSummary();
   const syncState = getSyncState();
   return (
-    <main className="relay-shell">
+    <main className="agentarium-shell">
       <Sidebar
         connectedAgents={summary.connectedAgents}
         sourceErrors={syncState.errors}

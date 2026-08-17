@@ -26,7 +26,7 @@ export default async function OverviewPage({
   const health = getCollectorHealth();
   const range = parseOverviewRange(firstParam((await searchParams).range));
   return (
-    <main className="relay-shell">
+    <main className="agentarium-shell">
       <Sidebar
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}

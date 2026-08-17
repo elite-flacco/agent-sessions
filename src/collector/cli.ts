@@ -6,18 +6,18 @@ async function main(): Promise<void> {
   const result = await syncAll({ force });
   if (result.locked) {
     console.log(
-      "Relay sync skipped: another collector process is currently scanning.",
+      "Agentarium sync skipped: another collector process is currently scanning.",
     );
   } else {
     console.log(
-      `Relay sync: ${result.imported} imported, ${result.skipped} unchanged, ${result.errors} errors across ${result.sources} sources.`,
+      `Agentarium sync: ${result.imported} imported, ${result.skipped} unchanged, ${result.errors} errors across ${result.sources} sources.`,
     );
   }
 
   if (watch) {
     const close = await watchSources();
     console.log(
-      "Relay collector is watching local agent activity. Press Ctrl+C to stop.",
+      "Agentarium collector is watching local agent activity. Press Ctrl+C to stop.",
     );
     process.on("SIGINT", () => {
       void close().finally(() => process.exit(0));
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   console.error(
-    error instanceof Error ? error.message : "Relay collection failed",
+    error instanceof Error ? error.message : "Agentarium collection failed",
   );
   process.exitCode = 1;
 });

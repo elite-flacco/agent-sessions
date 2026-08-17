@@ -39,7 +39,7 @@ export function SessionDetailView({
   transcript,
 }: SessionDetailViewProps) {
   return (
-    <section className="relay-content session-detail-page">
+    <section className="agentarium-content session-detail-page">
       <Link className="back-link" href="/sessions">
         <ArrowLeft size={14} />
         Back to sessions
@@ -168,7 +168,7 @@ export function SessionDetailView({
         <p>
           This transcript is read from local provider storage on demand. Common
           credentials are redacted, raw reasoning records are excluded, and
-          payloads are not copied into Relay’s database. Provider-injected
+          payloads are not copied into Agentarium’s database. Provider-injected
           context may still appear inside user or assistant messages.
         </p>
       </div>

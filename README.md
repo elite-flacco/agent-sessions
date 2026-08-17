@@ -1,6 +1,6 @@
-# Relay
+# Agentarium
 
-Relay is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into a local SQLite database. Detailed session pages read messages and tool payloads from local provider storage on demand — nothing is copied into Relay's database.
+Agentarium is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into a local SQLite database. Detailed session pages read messages and tool payloads from local provider storage on demand — nothing is copied into Agentarium's database.
 
 ## Requirements
 
@@ -23,7 +23,7 @@ Then, whenever you want to use the dashboard:
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Relay refreshes dashboard data and checks for changed local source files every 5 seconds while a page is open, so the setup commands do not need to be repeated. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line. `npm ci` installs exactly the versions pinned in `package-lock.json` (`npm install` also works, but may update the lockfile); re-run it only after pulling dependency changes, and re-run `npm run db:migrate` after pulling commits that add migrations in `drizzle/`.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Agentarium refreshes dashboard data and checks for changed local source files every 5 seconds while a page is open, so the setup commands do not need to be repeated. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line. `npm ci` installs exactly the versions pinned in `package-lock.json` (`npm install` also works, but may update the lockfile); re-run it only after pulling dependency changes, and re-run `npm run db:migrate` after pulling commits that add migrations in `drizzle/`.
 
 Optional: to keep collecting even when no dashboard page is open, run a watcher in a second terminal:
 
@@ -123,13 +123,13 @@ Subagent rollups:
 | Zcode       | `~/.zcode/cli/rollout/**/*.jsonl`, `~/.zcode/cli/agents/**/*.jsonl`, and `~/.zcode/cli/db/db.sqlite` when available |
 | Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                                                                   |
 
-- Relay stores its normalized database at `data/relay.db`. Override with `RELAY_DATABASE_PATH=/absolute/path/relay.db`.
+- Agentarium stores its normalized database at `data/agentarium.db`. Override with `AGENTARIUM_DATABASE_PATH=/absolute/path/agentarium.db`. The pre-rename `RELAY_DATABASE_PATH` variable and `data/relay.db` location are still honored, and a default-location `data/relay.db` is adopted (renamed) automatically on first run.
 - Titles prefer provider-authored values: Codex titles come from the read-only `threads.title` field in its state database; Claude Code prefers the latest JSONL `custom-title`, then the latest `ai-title`; both fall back to the first meaningful user message. Collection passes also reconcile Codex title-only changes that don't touch the rollout JSONL.
-- Zcode's rollout files carry model usage but no working directory and incomplete conversation data, so Relay uses Zcode's own session database (read-only) for authoritative titles, parent/subagent relationships, project metadata, user-input waits, database-only sessions, and on-demand transcripts. Rollout JSONL is the fallback. Codex parent-thread metadata and Claude sidechain records provide the equivalent hierarchy for those providers.
+- Zcode's rollout files carry model usage but no working directory and incomplete conversation data, so Agentarium uses Zcode's own session database (read-only) for authoritative titles, parent/subagent relationships, project metadata, user-input waits, database-only sessions, and on-demand transcripts. Rollout JSONL is the fallback. Codex parent-thread metadata and Claude sidechain records provide the equivalent hierarchy for those providers.
 
 ## Agent setup
 
-The **Agent setup** page reads global configuration live when `/agents` is opened; it is never persisted in Relay's database. This first version is global-only — project-level configuration is not included yet.
+The **Agent setup** page reads global configuration live when `/agents` is opened; it is never persisted in Agentarium's database. This first version is global-only — project-level configuration is not included yet.
 
 **Needs attention** evaluates every capability type across the three primary agents (Pi stays contextual):
 
@@ -137,7 +137,7 @@ The **Agent setup** page reads global configuration live when `/agents` is opene
 - **Review** — other partial installs and configuration or content drift. Skill drift compares whitespace-normalized `SKILL.md` fingerprints, so identically named skills with different content are flagged while line-ending differences are not. Deliberately disabled capabilities count as present (drift, not a missing install).
 - The attention view also lists configuration warnings — malformed sources, stale plugin cache versions, skills.sh lockfile entries with no installed skill — and per-agent duplicate installs, distinguishing identical redundant copies from same-name copies with different content.
 - Capabilities found on only one provider remain contextual in **Complete matrix** instead of being treated as errors.
-- These labels are read-only heuristics; Relay never modifies agent configuration.
+- These labels are read-only heuristics; Agentarium never modifies agent configuration.
 
 | Provider    | Global sources                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -169,7 +169,7 @@ The page allowlists display fields: capability name and type, enabled or install
 
 ## Privacy boundary
 
-- Adapters derive short task titles, workspace metadata, timestamps, trustworthy model/usage summaries, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are never written to Relay's database.
+- Adapters derive short task titles, workspace metadata, timestamps, trustworthy model/usage summaries, and sanitized activity labels such as tool names. Raw assistant responses, full transcripts, reasoning, credentials, and tool arguments are never written into Agentarium's database.
 - Each session stores only the path of its original local source file. Opening `/sessions/[id]` reads provider storage on demand and normalizes user and assistant messages, tool arguments, and tool results for display. Zcode prefers its read-only `message` and `part` tables so sessions stay readable even when rollout files are absent.
 - Common credential fields and recognizable token shapes are redacted, raw reasoning records are ignored, and large individual payloads are capped in the rendered view.
 - Provider-injected context can still appear when a provider records it as part of a user or assistant message.

@@ -17,7 +17,7 @@ interface AgentSetupViewProps {
 
 export function AgentSetupView({ inventories, filters }: AgentSetupViewProps) {
   return (
-    <section className="relay-content min-w-0">
+    <section className="agentarium-content min-w-0">
       <header className="page-header">
         <div>
           <h1>Agent setup</h1>

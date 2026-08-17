@@ -21,11 +21,11 @@ interface SidebarProps {
 export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
   const pathname = usePathname();
   return (
-    <aside className="relay-sidebar">
+    <aside className="agentarium-sidebar">
       <div className="brand-block">
-        <div className="brand-mark">R</div>
+        <div className="brand-mark">A</div>
         <div className="brand-copy stacked-copy">
-          <strong className="text-sm">Relay</strong>
+          <strong className="text-sm">Agentarium</strong>
           <span className="text-muted-foreground">Agent operations</span>
         </div>
       </div>

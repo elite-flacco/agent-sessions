@@ -9,7 +9,7 @@ import { __resetZcodeDbCache } from "./zcode-db";
 const temporaryFiles: string[] = [];
 
 async function fixture(rows: unknown[]): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-log-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "agentarium-log-"));
   const filePath = path.join(directory, "session.jsonl");
   temporaryFiles.push(directory);
   await fs.writeFile(
@@ -102,7 +102,9 @@ describe("session transcript", () => {
   });
 
   it("reads Zcode messages and tools from its database without exposing reasoning", async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-zcode-"));
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-zcode-"),
+    );
     temporaryFiles.push(directory);
     const dbPath = path.join(directory, "db.sqlite");
     const db = new Database(dbPath);

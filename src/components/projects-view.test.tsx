@@ -99,7 +99,7 @@ describe("ProjectsView landing", () => {
     ).not.toBeInTheDocument();
   });
 
-  test("links a detected GitHub origin separately from the Relay briefing", () => {
+  test("links a detected GitHub origin separately from the Agentarium briefing", () => {
     render(
       <ProjectsView
         projects={[

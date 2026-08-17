@@ -18,7 +18,9 @@ import { zcodeAdapter, __resetZcodeDbCache } from "./zcode";
 const temporaryDirectories: string[] = [];
 
 async function fixture(rows: unknown[], partial = false): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-adapter-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "agentarium-adapter-"),
+  );
   temporaryDirectories.push(directory);
   const filePath = path.join(directory, "session.jsonl");
   const body = rows.map((row) => JSON.stringify(row)).join("\n");
@@ -204,7 +206,9 @@ describe("provider adapters", () => {
   });
 
   it("uses the Codex app database title when it is available", async () => {
-    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-codex-db-"));
+    const dbDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-codex-db-"),
+    );
     temporaryDirectories.push(dbDir);
     const dbPath = path.join(dbDir, "state_5.sqlite");
     const db = new Database(dbPath);
@@ -237,7 +241,9 @@ describe("provider adapters", () => {
   });
 
   it("uses the task input from a delegated Codex app title", async () => {
-    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-codex-db-"));
+    const dbDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-codex-db-"),
+    );
     temporaryDirectories.push(dbDir);
     const dbPath = path.join(dbDir, "state_5.sqlite");
     const db = new Database(dbPath);
@@ -427,7 +433,7 @@ describe("provider adapters", () => {
 
   it("attributes a linked worktree session to its parent repository", async () => {
     const directory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "relay-worktree-"),
+      path.join(os.tmpdir(), "agentarium-worktree-"),
     );
     temporaryDirectories.push(directory);
     const repository = path.join(directory, "agent-sessions");
@@ -1491,7 +1497,9 @@ describe("provider adapters", () => {
   });
 
   it("resolves the Zcode workspace from Zcode's session DB when the rollout omits cwd", async () => {
-    const dbDir = await fs.mkdtemp(path.join(os.tmpdir(), "relay-zcode-db-"));
+    const dbDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-zcode-db-"),
+    );
     temporaryDirectories.push(dbDir);
     const dbPath = path.join(dbDir, "db.sqlite");
     const db = new Database(dbPath);

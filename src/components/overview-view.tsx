@@ -66,7 +66,7 @@ export function OverviewView({
   const trailingRangeLabel = range === "all" ? "all time" : `last ${daysLabel}`;
 
   return (
-    <section className="relay-content">
+    <section className="agentarium-content">
       <header className="page-header">
         <div>
           <h1>Overview</h1>

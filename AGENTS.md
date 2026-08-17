@@ -6,9 +6,9 @@ This project may use Next.js APIs and conventions newer than your training data.
 
 <!-- END:nextjs-agent-rules -->
 
-# Relay contributor guide
+# Agentarium contributor guide
 
-Relay is a private, loopback-only dashboard for coding-agent sessions, usage, capabilities, and scheduled tasks. Do not broaden the server bind address without an explicit security design. Prefer the current code and tests over adding implementation history here.
+Agentarium is a private, loopback-only dashboard for coding-agent sessions, usage, capabilities, and scheduled tasks. Do not broaden the server bind address without an explicit security design. Prefer the current code and tests over adding implementation history here.
 
 ## Before editing
 

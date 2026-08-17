@@ -25,7 +25,7 @@ export function UsageView({ usage, range }: UsageViewProps) {
   );
 
   return (
-    <section className="relay-content">
+    <section className="agentarium-content">
       <header className="page-header">
         <div>
           <h1>Usage &amp; cost</h1>

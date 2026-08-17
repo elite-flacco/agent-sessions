@@ -164,7 +164,7 @@ function EmptyState({
       <p>
         {hasFilters
           ? "Try clearing a filter or widening the date range."
-          : "Import local agent activity to populate Relay."}
+          : "Import local agent activity to populate Agentarium."}
       </p>
       {!hasFilters && (
         <button className="btn btn-primary" onClick={onSync}>

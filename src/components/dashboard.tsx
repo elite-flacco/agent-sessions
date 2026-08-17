@@ -118,7 +118,7 @@ export function Dashboard({
   }
 
   return (
-    <section className="relay-content">
+    <section className="agentarium-content">
       <header className="page-header sessions-page-header">
         <div>
           <h1>Sessions</h1>

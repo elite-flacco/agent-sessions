@@ -22,8 +22,8 @@ let claudeAdapter: ProviderAdapter;
 const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
 
 beforeAll(async () => {
-  directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-collector-"));
-  process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), "agentarium-collector-"));
+  process.env.AGENTARIUM_DATABASE_PATH = path.join(directory, "agentarium.db");
   process.env.CODEX_STATE_DB_PATH = path.join(directory, "missing-codex.db");
   process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
   vi.resetModules();
@@ -35,7 +35,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   sqlite.close();
-  delete process.env.RELAY_DATABASE_PATH;
+  delete process.env.AGENTARIUM_DATABASE_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
   delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
@@ -1151,8 +1151,8 @@ describe("collector sync", () => {
       JSON.stringify({ role: "assistant", time: { created: dbUpdatedAt } }),
     );
     zcodeDb.close();
-    // Relay last synced the rollout JSONL 30 minutes ago, past the stale window.
-    const staleRelayUpdatedAt = new Date(
+    // Agentarium last synced the rollout JSONL 30 minutes ago, past the stale window.
+    const staleAgentariumUpdatedAt = new Date(
       Date.now() - 30 * 60_000,
     ).toISOString();
     sqlite
@@ -1164,7 +1164,7 @@ describe("collector sync", () => {
       .run(
         "zcode-running",
         new Date(startedAt).toISOString(),
-        staleRelayUpdatedAt,
+        staleAgentariumUpdatedAt,
       );
     process.env.ZCODE_DB_PATH = zcodeDbPath;
     const { __resetZcodeDbCache } = await import("@/lib/zcode-db");

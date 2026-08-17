@@ -765,7 +765,7 @@ export async function watchSources(
 ): Promise<() => Promise<void>> {
   if (!acquireLease("watch", WATCH_LEASE_TTL_MS))
     throw new Error(
-      "Another Relay collector is already watching these sources.",
+      "Another Agentarium collector is already watching these sources.",
     );
   const renewTimer = setInterval(
     () => acquireLease("watch", WATCH_LEASE_TTL_MS),

@@ -1,8 +1,9 @@
 import { defineConfig } from "drizzle-kit";
+import { resolveDatabasePath } from "./src/db/database-path";
 
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
-  dbCredentials: { url: process.env.RELAY_DATABASE_PATH ?? "./data/relay.db" },
+  dbCredentials: { url: resolveDatabasePath() },
 });

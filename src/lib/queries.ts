@@ -473,7 +473,7 @@ export function parseProjectEvidenceFilter(
 
 /**
  * The briefing data for one safely-grouped project. A project exists only
- * when Relay observed a repository together with branch or local Git evidence;
+ * when Agentarium observed a repository together with branch or local Git evidence;
  * titles and activity remain provider-derived evidence rather than task plans.
  *
  * Every `window*` field, the cost roll-up, the trend, and the provider split

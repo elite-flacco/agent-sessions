@@ -20,7 +20,7 @@ export function InsightsView({ range, insights }: InsightsViewProps) {
   useDashboardPolling();
 
   return (
-    <section className="relay-content">
+    <section className="agentarium-content">
       <header className="page-header">
         <div>
           <h1>Insights</h1>

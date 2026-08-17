@@ -9,8 +9,8 @@ let sqlite: (typeof import("@/db/client"))["sqlite"];
 let queries: typeof import("./queries");
 
 beforeAll(async () => {
-  directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-queries-"));
-  process.env.RELAY_DATABASE_PATH = path.join(directory, "relay.db");
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), "agentarium-queries-"));
+  process.env.AGENTARIUM_DATABASE_PATH = path.join(directory, "agentarium.db");
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
   queries = await import("./queries");
@@ -91,7 +91,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   sqlite.close();
-  delete process.env.RELAY_DATABASE_PATH;
+  delete process.env.AGENTARIUM_DATABASE_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });
 

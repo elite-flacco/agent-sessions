@@ -29,7 +29,7 @@ export default async function ProjectsPage({
     (project) => project.category === "project",
   );
   return (
-    <main className="relay-shell">
+    <main className="agentarium-shell">
       <Sidebar
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}

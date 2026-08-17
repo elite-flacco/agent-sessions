@@ -23,7 +23,9 @@ const MODEL_USAGE_SCHEMA = `
 const temporaryDirectories: string[] = [];
 
 async function zcodeFixture(schema: string): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "relay-zcode-db-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "agentarium-zcode-db-"),
+  );
   temporaryDirectories.push(directory);
   const dbPath = path.join(directory, "zcode.db");
   const db = new Database(dbPath);
@@ -192,7 +194,7 @@ describe("Zcode model usage", () => {
   it("returns undefined when the database is unavailable", async () => {
     __resetZcodeDbCache();
     delete process.env.ZCODE_DB_PATH;
-    process.env.ZCODE_DB_PATH = "/nonexistent/relay-zcode-missing.db";
+    process.env.ZCODE_DB_PATH = "/nonexistent/agentarium-zcode-missing.db";
     __resetZcodeDbCache();
     expect(getZcodeModelUsage(["s1"])).toBeUndefined();
   });

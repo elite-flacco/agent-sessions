@@ -4,10 +4,9 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
+import { resolveDatabasePath } from "./database-path";
 
-const databasePath = process.env.RELAY_DATABASE_PATH
-  ? path.resolve(process.env.RELAY_DATABASE_PATH)
-  : path.join(process.cwd(), "data", "relay.db");
+const databasePath = resolveDatabasePath();
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const sqlite = new Database(databasePath);
 const migrationsFolder = path.join(process.cwd(), "drizzle");
@@ -99,4 +98,4 @@ if (hasSessions) {
 
 migrate(drizzle(sqlite), { migrationsFolder });
 sqlite.close();
-console.log(`Relay database migrated at ${databasePath}`);
+console.log(`Agentarium database migrated at ${databasePath}`);

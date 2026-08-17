@@ -128,7 +128,7 @@ function Disclosure({
 }
 
 // Rows are capabilities, columns are providers. A provider whose coverage is
-// incomplete gets a hatched cell rather than an empty one: Relay cannot tell
+// incomplete gets a hatched cell rather than an empty one: Agentarium cannot tell
 // "never called it" from "never saw the session".
 function ProviderGridRows({
   capabilities,

@@ -17,7 +17,7 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
   const inventories = await getAgentInventories({ kind: "global" });
   const filters = parseAgentSetupFilters(await searchParams);
   return (
-    <main className="relay-shell">
+    <main className="agentarium-shell">
       <Sidebar
         connectedAgents={health.connectedAgents}
         sourceErrors={health.parseErrors}

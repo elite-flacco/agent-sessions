@@ -7,7 +7,7 @@ import { getAgentInventories } from "./index";
 const homes: string[] = [];
 
 async function createHome(): Promise<string> {
-  const home = await mkdtemp(join(tmpdir(), "relay-agent-inventory-"));
+  const home = await mkdtemp(join(tmpdir(), "agentarium-agent-inventory-"));
   homes.push(home);
   return home;
 }
@@ -1477,7 +1477,10 @@ rrule = "FREQ=DAILY"
   });
 
   test("discovers Zcode scheduled tasks from workflow_definition rows", async () => {
-    const dbPath = join(tmpdir(), `relay-zcode-tasks-${Date.now()}.sqlite`);
+    const dbPath = join(
+      tmpdir(),
+      `agentarium-zcode-tasks-${Date.now()}.sqlite`,
+    );
     const Database = (await import("better-sqlite3")).default;
     const db = new Database(dbPath);
     db.exec(`
@@ -1495,7 +1498,10 @@ rrule = "FREQ=DAILY"
         scope text not null default 'user'
       );
     `);
-    const scriptPath = join(tmpdir(), `relay-zcode-script-${Date.now()}.sh`);
+    const scriptPath = join(
+      tmpdir(),
+      `agentarium-zcode-script-${Date.now()}.sh`,
+    );
     await writeFile(scriptPath, "#!/bin/sh\necho hello\n");
     db.prepare(
       `INSERT INTO workflow_definition (id, name, source, enabled, script_path, script_hash, meta_json, time_created, time_updated)

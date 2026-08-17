@@ -44,7 +44,7 @@ export function ProjectsView({ projects, selected }: ProjectsViewProps) {
 
 function ProjectsLanding({ projects }: { projects: ProjectCostSummary[] }) {
   return (
-    <section className="relay-content projects-page">
+    <section className="agentarium-content projects-page">
       <header className="projects-header">
         <div>
           <h1>Projects</h1>
@@ -103,7 +103,7 @@ function ProjectsLanding({ projects }: { projects: ProjectCostSummary[] }) {
           <FolderKanban size={24} />
           <h2>No projects with local Git evidence yet</h2>
           <p>
-            Relay keeps one-off sessions separate until a repository
+            Agentarium keeps one-off sessions separate until a repository
             relationship can be established safely.
           </p>
           <Link className="btn btn-outline" href="/sessions">
@@ -122,7 +122,7 @@ function ProjectBriefing({ detail }: { detail: ProjectDetail }) {
       ? "across all time"
       : `in the last ${rangeDaysLabel(detail.range)}`;
   return (
-    <section className="relay-content projects-page">
+    <section className="agentarium-content projects-page">
       <Link className="back-link" href="/projects">
         <ArrowLeft size={14} />
         All projects

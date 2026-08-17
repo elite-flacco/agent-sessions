@@ -149,15 +149,15 @@ describe("database migration baseline", () => {
     "applies every missing migration to a $name database",
     async ({ generation }) => {
       const directory = await fs.mkdtemp(
-        path.join(os.tmpdir(), "relay-migrate-"),
+        path.join(os.tmpdir(), "agentarium-migrate-"),
       );
       directories.push(directory);
-      const databasePath = path.join(directory, "relay.db");
+      const databasePath = path.join(directory, "agentarium.db");
       createLegacyDatabase(databasePath, generation);
 
       execFileSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], {
         cwd: process.cwd(),
-        env: { ...process.env, RELAY_DATABASE_PATH: databasePath },
+        env: { ...process.env, AGENTARIUM_DATABASE_PATH: databasePath },
         stdio: "pipe",
       });
 
@@ -217,10 +217,10 @@ describe("database migration baseline", () => {
   // the run and strand the migrations behind it.
   it("applies missing migrations when the bootstrap already created a later table", async () => {
     const directory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "relay-migrate-"),
+      path.join(os.tmpdir(), "agentarium-migrate-"),
     );
     directories.push(directory);
-    const databasePath = path.join(directory, "relay.db");
+    const databasePath = path.join(directory, "agentarium.db");
     createLegacyDatabase(databasePath, 3);
 
     const staged = new Database(databasePath);
@@ -257,7 +257,7 @@ describe("database migration baseline", () => {
 
     execFileSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], {
       cwd: process.cwd(),
-      env: { ...process.env, RELAY_DATABASE_PATH: databasePath },
+      env: { ...process.env, AGENTARIUM_DATABASE_PATH: databasePath },
       stdio: "pipe",
     });
 

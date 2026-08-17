@@ -25,7 +25,11 @@ export interface InventoryDiscoveryOptions {
 }
 
 async function defaultPersonalRoots(homeDir: string): Promise<string[]> {
-  const configured = (process.env.RELAY_PERSONAL_SKILL_ROOTS ?? "")
+  const configured = (
+    process.env.AGENTARIUM_PERSONAL_SKILL_ROOTS ??
+    process.env.RELAY_PERSONAL_SKILL_ROOTS ??
+    ""
+  )
     .split(delimiter)
     .filter(Boolean);
   const conventional = join(homeDir, "Documents", "Projects", "agent-skills");
