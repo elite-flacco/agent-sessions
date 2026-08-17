@@ -33,6 +33,5 @@ describe("Sidebar", () => {
     expect(html).not.toContain("SOON");
     expect(html).not.toContain("lucide-ellipsis");
     expect(html).toContain("4 agents connected");
-    expect(html).toContain("Personal workspace");
   });
 });

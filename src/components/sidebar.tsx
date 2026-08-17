@@ -81,13 +81,6 @@ export function Sidebar({ connectedAgents, sourceErrors }: SidebarProps) {
             </span>
           </div>
         </div>
-        <div className="profile-row">
-          <div className="avatar">SS</div>
-          <div>
-            <strong className="text-xs">Shuang</strong>
-            <span className="text-muted-foreground">Personal workspace</span>
-          </div>
-        </div>
       </div>
     </aside>
   );
