@@ -2,6 +2,8 @@
 
 Agentarium is a private, local-only operations dashboard for coding-agent sessions. It indexes metadata and sanitized activity from Codex, Claude Code, Zcode, and Pi into a local SQLite database. Detailed session pages read messages and tool payloads from local provider storage on demand — nothing is copied into Agentarium's database.
 
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/overview.png"><img src="docs/screenshots/overview.png" width="720" alt="Overview" /></a>
+
 ## Requirements
 
 - Node.js 20.9 or newer
@@ -44,8 +46,10 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 ### Sessions
 
 - Summary cards, search, and provider/project/model/status filters, with switchable Sessions and Projects tables.
-- Sessions sort by last update and nest subagent runs beneath their main session. 
+- Sessions sort by last update and nest subagent runs beneath their main session.
 - Each session shows its model as one canonical name.
+
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/sessions.png"><img src="docs/screenshots/sessions.png" width="720" alt="Sessions" /></a>
 
 ### Session detail
 
@@ -53,17 +57,21 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 
 ### Projects
 
-- One workspace per project/repository — headline metrics, daily spend sparkline, per-agent session and cost split, activity feed, and more. 
+- One workspace per project/repository — headline metrics, daily spend sparkline, per-agent session and cost split, activity feed, and more.
 - Link to the GitHub repository when one is available.
 
 ### Usage & cost
 
 - Cost, token, session, and cache-read metrics; daily cost history; and breakdowns by model, agent, and project.
 
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/usage.png"><img src="docs/screenshots/usage.png" width="720" alt="Usage &amp; cost" /></a>
+
 ### Insights
 
 - headline metrics for cost, cache hit rate, and capability adoption.
 - Capability adoption tabs — Skills, MCPs, Not observed, By provider.
+
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/insights.png"><img src="docs/screenshots/insights.png" width="720" alt="Insights" /></a>
 
 ### Agent setup
 
@@ -71,6 +79,8 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 - **Inventory**: a per-provider catalog.
 - **Compare**: highlights what needs attention plus the full provider-by-provider matrix.
 - **Scheduled tasks**: all recurring jobs from the coding agents.
+
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/agent-setup.png"><img src="docs/screenshots/agent-setup.png" width="720" alt="Agent setup" /></a>
 
 How the results are interpreted: [Agent setup](#agent-setup).
 
