@@ -38,7 +38,8 @@ export function relativeTime(value: string): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function absoluteTime(value: string): string {
+// Accepts ISO strings and ms epochs (scheduled-task `nextRunAt` fields).
+export function absoluteTime(value: string | number): string {
   return new Date(value).toLocaleString([], {
     month: "short",
     day: "numeric",

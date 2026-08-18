@@ -2167,7 +2167,7 @@ describe("Scheduled tasks view", () => {
     const summary = screen.getByLabelText("Scheduled tasks summary");
     expect(summary.textContent).toContain("3 tasks");
     expect(summary.textContent).toContain("2 active");
-    expect(summary.textContent).toContain("1 paused or disabled");
+    expect(summary.textContent).toContain("1 inactive");
     expect(summary.textContent).toContain("0 targets missing");
   });
 

@@ -9,6 +9,7 @@ import {
   getZcodeSessionMetadataResult,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
+  listZcodeAutomations,
 } from "./zcode-db";
 
 const MODEL_USAGE_SCHEMA = `
@@ -22,7 +23,10 @@ const MODEL_USAGE_SCHEMA = `
 
 const temporaryDirectories: string[] = [];
 
-async function zcodeFixture(schema: string): Promise<string> {
+async function zcodeFixture(
+  schema: string,
+  envVar: "ZCODE_DB_PATH" | "ZCODE_TASKS_DB_PATH" = "ZCODE_DB_PATH",
+): Promise<string> {
   const directory = await fs.mkdtemp(
     path.join(os.tmpdir(), "agentarium-zcode-db-"),
   );
@@ -31,7 +35,7 @@ async function zcodeFixture(schema: string): Promise<string> {
   const db = new Database(dbPath);
   if (schema) db.exec(schema);
   db.close();
-  process.env.ZCODE_DB_PATH = dbPath;
+  process.env[envVar] = dbPath;
   __resetZcodeDbCache();
   return dbPath;
 }
@@ -39,6 +43,7 @@ async function zcodeFixture(schema: string): Promise<string> {
 afterEach(async () => {
   __resetZcodeDbCache();
   delete process.env.ZCODE_DB_PATH;
+  delete process.env.ZCODE_TASKS_DB_PATH;
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -197,5 +202,133 @@ describe("Zcode model usage", () => {
     process.env.ZCODE_DB_PATH = "/nonexistent/agentarium-zcode-missing.db";
     __resetZcodeDbCache();
     expect(getZcodeModelUsage(["s1"])).toBeUndefined();
+  });
+});
+
+const AUTOMATIONS_SCHEMA = `
+  CREATE TABLE automations (
+    automation_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    cron_expr TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    model TEXT,
+    workspace_path TEXT NOT NULL,
+    recurring INTEGER NOT NULL DEFAULT 1,
+    max_runs INTEGER,
+    run_count INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    lifecycle_status TEXT NOT NULL DEFAULT 'active',
+    next_run_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`;
+
+describe("Zcode v2 automations", () => {
+  interface AutomationSeed {
+    id: string;
+    title?: string;
+    cronExpr?: string;
+    prompt?: string;
+    model?: string;
+    workspacePath?: string;
+    recurring?: number;
+    maxRuns?: number | null;
+    runCount?: number;
+    enabled?: number;
+    lifecycleStatus?: string;
+    nextRunAt?: number | null;
+  }
+
+  async function seedAutomations(rows: AutomationSeed[]): Promise<string> {
+    const dbPath = await zcodeFixture(
+      AUTOMATIONS_SCHEMA,
+      "ZCODE_TASKS_DB_PATH",
+    );
+    const db = new Database(dbPath);
+    const insert = db.prepare(`INSERT INTO automations
+      (automation_id, title, cron_expr, prompt, model, workspace_path,
+       recurring, max_runs, run_count, enabled, lifecycle_status,
+       next_run_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const row of rows) {
+      insert.run(
+        row.id,
+        row.title ?? "Weekly digest",
+        row.cronExpr ?? "0 15 * * 0",
+        row.prompt ?? "Run the digest.",
+        row.model ?? null,
+        row.workspacePath ?? "/Users/test/project",
+        row.recurring ?? 1,
+        row.maxRuns ?? null,
+        row.runCount ?? 0,
+        row.enabled ?? 1,
+        row.lifecycleStatus ?? "active",
+        row.nextRunAt ?? null,
+        1_755_400_000_000,
+        1_755_400_000_000,
+      );
+    }
+    db.close();
+    __resetZcodeDbCache();
+    return dbPath;
+  }
+
+  it("maps the display-safe columns of an active automation", async () => {
+    await seedAutomations([
+      {
+        id: "automation-1",
+        title: "Sundays 3pm: weekly digest review",
+        cronExpr: "0 15 * * 0",
+        prompt: "Run the weekly digest edit.",
+        model: "builtin:zai-coding-plan/GLM-5.3",
+        workspacePath: "/Users/test/ai-compass",
+        maxRuns: 10,
+        runCount: 3,
+        nextRunAt: 1_755_900_000_000,
+      },
+    ]);
+    expect(listZcodeAutomations()).toEqual([
+      {
+        id: "automation-1",
+        title: "Sundays 3pm: weekly digest review",
+        cronExpr: "0 15 * * 0",
+        prompt: "Run the weekly digest edit.",
+        model: "builtin:zai-coding-plan/GLM-5.3",
+        workspacePath: "/Users/test/ai-compass",
+        recurring: true,
+        maxRuns: 10,
+        runCount: 3,
+        enabled: true,
+        lifecycleStatus: "active",
+        nextRunAt: 1_755_900_000_000,
+        timeCreated: 1_755_400_000_000,
+        timeUpdated: 1_755_400_000_000,
+      },
+    ]);
+  });
+
+  it("reads paused and completed lifecycle rows", async () => {
+    await seedAutomations([
+      { id: "a-paused", enabled: 0, lifecycleStatus: "active" },
+      { id: "a-done", enabled: 1, lifecycleStatus: "completed" },
+    ]);
+    const automations = listZcodeAutomations() ?? [];
+    expect(automations.find((a) => a.id === "a-paused")?.enabled).toBe(false);
+    expect(automations.find((a) => a.id === "a-done")?.lifecycleStatus).toBe(
+      "completed",
+    );
+  });
+
+  it("returns undefined when the automations table is missing", async () => {
+    await zcodeFixture("", "ZCODE_TASKS_DB_PATH");
+    expect(listZcodeAutomations()).toBeUndefined();
+  });
+
+  it("returns undefined when the tasks database is unavailable", async () => {
+    process.env.ZCODE_TASKS_DB_PATH =
+      "/nonexistent/agentarium-zcode-tasks-missing.db";
+    __resetZcodeDbCache();
+    expect(listZcodeAutomations()).toBeUndefined();
   });
 });

@@ -1,6 +1,10 @@
 import { join } from "node:path";
-import { listZcodeWorkflowDefinitions } from "@/lib/zcode-db";
+import {
+  listZcodeAutomations,
+  listZcodeWorkflowDefinitions,
+} from "@/lib/zcode-db";
 import { dedupeCapabilities } from "./normalize";
+import { humanizeCron } from "./schedule";
 import {
   capability,
   discoverCachePlugins,
@@ -14,7 +18,12 @@ import {
   safeAbsolutePath,
   type SkillLock,
 } from "./shared";
-import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
+import type {
+  AgentCapability,
+  AgentInventory,
+  ScheduledTask,
+  ScheduledTaskStatus,
+} from "./types";
 
 interface ZcodeOptions {
   homeDir: string;
@@ -30,14 +39,69 @@ async function readScriptBody(
   return readTextSource(scriptPath, []);
 }
 
+function zcodeAutomationStatus(
+  enabled: boolean,
+  lifecycleStatus: string,
+): ScheduledTaskStatus {
+  if (!enabled) return "paused";
+  if (lifecycleStatus === "active") return "active";
+  if (lifecycleStatus === "completed") return "completed";
+  return "unknown";
+}
+
 /**
- * Reads scheduled-task candidates from Zcode's `workflow_definition` table
- * via the shared `zcode-db` reader. v1 sets `scheduleMissing: true` always:
+ * Reads Zcode's current-generation automations (the CronCreate/CronList
+ * backing store at `~/.zcode/v2/tasks-index.sqlite`). The prompt body is
+ * surfaced verbatim under the scheduled-task allowlist exception — that prose
+ * is user-authored. Fields like `last_error`, `bot_delivery_target`, and
+ * `target_task_id` are deliberately not surfaced. There is no per-task file,
+ * so `sourcePath` carries the workspace the automation is bound to.
+ */
+function discoverZcodeV2Automations(): ScheduledTask[] {
+  const automations = listZcodeAutomations();
+  if (!automations) return [];
+  return automations.map((automation) => ({
+    id: automation.id,
+    name: automation.title || automation.id,
+    description:
+      automation.prompt
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) || undefined,
+    provider: "zcode",
+    scheduleRaw: automation.cronExpr || undefined,
+    scheduleHuman: automation.cronExpr
+      ? humanizeCron(automation.cronExpr)
+      : undefined,
+    scheduleMissing: !automation.cronExpr,
+    status: zcodeAutomationStatus(
+      automation.enabled,
+      automation.lifecycleStatus,
+    ),
+    model: automation.model,
+    workingDirectories: automation.workspacePath
+      ? [automation.workspacePath]
+      : undefined,
+    instructionBody: automation.prompt || undefined,
+    instructionFormat: "prompt",
+    sourcePath: automation.workspacePath || "",
+    createdAt: automation.timeCreated || undefined,
+    updatedAt: automation.timeUpdated || undefined,
+    nextRunAt: automation.nextRunAt,
+    runCount: automation.runCount || undefined,
+    maxRuns: automation.maxRuns,
+    warnings: [],
+  }));
+}
+
+/**
+ * Reads scheduled-task candidates from Zcode's legacy `workflow_definition`
+ * table via the shared `zcode-db` reader. Sets `scheduleMissing: true` always:
  * the `meta_json` schedule shape is unobservable without a real row, so we
  * don't guess. The script body (`script_path` file contents) is surfaced
  * verbatim under the allowlist exception.
  */
-export async function discoverZcodeScheduledTasks(): Promise<ScheduledTask[]> {
+async function discoverZcodeLegacyWorkflowTasks(): Promise<ScheduledTask[]> {
   const definitions = listZcodeWorkflowDefinitions();
   if (!definitions) return [];
   const tasks: ScheduledTask[] = [];
@@ -67,6 +131,18 @@ export async function discoverZcodeScheduledTasks(): Promise<ScheduledTask[]> {
     });
   }
   return tasks;
+}
+
+/**
+ * Zcode scheduled tasks come from the v2 automations store, with the legacy
+ * `workflow_definition` rows kept as a fallback for older CLI generations.
+ * Ids practically cannot collide (distinct formats), but v2 wins if one does.
+ */
+export async function discoverZcodeScheduledTasks(): Promise<ScheduledTask[]> {
+  const v2 = discoverZcodeV2Automations();
+  const v2Ids = new Set(v2.map((task) => task.id));
+  const legacy = await discoverZcodeLegacyWorkflowTasks();
+  return [...v2, ...legacy.filter((task) => !v2Ids.has(task.id))];
 }
 
 export async function discoverZcode({

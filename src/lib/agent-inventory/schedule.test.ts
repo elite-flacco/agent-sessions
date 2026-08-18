@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   compareScheduledTasks,
+  humanizeCron,
   humanizeSchedule,
   scheduledTaskSortKey,
 } from "./schedule";
@@ -73,6 +74,66 @@ describe("humanizeSchedule", () => {
   });
 });
 
+describe("humanizeCron", () => {
+  test("minute interval", () => {
+    expect(humanizeCron("*/20 * * * *")).toBe("Every 20 minutes");
+  });
+
+  test("hourly at a fixed minute", () => {
+    expect(humanizeCron("30 * * * *")).toBe("Hourly at :30");
+  });
+
+  test("daily with time", () => {
+    expect(humanizeCron("0 15 * * *")).toBe("Daily at 3:00 PM");
+  });
+
+  test("single weekday (0 = Sunday)", () => {
+    expect(humanizeCron("0 15 * * 0")).toBe("Sundays at 3:00 PM");
+  });
+
+  test("weekday 7 also reads as Sunday", () => {
+    expect(humanizeCron("0 9 * * 7")).toBe("Sundays at 9:00 AM");
+  });
+
+  test("weekday range expands to named days", () => {
+    expect(humanizeCron("0 9 * * 1-5")).toBe(
+      "Mondays, Tuesdays, Wednesdays, Thursdays, Fridays at 9:00 AM",
+    );
+  });
+
+  test("weekday list with multiple hours", () => {
+    expect(humanizeCron("0 9,15 * * 1,3")).toBe(
+      "Mondays, Wednesdays at 9:00 AM, 3:00 PM",
+    );
+  });
+
+  test("day of month", () => {
+    expect(humanizeCron("0 8 1 * *")).toBe("Monthly on day 1 at 8:00 AM");
+  });
+
+  test("pinned date (dom and month restricted)", () => {
+    expect(humanizeCron("30 14 17 8 *")).toBe("On August 17 at 2:30 PM");
+  });
+
+  test("returns undefined for multiple minutes", () => {
+    expect(humanizeCron("0,30 9 * * *")).toBeUndefined();
+  });
+
+  test("returns undefined for day names", () => {
+    expect(humanizeCron("0 15 * * SUN")).toBeUndefined();
+  });
+
+  test("returns undefined for wrong field count", () => {
+    expect(humanizeCron("0 15 * * 0 2026")).toBeUndefined();
+    expect(humanizeCron("0 15 * *")).toBeUndefined();
+  });
+
+  test("returns undefined for unparseable or empty input", () => {
+    expect(humanizeCron("not-a-cron")).toBeUndefined();
+    expect(humanizeCron("")).toBeUndefined();
+  });
+});
+
 function task(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
   return {
     id: "test",
@@ -125,6 +186,33 @@ describe("scheduledTaskSortKey", () => {
   test("unparseable raw defaults to timeRank 0", () => {
     const t = task({ scheduleRaw: "not-an-rrule" });
     expect(scheduledTaskSortKey(t)[2]).toBe(0);
+  });
+
+  test("cron interval ranks in the daily band with time 0", () => {
+    const t = task({ scheduleRaw: "*/15 * * * *" });
+    expect(scheduledTaskSortKey(t)).toEqual([0, 0, 0]);
+  });
+
+  test("cron daily ranks in the daily band by wall-clock time", () => {
+    const t = task({ scheduleRaw: "0 15 * * *" });
+    expect(scheduledTaskSortKey(t)).toEqual([0, 0, 900]);
+  });
+
+  test("cron weekly ranks in the weekly band", () => {
+    const t = task({ scheduleRaw: "0 15 * * 0" });
+    expect(scheduledTaskSortKey(t)).toEqual([0, 1, 900]);
+  });
+
+  test("cron day-of-month ranks in the monthly band", () => {
+    const t = task({ scheduleRaw: "0 8 1 * *" });
+    expect(scheduledTaskSortKey(t)).toEqual([0, 2, 480]);
+  });
+
+  test("cron and rrule cadences interleave by band", () => {
+    const cronWeekly = task({ id: "cw", scheduleRaw: "0 15 * * 0" });
+    const rruleDaily = task({ id: "rd", scheduleRaw: "FREQ=DAILY;BYHOUR=2" });
+    const sorted = [cronWeekly, rruleDaily].sort(compareScheduledTasks);
+    expect(sorted.map((t) => t.id)).toEqual(["rd", "cw"]);
   });
 
   test("full ordering: active daily before active weekly before paused daily", () => {

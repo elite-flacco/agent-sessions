@@ -46,14 +46,18 @@ const zcodeDbPath = (): string =>
     ? path.resolve(process.env.ZCODE_DB_PATH)
     : path.join(os.homedir(), ".zcode", "cli", "db", "db.sqlite");
 
+const zcodeTasksDbPath = (): string =>
+  process.env.ZCODE_TASKS_DB_PATH
+    ? path.resolve(process.env.ZCODE_TASKS_DB_PATH)
+    : path.join(os.homedir(), ".zcode", "v2", "tasks-index.sqlite");
+
 const dbConnections = new Map<string, BetterSqlite3Database>();
 const ZCODE_SESSION_SELECT = `SELECT id, directory, title, parent_id,
   task_type, title_source, time_created, time_updated FROM session`;
 
 export type ZcodeQueryResult<T> = { ok: true; value: T } | { ok: false };
 
-function zcodeDb(): BetterSqlite3Database | undefined {
-  const dbPath = zcodeDbPath();
+function openReadOnlyDb(dbPath: string): BetterSqlite3Database | undefined {
   const cached = dbConnections.get(dbPath);
   if (cached) return cached;
   try {
@@ -63,6 +67,14 @@ function zcodeDb(): BetterSqlite3Database | undefined {
   } catch {
     return undefined;
   }
+}
+
+function zcodeDb(): BetterSqlite3Database | undefined {
+  return openReadOnlyDb(zcodeDbPath());
+}
+
+function zcodeTasksDb(): BetterSqlite3Database | undefined {
+  return openReadOnlyDb(zcodeTasksDbPath());
 }
 
 export function isZcodeDbAvailable(): boolean {
@@ -371,8 +383,67 @@ export function listZcodeWorkflowDefinitions():
   }
 }
 
-// Tests switch ZCODE_DB_PATH between isolated databases. Closing cached
-// read-only handles keeps those fixtures independent and removable.
+export interface ZcodeAutomation {
+  id: string;
+  title: string;
+  cronExpr: string;
+  prompt: string;
+  model?: string;
+  workspacePath: string;
+  recurring: boolean;
+  maxRuns?: number;
+  runCount: number;
+  enabled: boolean;
+  lifecycleStatus: string;
+  nextRunAt?: number;
+  timeCreated: number;
+  timeUpdated: number;
+}
+
+/**
+ * Reads current-generation Zcode automations (the store behind the
+ * CronCreate/CronList tools) from `~/.zcode/v2/tasks-index.sqlite`. Returns
+ * undefined when the database or table is unavailable so callers degrade to
+ * an empty scheduled-task list rather than throwing. Timestamps are
+ * millisecond epochs. Only display-safe columns are selected.
+ */
+export function listZcodeAutomations(): ZcodeAutomation[] | undefined {
+  const db = zcodeTasksDb();
+  if (!db) return undefined;
+  try {
+    const rows = db
+      .prepare(
+        `SELECT automation_id automationId, title, cron_expr cronExpr, prompt,
+                model, workspace_path workspacePath, recurring, max_runs maxRuns,
+                run_count runCount, enabled, lifecycle_status lifecycleStatus,
+                next_run_at nextRunAt, created_at timeCreated, updated_at timeUpdated
+         FROM automations`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: stringValue(row.automationId) ?? "",
+      title: stringValue(row.title) ?? "",
+      cronExpr: stringValue(row.cronExpr) ?? "",
+      prompt: stringValue(row.prompt) ?? "",
+      model: stringValue(row.model),
+      workspacePath: stringValue(row.workspacePath) ?? "",
+      recurring: Number(row.recurring) === 1,
+      maxRuns: typeof row.maxRuns === "number" ? row.maxRuns : undefined,
+      runCount: typeof row.runCount === "number" ? row.runCount : 0,
+      enabled: Number(row.enabled) === 1,
+      lifecycleStatus: stringValue(row.lifecycleStatus) ?? "",
+      nextRunAt: typeof row.nextRunAt === "number" ? row.nextRunAt : undefined,
+      timeCreated: typeof row.timeCreated === "number" ? row.timeCreated : 0,
+      timeUpdated: typeof row.timeUpdated === "number" ? row.timeUpdated : 0,
+    }));
+  } catch {
+    return undefined;
+  }
+}
+
+// Tests switch ZCODE_DB_PATH / ZCODE_TASKS_DB_PATH between isolated
+// databases. Closing cached read-only handles keeps those fixtures
+// independent and removable.
 export function __resetZcodeDbCache(): void {
   for (const db of dbConnections.values()) {
     try {

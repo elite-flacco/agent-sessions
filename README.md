@@ -78,7 +78,7 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 - Global inventory of plugins, skills, MCP servers, and instruction files for Codex, Claude Code, Zcode, and Pi.
 - **Inventory**: a per-provider catalog.
 - **Compare**: highlights what needs attention plus the full provider-by-provider matrix.
-- **Scheduled tasks**: all recurring jobs from the coding agents.
+- **Scheduled tasks**: all recurring jobs from the coding agents — Codex automations, Claude scheduled tasks, and Zcode automations with humanized cron schedules, next run times, and run counts.
 
 <a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/agent-setup.png"><img src="docs/screenshots/agent-setup.png" width="720" alt="Agent setup" /></a>
 

@@ -136,7 +136,10 @@ export function AgentSetupContextSummary({
   const tasks = scheduledTasksFor(inventories);
   const activeCount = tasks.filter((task) => task.status === "active").length;
   const inactiveCount = tasks.filter(
-    (task) => task.status === "paused" || task.status === "disabled",
+    (task) =>
+      task.status === "paused" ||
+      task.status === "disabled" ||
+      task.status === "completed",
   ).length;
   const orphanedCount = tasks.filter((task) =>
     task.warnings.some((warning) => warning.code === "orphaned"),
@@ -157,7 +160,7 @@ export function AgentSetupContextSummary({
         },
         {
           value: String(inactiveCount),
-          label: "paused or disabled",
+          label: "inactive",
           tone: inactiveCount > 0 ? "warning" : undefined,
         },
         {

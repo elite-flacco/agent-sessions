@@ -27,17 +27,18 @@ export interface AgentCapability {
   contentFingerprint?: string;
 }
 
-export type ScheduledTaskStatus = "active" | "paused" | "disabled" | "unknown";
+export type ScheduledTaskStatus =
+  "active" | "paused" | "disabled" | "completed" | "unknown";
 
 export type ScheduledTaskInstructionFormat =
-  "toml_prompt" | "skill_md" | "script";
+  "toml_prompt" | "skill_md" | "script" | "prompt";
 
 /**
  * A scheduled/recurring task discovered from a provider's native storage
- * (Codex automations TOML, Claude scheduled-tasks dirs, Zcode
- * workflow_definition rows). Allowlist exception: the instruction body is
- * surfaced verbatim because that prose is the task's purpose and the user
- * authored it — see AGENTS.md for the documented tradeoff.
+ * (Codex automations TOML, Claude scheduled-tasks dirs, Zcode v2 automations
+ * and legacy workflow_definition rows). Allowlist exception: the instruction
+ * body is surfaced verbatim because that prose is the task's purpose and the
+ * user authored it — see AGENTS.md for the documented tradeoff.
  */
 export interface ScheduledTask {
   id: string;
@@ -62,6 +63,12 @@ export interface ScheduledTask {
   sourcePath: string;
   createdAt?: number;
   updatedAt?: number;
+  /** Scheduled dispatch time of the next run (ms epoch), when known. */
+  nextRunAt?: number;
+  /** Completed dispatches so far, when the provider exposes run counts. */
+  runCount?: number;
+  /** Configured dispatch limit for finite automations. */
+  maxRuns?: number;
   warnings: InventoryWarning[];
 }
 

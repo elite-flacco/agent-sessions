@@ -1,13 +1,14 @@
 import { AlertTriangle } from "lucide-react";
 import type { AgentInventory, ScheduledTask } from "@/lib/agent-inventory";
 import { compareScheduledTasks } from "@/lib/agent-inventory/schedule";
-import { shortenHomePath } from "@/lib/format";
+import { shortenHomePath, absoluteTime } from "@/lib/format";
 import { ProviderBadge } from "../provider-badge";
 
 const scheduledStatusLabels: Record<ScheduledTask["status"], string> = {
   active: "Active",
   paused: "Paused",
   disabled: "Disabled",
+  completed: "Completed",
   unknown: "Unknown",
 };
 
@@ -15,6 +16,7 @@ const scheduledStatusBadges: Record<ScheduledTask["status"], string> = {
   active: "badge-status-ok",
   paused: "badge-status-warn",
   disabled: "badge-status-warn",
+  completed: "badge-status-muted",
   unknown: "badge-status-muted",
 };
 
@@ -101,6 +103,17 @@ function ScheduledTaskDetails({ task }: { task: ScheduledTask }) {
           {project ? (
             <span>
               Project: <code>{project}</code>
+            </span>
+          ) : null}
+          {task.nextRunAt ? (
+            <span>Next run: {absoluteTime(task.nextRunAt)}</span>
+          ) : null}
+          {task.runCount !== undefined ? (
+            <span>
+              Runs:{" "}
+              {task.maxRuns !== undefined
+                ? `${task.runCount} / ${task.maxRuns}`
+                : task.runCount}
             </span>
           ) : null}
           <span>

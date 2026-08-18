@@ -68,12 +68,158 @@ export function humanizeSchedule(raw: string): string | undefined {
   return undefined;
 }
 
+const CRON_DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+const CRON_MONTH_NAMES = [
+  "",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+interface CronSchedule {
+  /** Minute-field step (wildcard with an /N step), the shape interval automations store. */
+  minuteStep?: number;
+  minutes: number[];
+  hours: number[];
+  daysOfMonth: number[];
+  months: number[];
+  daysOfWeek: number[];
+}
+
+/**
+ * Parses one 5-field cron field (wildcards, wildcard steps, single values,
+ * ranges, and comma lists of those) into its expanded value list. Returns
+ * undefined for anything richer (names, `L`/`W` qualifiers, malformed input)
+ * so callers fall back to the raw expression.
+ */
+function parseCronField(
+  field: string,
+  min: number,
+  max: number,
+): number[] | undefined {
+  const values = new Set<number>();
+  for (const part of field.split(",")) {
+    const stepped = part.match(/^(.+?)\/(\d+)$/);
+    const base = stepped ? stepped[1] : part;
+    const step = stepped ? Number(stepped[2]) : 1;
+    if (!Number.isInteger(step) || step < 1) return undefined;
+    let lo = min;
+    let hi = max;
+    if (base !== "*" && base !== "") {
+      const range = base.split("-");
+      if (range.length > 2) return undefined;
+      const start = Number(range[0]);
+      const end = range.length === 2 ? Number(range[1]) : start;
+      if (!Number.isInteger(start) || !Number.isInteger(end)) return undefined;
+      if (start < min || end > max || start > end) return undefined;
+      lo = start;
+      hi = end;
+    }
+    for (let value = lo; value <= hi; value += step) values.add(value);
+  }
+  return values.size ? [...values].sort((a, b) => a - b) : undefined;
+}
+
+function parseCron(raw: string): CronSchedule | undefined {
+  const fields = raw.trim().split(/\s+/);
+  if (fields.length !== 5) return undefined;
+  const minuteStep = fields[0].match(/^\*\/(\d+)$/);
+  const minutes = parseCronField(fields[0], 0, 59);
+  const hours = parseCronField(fields[1], 0, 23);
+  const daysOfMonth = parseCronField(fields[2], 1, 31);
+  const months = parseCronField(fields[3], 1, 12);
+  const daysOfWeek = parseCronField(fields[4], 0, 7);
+  if (!minutes || !hours || !daysOfMonth || !months || !daysOfWeek) {
+    return undefined;
+  }
+  return {
+    minuteStep: minuteStep ? Number(minuteStep[1]) : undefined,
+    minutes,
+    hours,
+    daysOfMonth,
+    months,
+    // Cron accepts both 0 and 7 for Sunday.
+    daysOfWeek: [...new Set(daysOfWeek.map((day) => day % 7))].sort(
+      (a, b) => a - b,
+    ),
+  };
+}
+
+function isFullRange(values: number[], min: number, max: number): boolean {
+  return (
+    values.length === max - min + 1 &&
+    values[0] === min &&
+    values.at(-1) === max
+  );
+}
+
+/**
+ * Best-effort humanizer for the 5-field cron subset Zcode v2 automations emit
+ * (interval, hourly, daily, weekday-list, day-of-month, and pinned-date
+ * shapes). Returns undefined for unsupported expressions so callers fall back
+ * to the raw cron string.
+ */
+export function humanizeCron(raw: string): string | undefined {
+  if (!raw.trim()) return undefined;
+  const cron = parseCron(raw);
+  if (!cron) return undefined;
+  const fullHours = isFullRange(cron.hours, 0, 23);
+  const fullDays = isFullRange(cron.daysOfMonth, 1, 31);
+  const fullMonths = isFullRange(cron.months, 1, 12);
+  const fullWeekdays = cron.daysOfWeek.length === 7;
+  const times = cron.hours
+    .map((hour) => formatTime(hour, cron.minutes[0] ?? 0))
+    .join(", ");
+
+  if (fullHours && fullDays && fullMonths && fullWeekdays) {
+    if (cron.minuteStep) return `Every ${cron.minuteStep} minutes`;
+    if (cron.minutes.length === 1) {
+      return `Hourly at :${String(cron.minutes[0]).padStart(2, "0")}`;
+    }
+    return undefined;
+  }
+  if (cron.minutes.length !== 1) return undefined;
+  if (fullDays && fullMonths && fullWeekdays) return `Daily at ${times}`;
+  if (fullDays && fullMonths) {
+    const named = cron.daysOfWeek
+      .map((day) => CRON_DAY_NAMES[day])
+      .filter((day) => Boolean(day));
+    if (named.length === 0) return undefined;
+    return `${named.map((day) => `${day}s`).join(", ")} at ${times}`;
+  }
+  if (fullMonths && fullWeekdays && cron.daysOfMonth.length === 1) {
+    return `Monthly on day ${cron.daysOfMonth[0]} at ${times}`;
+  }
+  if (cron.daysOfMonth.length === 1 && cron.months.length === 1) {
+    return `On ${CRON_MONTH_NAMES[cron.months[0]]} ${cron.daysOfMonth[0]} at ${times}`;
+  }
+  return undefined;
+}
+
 /**
  * Sort rank for a scheduled task: `[activeRank, frequencyRank, timeRank]`.
  * Active tasks sort before inactive; within the same active state, more
  * frequent cadences (daily < weekly < monthly) sort first; within the same
  * cadence, earlier wall-clock times sort first. Frequency bands mirror
- * `humanizeSchedule` exactly — no new rrule parsing is introduced.
+ * `humanizeSchedule` and `humanizeCron` exactly — no new rrule or cron
+ * parsing semantics are introduced here.
  */
 export function scheduledTaskSortKey(
   task: ScheduledTask,
@@ -81,20 +227,44 @@ export function scheduledTaskSortKey(
   const activeRank = task.status === "active" ? 0 : 1;
 
   let frequencyRank = 3;
+  let timeRank = 0;
   if (task.scheduleRaw && !task.scheduleMissing) {
-    const freq = parsePairs(task.scheduleRaw).get("FREQ")?.at(0)?.toUpperCase();
+    const pairs = parsePairs(task.scheduleRaw);
+    const freq = pairs.get("FREQ")?.at(0)?.toUpperCase();
     if (freq === "DAILY") frequencyRank = 0;
     else if (freq === "WEEKLY") frequencyRank = 1;
     else if (freq === "MONTHLY") frequencyRank = 2;
-  }
-
-  let timeRank = 0;
-  if (task.scheduleRaw) {
-    const pairs = parsePairs(task.scheduleRaw);
     const hour = Number.parseInt(pairs.get("BYHOUR")?.at(0) ?? "0", 10);
     const minute = Number.parseInt(pairs.get("BYMINUTE")?.at(0) ?? "0", 10);
     if (!Number.isNaN(hour) && !Number.isNaN(minute)) {
       timeRank = hour * 60 + minute;
+    }
+    // Zcode v2 stores cron, not rrule: when rrule parsing produced nothing,
+    // derive the same bands from the cron fields so those tasks interleave
+    // correctly instead of sinking to the end of the list.
+    if (pairs.size === 0) {
+      const cron = parseCron(task.scheduleRaw);
+      if (cron) {
+        const fullHours = isFullRange(cron.hours, 0, 23);
+        const fullDays = isFullRange(cron.daysOfMonth, 1, 31);
+        const fullMonths = isFullRange(cron.months, 1, 12);
+        const fullWeekdays = cron.daysOfWeek.length === 7;
+        const clockRank =
+          fullHours || cron.minuteStep
+            ? 0
+            : (cron.hours[0] ?? 0) * 60 + cron.minutes[0];
+        if (fullDays && fullMonths && fullWeekdays) {
+          // Interval, hourly, and daily cadences.
+          frequencyRank = 0;
+        } else if (fullDays && fullMonths) {
+          // Weekday-restricted cadences.
+          frequencyRank = 1;
+        } else {
+          // Day-of-month and pinned-date shapes.
+          frequencyRank = 2;
+        }
+        timeRank = clockRank;
+      }
     }
   }
 
