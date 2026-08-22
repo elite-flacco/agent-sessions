@@ -814,6 +814,119 @@ describe("provider adapters", () => {
     ]);
   });
 
+  it("normalizes only executed MCP calls inside Codex execution wrappers", async () => {
+    const lookup: CapabilityLookup = {
+      skillFiles: new Map(),
+      mcpNames: new Map([["node_repl", "node_repl"]]),
+    };
+    const result = await parse(
+      codexAdapter,
+      [
+        {
+          type: "session_meta",
+          timestamp: "2026-08-22T10:00:00Z",
+          payload: { id: "codex-nested-mcp-wrapper", cwd: "/work/relay" },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:01:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-call",
+            name: "exec",
+            input:
+              'const pattern = /\\{/;\nconst r = await tools.mcp__node_repl__js({title:"Use browser",code:`SECRET_BROWSER_CODE`});\nconst verification = await tools.mcp__node_repl__js({title:"Verify browser",code:`SECOND_SECRET`});',
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:02:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-mention",
+            name: "exec",
+            input:
+              'text("Documentation mentions await tools.mcp__node_repl__js({})");',
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:03:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-template-mention",
+            name: "exec",
+            input:
+              "const docs = `Example:\nawait tools.mcp__node_repl__js({})\n`;",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:04:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-comment-mention",
+            name: "exec",
+            input:
+              "/* Example:\nawait tools.mcp__node_repl__js({})\n*/\ntext('done');",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:05:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-uninvoked-function",
+            name: "exec",
+            input:
+              "async function later() {\nawait tools.mcp__node_repl__js({});\n}",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:06:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-false-condition",
+            name: "exec",
+            input: "if (false)\nawait tools.mcp__node_repl__js({});",
+          },
+        },
+        {
+          type: "response_item",
+          timestamp: "2026-08-22T10:07:00Z",
+          payload: {
+            type: "custom_tool_call",
+            call_id: "nested-mcp-uninvoked-arrow",
+            name: "exec",
+            input:
+              "const later = async () =>\nawait tools.mcp__node_repl__js({});",
+          },
+        },
+      ],
+      false,
+      { capabilities: lookup },
+    );
+
+    expect(result.sessions[0]?.capabilityUsage).toEqual([
+      {
+        externalId: "mcp:nested-mcp-call:0",
+        kind: "mcp",
+        name: "node_repl",
+        occurredAt: "2026-08-22T10:01:00Z",
+      },
+      {
+        externalId: "mcp:nested-mcp-call:1",
+        kind: "mcp",
+        name: "node_repl",
+        occurredAt: "2026-08-22T10:01:00Z",
+      },
+    ]);
+    expect(JSON.stringify(result.sessions[0]?.capabilityUsage)).not.toContain(
+      "SECRET_BROWSER_CODE",
+    );
+  });
+
   it("skips capability evidence with missing or malformed timestamps", async () => {
     const lookup: CapabilityLookup = {
       skillFiles: new Map([

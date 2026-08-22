@@ -1,5 +1,6 @@
 import type { CapabilityUsage, ProviderAdapter } from "@/lib/types";
 import { getCodexThreadTitle } from "@/lib/codex-db";
+import ts from "typescript";
 import {
   capabilityTimestamp,
   matchedSkillReads,
@@ -42,6 +43,39 @@ function functionInput(value: unknown): unknown {
     });
     return commands.length ? commands : value;
   }
+}
+
+function executionWrapperMcpTools(
+  outerToolName: unknown,
+  value: unknown,
+): string[] {
+  if (outerToolName !== "exec" || typeof value !== "string") return [];
+  const source = ts.createSourceFile(
+    "codex-execution-wrapper.js",
+    value,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.JS,
+  );
+  return source.statements.flatMap((statement) => {
+    if (!ts.isVariableStatement(statement)) return [];
+    return statement.declarationList.declarations.flatMap((declaration) => {
+      const initializer = declaration.initializer;
+      if (!initializer || !ts.isAwaitExpression(initializer)) return [];
+      const call = initializer.expression;
+      if (!ts.isCallExpression(call)) return [];
+      const callee = call.expression;
+      if (
+        !ts.isPropertyAccessExpression(callee) ||
+        !ts.isIdentifier(callee.expression) ||
+        callee.expression.text !== "tools" ||
+        !callee.name.text.startsWith("mcp__")
+      ) {
+        return [];
+      }
+      return [callee.name.text];
+    });
+  });
 }
 
 export const codexAdapter: ProviderAdapter = {
@@ -194,9 +228,21 @@ export const codexAdapter: ProviderAdapter = {
             stringValue(row.uuid) ??
             stringValue(row.id) ??
             `${rowIndex}-0`;
-          const input = functionInput(
-            callType === "custom_tool_call" ? payload.input : payload.arguments,
-          );
+          const rawInput =
+            callType === "custom_tool_call" ? payload.input : payload.arguments;
+          const input = functionInput(rawInput);
+          const nestedMcpUsage = executionWrapperMcpTools(
+            payload.name,
+            rawInput,
+          ).flatMap((toolName, toolIndex) => {
+            const usage = mcpUsage({
+              externalId: `${externalId}:${toolIndex}`,
+              toolName,
+              occurredAt,
+              lookup: context?.capabilities,
+            });
+            return usage ? [usage] : [];
+          });
           return [
             mcpUsage({
               externalId,
@@ -205,6 +251,7 @@ export const codexAdapter: ProviderAdapter = {
               occurredAt,
               lookup: context?.capabilities,
             }),
+            ...nestedMcpUsage,
             ...matchedSkillReads({
               externalId,
               toolName: payload.name,
