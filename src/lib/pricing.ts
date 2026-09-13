@@ -110,6 +110,15 @@ export const PRICING_TABLE: PricingEntry[] = [
     source: ANTHROPIC_SOURCE,
   },
   {
+    model: "gpt-6-astra",
+    inputPerMTok: 10,
+    outputPerMTok: 50,
+    cacheReadPerMTok: 1,
+    cacheWritePerMTok: 12.5,
+    effectiveFrom: "2026-09-04",
+    source: OPENAI_SOURCE,
+  },
+  {
     model: "gpt-5.6-sol",
     inputPerMTok: 5,
     outputPerMTok: 30,
