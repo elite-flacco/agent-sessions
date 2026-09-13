@@ -78,6 +78,8 @@ export const sessionCapabilityUsage = sqliteTable(
     provider: text("provider").notNull(),
     kind: text("kind").notNull(),
     capabilityName: text("capability_name").notNull(),
+    toolName: text("tool_name"),
+    pluginId: text("plugin_id"),
     occurredAt: text("occurred_at").notNull(),
   },
   (table) => [

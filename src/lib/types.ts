@@ -51,7 +51,17 @@ export interface ModelUsage {
 
 export type CapabilityUsageKind = "skill" | "mcp";
 
+export interface ObservedCapabilityPlugin {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface CapabilityUsage {
+  /** Validated MCP tool identifier only; never arguments or results. */
+  toolName?: string;
+  /** Explicit provider-authored plugin attribution, never inferred from the runtime. */
+  pluginId?: string;
   externalId: string;
   kind: CapabilityUsageKind;
   name: string;

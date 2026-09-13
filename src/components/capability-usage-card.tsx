@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { describeCapability } from "@/lib/capability-description";
 import { pluralize, relativeTime } from "@/lib/format";
 import { providerLabels } from "@/lib/labels";
 import type {
@@ -51,6 +52,56 @@ function ProviderBadges({ providers }: { providers: AgentProvider[] }) {
   ));
 }
 
+function CapabilityName({
+  capability,
+}: {
+  capability: Pick<
+    CapabilityInsight,
+    "kind" | "name" | "toolNames" | "observedPlugins"
+  >;
+}) {
+  const { label, description } = describeCapability(
+    capability.kind,
+    capability.name,
+    capability.observedPlugins,
+  );
+  const tools = capability.toolNames ?? [];
+  const plugins = capability.observedPlugins ?? [];
+  // With a single observed plugin the label already is that plugin, so an
+  // attribution line would only repeat it. Multiple plugins sharing one
+  // runtime are worth naming visibly because the label stays the raw name.
+  const attribution =
+    plugins.length > 1
+      ? `Observed plugins: ${plugins.map((plugin) => plugin.name).join(", ")}`
+      : undefined;
+  const detail = [
+    description,
+    plugins.length
+      ? `Plugin IDs: ${plugins.map((plugin) => plugin.id).join(", ")}`
+      : undefined,
+    tools.length ? `Tools: ${tools.join(", ")}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <span
+      className="capability-identity"
+      title={[capability.name, detail].filter(Boolean).join("\n")}
+    >
+      <span className="capability-name">{label}</span>
+      {attribution && (
+        <span className="capability-description">{attribution}</span>
+      )}
+      {tools.length > 0 && (
+        <span className="capability-description">
+          Tools: {tools.slice(0, 2).join(", ")}
+          {tools.length > 2 ? ` +${tools.length - 2} more` : ""}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Each tab scales against its own peak. A skill invocation is a whole
 // workflow and an MCP invocation is a single tool call, so a shared scale
 // isn't a real comparison — it just flattens the skills ladder against the
@@ -66,9 +117,7 @@ function UsedCapabilityRow({
 
   return (
     <li className="capability-ladder-row">
-      <span className="capability-name" title={capability.name}>
-        {capability.name}
-      </span>
+      <CapabilityName capability={capability} />
       <Meter
         value={capability.invocations}
         max={max}
@@ -94,7 +143,7 @@ function UnusedCapabilityRow({
   return (
     <li className="capability-unused-row">
       <div className="flex gap-2 items-center">
-        <span className="capability-name">{capability.name}</span>
+        <CapabilityName capability={capability} />
         <span className="badge badge-neutral">
           {capability.kind === "skill" ? "Skill" : "MCP"}
         </span>
@@ -144,9 +193,7 @@ function ProviderGridRows({
       <th scope="row">
         <span className="capability-grid-name">
           <span className={`capability-kind-dot is-${capability.kind}`} />
-          <span className="capability-name" title={capability.name}>
-            {capability.name}
-          </span>
+          <CapabilityName capability={capability} />
         </span>
       </th>
       {agentProviders.map((provider) => {

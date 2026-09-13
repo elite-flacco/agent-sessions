@@ -1,0 +1,1 @@
+ALTER TABLE `session_capability_usage` ADD `plugin_id` text;

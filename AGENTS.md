@@ -53,9 +53,10 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 
 ## Capability usage invariants
 
-- `session_capability_usage` is the privacy-safe boundary for observed skill and MCP use. Persist only session/provider identity, kind, canonical name, stable event ID, and valid timestamp—never prompts, arguments, results, skill contents, credentials, raw config, or payload bodies.
-- Keep inference conservative: Claude and Zcode use native skill calls; Codex and Pi require exact active-inventory matches for `SKILL.md` reads; MCP aliases must be exact and collision-free. Plugin activity is outside this feature.
-- Observed usage remains reportable regardless of inventory coverage. Adoption and unused conclusions include only active installations from providers with complete scan coverage.
+- `session_capability_usage` is the privacy-safe boundary for observed skill and MCP use. Persist only session/provider identity, kind, canonical name, stable event ID, valid timestamp, and optional validated MCP tool and explicit plugin identifiers—never prompts, arguments, results, skill contents, credentials, raw config, or payload bodies.
+- MCP display labels are presentation-only; preserve canonical identities and counts. Codex plugin attribution requires a matching call ID, server, and tool in an explicit completion record; conflicting attribution stays unknown. Resolve plugin display names and descriptions from allowlisted live manifest fields, never a service-name map or runtime-name guess. Tool and plugin evidence follow the selected range; reprocess available logs for historical enrichment.
+- Keep inference conservative: Claude and Zcode use native skill calls; Codex and Pi require exact active-inventory matches for `SKILL.md` reads; MCP aliases must be exact and collision-free. Plugin adoption counts are outside this feature.
+- Plugin display metadata does not create plugin usage or adoption counts. Observed usage remains reportable regardless of inventory coverage. Adoption and unused conclusions include only active installations from providers with complete scan coverage.
 - Zcode coverage is complete only after every required authoritative DB query succeeds. On failure, mark coverage partial and preserve prior rollout evidence until a later successful reconciliation.
 
 ## Database and server boundaries
@@ -83,7 +84,7 @@ Presentation derives stale status at query time; do not trust the stored `runnin
 ## Agent inventory invariants
 
 - Discovery is global, live, read-only, allowlist-based, and separate from session collection.
-- Return only safe metadata: names, status, packaging, provenance, repositories, safe paths, warnings, and global instruction Markdown. Never expose MCP commands, arguments, environment variables, credentials, or raw config.
+- Return only safe metadata: names, status, packaging, provenance, repositories, safe paths, warnings, redacted public plugin display names and descriptions, and global instruction Markdown. Never expose MCP commands, arguments, environment variables, credentials, or raw config.
 - Scheduled-task readers are the sole exception: they may show the user-authored instruction body verbatim. A secret pasted into a prompt or script will therefore render; do not extend this exception to other capability types.
 - Zcode scheduled tasks come from the v2 automations store (`~/.zcode/v2/tasks-index.sqlite` `automations` table — the CronCreate/CronList backing store), with the legacy `workflow_definition` table kept as a fallback. Surface only display-safe columns; `last_error`, `bot_delivery_target`, `target_task_id`, and `workspace_identity` stay out of the inventory. `enabled=0` reads as paused; lifecycle `completed` is its own status.
 - Retain disabled capabilities in normalized inventories for comparison, even when inventory lists hide them. Only explicit `false` means disabled; absence from an enabled map means installed with unknown enabled state.

@@ -327,10 +327,16 @@ describe("getInsights — capability usage", () => {
     expect(capabilities.installedUsedCount).toBeLessThanOrEqual(
       capabilities.installedCount,
     );
-    expect(capabilities.used).toHaveLength(capabilities.installedUsedCount);
-    expect(capabilities.used.length + capabilities.unused.length).toBe(
-      capabilities.installedCount,
+    // Unused stays a partition of the installed set, while used may also
+    // report observations of capabilities nobody has installed.
+    expect(capabilities.unused).toHaveLength(
+      capabilities.installedCount - capabilities.installedUsedCount,
     );
+    expect(
+      capabilities.used.filter((item) =>
+        ["frontend-rules", "github"].includes(item.name),
+      ),
+    ).toHaveLength(capabilities.installedUsedCount);
     // A capability installed by two providers is used when either complete
     // provider has a matching call, so it must not also appear as unused.
     expect(capabilities.unused.map((item) => item.name)).not.toContain(
@@ -354,12 +360,23 @@ describe("getInsights — capability usage", () => {
     });
   });
 
-  it("excludes observations that are not in the eligible installed set", () => {
+  it("reports observations outside the eligible installed set as usage", () => {
     const skills = queries
       .getInsights("30d", inventories)
       .capabilities.used.filter((item) => item.kind === "skill");
 
-    expect(skills.map((item) => item.name)).toEqual(["frontend-rules"]);
+    // Installed usage folds under the installed name; observations without a
+    // matching installation stay reportable under their observed names
+    // instead of being dropped.
+    expect(skills.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "frontend-rules",
+        "rank-a",
+        "rank-b",
+        "rank-c",
+        "shared-skill",
+      ]),
+    );
   });
 
   it("ranks ties by invocations, sessions, recency, then name", () => {
@@ -519,12 +536,19 @@ describe("getInsights — capability usage", () => {
     }
   });
 
-  it("does not rank observations that are no longer installed", () => {
+  it("reports in-range observations of uninstalled capabilities without adoption credit", () => {
     const capabilities = queries.getInsights("30d", inventories).capabilities;
 
-    expect(capabilities.used.map((item) => item.name)).not.toContain(
+    // The observation is real and reportable even though nothing installs
+    // retired-skill anymore; only the adoption and unused sets ignore it.
+    expect(capabilities.used.map((item) => item.name)).toContain(
       "retired-skill",
     );
+    expect(capabilities.unused.map((item) => item.name)).not.toContain(
+      "retired-skill",
+    );
+    expect(capabilities.installedCount).toBe(4);
+    expect(capabilities.installedUsedCount).toBe(2);
   });
 
   it("counts a shared capability as used when any eligible installation was used", () => {
@@ -591,6 +615,83 @@ describe("getInsights — capability usage", () => {
     }
   });
 
+  it("reports observed MCP usage that has no matching installation for the observing provider", () => {
+    // Mirrors zcode's browser-use plugin: its node_repl MCP server is bundled
+    // in the plugin runtime and is not declared in any discoverable manifest,
+    // so the zcode inventory cannot list it — but the usage was observed.
+    const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
+    const sessionId = Number(
+      sqlite
+        .prepare(
+          `INSERT INTO sessions
+          (external_id, provider, title, status, started_at, updated_at, ended_at)
+          VALUES ('unlisted-mcp', 'zcode', 'Unlisted MCP usage', 'completed', ?, ?, ?)`,
+        )
+        .run(occurredAt, occurredAt, occurredAt).lastInsertRowid,
+    );
+    const insertUsage = sqlite.prepare(`INSERT INTO session_capability_usage
+    (session_id, external_id, provider, kind, capability_name, occurred_at)
+    VALUES (?, ?, 'zcode', 'mcp', 'node_repl', ?)`);
+    for (let index = 0; index < 3; index += 1) {
+      insertUsage.run(sessionId, `unlisted-mcp-${index}`, occurredAt);
+    }
+    sqlite
+      .prepare(
+        `INSERT INTO adapter_scans
+        (provider, last_scan_at, sources, imported, errors, capability_reconciliation_complete)
+        VALUES ('zcode', ?, 1, 1, 0, 1)`,
+      )
+      .run(new Date().toISOString());
+    const zcodeInventory: AgentInventory = {
+      provider: "zcode",
+      scope: "global",
+      warnings: [],
+      capabilities: [capability("zcode", "mcp", "langsmith", "enabled")],
+    };
+    const codexWithNodeRepl: AgentInventory = {
+      provider: "codex",
+      scope: "global",
+      warnings: [],
+      capabilities: [capability("codex", "mcp", "node_repl")],
+    };
+
+    try {
+      const capabilities = queries.getInsights("30d", [
+        zcodeInventory,
+        codexWithNodeRepl,
+      ]).capabilities;
+
+      expect(capabilities.used.filter((item) => item.kind === "mcp")).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "node_repl",
+            invocations: 3,
+            sessionCount: 1,
+            providers: ["zcode"],
+            byProvider: { zcode: 3 },
+          }),
+        ]),
+      );
+      // The observed usage credits the capability's installation even though
+      // the observing provider does not have it, so used and unused agree.
+      expect(capabilities.unused.map((item) => item.name)).not.toContain(
+        "node_repl",
+      );
+      // Adoption stays installation-scoped: langsmith is installed and unused,
+      // node_repl is installed and used; nothing uninstalled joins either set.
+      expect(capabilities.installedCount).toBe(2);
+      expect(capabilities.installedUsedCount).toBe(1);
+      expect(capabilities.unused.map((item) => item.name)).toEqual([
+        "langsmith",
+      ]);
+    } finally {
+      sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+      sqlite
+        .prepare("DELETE FROM adapter_scans WHERE provider = 'zcode'")
+        .run();
+    }
+  });
+
   it("matches namespaced native skill calls to installed plugin skills", () => {
     const occurredAt = new Date(Date.now() - DAY_MS).toISOString();
     const sessionId = Number(
@@ -628,13 +729,15 @@ describe("getInsights — capability usage", () => {
 
       expect(capabilities.installedCount).toBe(1);
       expect(capabilities.installedUsedCount).toBe(1);
-      expect(capabilities.used).toEqual([
-        expect.objectContaining({
-          kind: "skill",
-          name: "superpowers:brainstorming",
-          providers: ["claude"],
-        }),
-      ]);
+      expect(capabilities.used).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "skill",
+            name: "superpowers:brainstorming",
+            providers: ["claude"],
+          }),
+        ]),
+      );
       expect(capabilities.unused).toEqual([]);
     } finally {
       sqlite.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);

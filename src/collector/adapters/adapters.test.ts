@@ -913,12 +913,14 @@ describe("provider adapters", () => {
         externalId: "mcp:nested-mcp-call:0",
         kind: "mcp",
         name: "node_repl",
+        toolName: "js",
         occurredAt: "2026-08-22T10:01:00Z",
       },
       {
         externalId: "mcp:nested-mcp-call:1",
         kind: "mcp",
         name: "node_repl",
+        toolName: "js",
         occurredAt: "2026-08-22T10:01:00Z",
       },
     ]);
@@ -1489,6 +1491,7 @@ describe("provider adapters", () => {
         externalId: "mcp:mcp-call",
         kind: "mcp",
         name: "openaiDeveloperDocs",
+        toolName: "search_openai_docs",
         occurredAt: new Date(1_750_000_000_300).toISOString(),
       },
     ]);
@@ -1861,4 +1864,64 @@ describe("provider adapters", () => {
       code: "parse_error",
     });
   });
+});
+
+it("joins explicit Codex plugin attribution by call, server and tool without double counting", async () => {
+  const timestamp = "2026-09-13T12:00:00Z";
+  const call = (id: string, server: string) => ({
+    timestamp,
+    type: "response_item",
+    payload: {
+      type: "function_call",
+      call_id: id,
+      name: "js",
+      namespace: `mcp__${server}`,
+      arguments: "{}",
+    },
+  });
+  const completed = (id: string, server: string, pluginId: string) => ({
+    timestamp,
+    type: "event_msg",
+    payload: {
+      type: "item_completed",
+      item: {
+        type: "McpToolCall",
+        id,
+        server,
+        tool: "js",
+        pluginId,
+        arguments: { secret: "PRIVATE_ARGUMENT" },
+        result: "PRIVATE_RESULT",
+      },
+    },
+  });
+  const file = await fixture([
+    {
+      timestamp,
+      type: "session_meta",
+      payload: { id: "plugin-attribution", cwd: "/safe" },
+    },
+    call("a", "cua_repl"),
+    completed("a", "cua_repl", "unified-computer-use@openai-bundled"),
+    completed("a", "cua_repl", "unified-computer-use@openai-bundled"),
+    call("b", "node_repl"),
+    completed("b", "other-server", "browser@openai-bundled"),
+    call("c", "node_repl"),
+    completed("c", "node_repl", "../../PRIVATE_PLUGIN"),
+    call("d", "node_repl"),
+    completed("d", "node_repl", "one@market"),
+    completed("d", "node_repl", "two@market"),
+  ]);
+  const result = await codexAdapter.parse(file);
+  const usage = result.sessions[0]!.capabilityUsage;
+  expect(usage).toHaveLength(4);
+  expect(usage[0]).toMatchObject({
+    name: "cua_repl",
+    pluginId: "unified-computer-use@openai-bundled",
+  });
+  for (const item of usage.slice(1))
+    expect(item).not.toHaveProperty("pluginId");
+  expect(JSON.stringify(usage)).not.toMatch(
+    /PRIVATE_ARGUMENT|PRIVATE_RESULT|PRIVATE_PLUGIN/,
+  );
 });

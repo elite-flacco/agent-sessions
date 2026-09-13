@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS session_capability_usage (
   provider TEXT NOT NULL,
   kind TEXT NOT NULL,
   capability_name TEXT NOT NULL,
+  tool_name TEXT,
+  plugin_id TEXT,
   occurred_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS capability_usage_session_external_idx ON session_capability_usage(session_id, external_id);

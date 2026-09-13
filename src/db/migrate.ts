@@ -70,6 +70,18 @@ if (hasSessions) {
     () => sessionColumns.has("status_reason"),
     () => hasTable("session_capability_usage"),
     () => adapterScanColumns.has("capability_reconciliation_complete"),
+    () =>
+      (
+        sqlite.prepare("PRAGMA table_info(session_capability_usage)").all() as {
+          name: string;
+        }[]
+      ).some((column) => column.name === "tool_name"),
+    () =>
+      (
+        sqlite.prepare("PRAGMA table_info(session_capability_usage)").all() as {
+          name: string;
+        }[]
+      ).some((column) => column.name === "plugin_id"),
   ];
 
   const migrations = readMigrationFiles({ migrationsFolder });

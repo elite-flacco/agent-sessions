@@ -136,6 +136,7 @@ export function explicitSkillUsage(
 }
 
 interface McpUsageInput {
+  pluginId?: unknown;
   externalId: string;
   toolName: unknown;
   namespace?: unknown;
@@ -163,6 +164,7 @@ function mcpName(toolName: unknown, namespace: unknown): string | undefined {
 }
 
 export function mcpUsage({
+  pluginId,
   externalId,
   toolName,
   namespace,
@@ -173,10 +175,27 @@ export function mcpUsage({
   const name = observedName
     ? (lookup?.mcpNames.get(observedName) ?? observedName)
     : undefined;
+  const rawTool =
+    typeof toolName === "string"
+      ? toolName.startsWith("mcp__")
+        ? toolName.split("__").slice(2).join("__")
+        : toolName
+      : undefined;
+  const safeTool =
+    rawTool && /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,159}$/.test(rawTool)
+      ? rawTool
+      : undefined;
   const timestamp = capabilityTimestamp(occurredAt);
   return name && safeName(name) && timestamp
     ? {
         externalId: `mcp:${externalId}`,
+        ...(safeTool ? { toolName: safeTool } : {}),
+        ...(typeof pluginId === "string" &&
+        /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}@[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/.test(
+          pluginId,
+        )
+          ? { pluginId }
+          : {}),
         kind: "mcp",
         name,
         occurredAt: timestamp,

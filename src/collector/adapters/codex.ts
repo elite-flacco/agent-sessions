@@ -45,6 +45,53 @@ function functionInput(value: unknown): unknown {
   }
 }
 
+// Completion records enrich existing invocations; they are not additional uses.
+function pluginAttributions(
+  rows: { type?: unknown; payload?: unknown }[],
+): Map<string, string | null> {
+  const plugins = new Map<string, string | null>();
+  for (const row of rows) {
+    const payload = record(row.payload);
+    const item = record(payload?.item);
+    if (
+      row.type !== "event_msg" ||
+      payload?.type !== "item_completed" ||
+      item?.type !== "McpToolCall"
+    )
+      continue;
+    const { id, server, tool, pluginId } = item;
+    if (
+      ![id, server, tool, pluginId].every((value) => typeof value === "string")
+    )
+      continue;
+    const key = JSON.stringify([id, server, tool]);
+    const previous = plugins.get(key);
+    plugins.set(
+      key,
+      previous === undefined || previous === pluginId
+        ? (pluginId as string)
+        : null,
+    );
+  }
+  return plugins;
+}
+
+function attributedPlugin(
+  payload: Record<string, unknown>,
+  plugins: Map<string, string | null>,
+): string | undefined {
+  const name = stringValue(payload.name);
+  const namespace = stringValue(payload.namespace);
+  const parts = name?.startsWith("mcp__") ? name.split("__") : undefined;
+  const server =
+    parts?.[1] ??
+    (namespace?.startsWith("mcp__") ? namespace.split("__")[1] : undefined);
+  const tool = parts ? parts.slice(2).join("__") : name;
+  return (
+    plugins.get(JSON.stringify([payload.call_id, server, tool])) ?? undefined
+  );
+}
+
 function executionWrapperMcpTools(
   outerToolName: unknown,
   value: unknown,
@@ -211,8 +258,9 @@ export const codexAdapter: ProviderAdapter = {
           )
         );
       },
-      capabilityUsage: (rows) =>
-        rows.flatMap((row, rowIndex) => {
+      capabilityUsage: (rows) => {
+        const plugins = pluginAttributions(rows);
+        return rows.flatMap((row, rowIndex) => {
           const payload = record(row.payload);
           const callType = stringValue(payload?.type);
           if (
@@ -248,6 +296,7 @@ export const codexAdapter: ProviderAdapter = {
               externalId,
               toolName: payload.name,
               namespace: payload.namespace,
+              pluginId: attributedPlugin(payload, plugins),
               occurredAt,
               lookup: context?.capabilities,
             }),
@@ -260,7 +309,8 @@ export const codexAdapter: ProviderAdapter = {
               lookup: context?.capabilities,
             }),
           ].filter((entry): entry is CapabilityUsage => entry !== undefined);
-        }),
+        });
+      },
       events: (rows) =>
         rows.flatMap((row, index) => {
           const payload = record(row.payload);

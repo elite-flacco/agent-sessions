@@ -151,6 +151,19 @@ describe("capability normalization", () => {
     ).toBeUndefined();
   });
 
+  it("retains only validated tool identifiers across direct and namespaced calls", () => {
+    const base = { externalId: "call", occurredAt: "2026-09-13T10:00:00Z" };
+    expect(
+      mcpUsage({ ...base, toolName: "mcp__codex_apps__gmail_search_emails" }),
+    ).toMatchObject({ name: "codex_apps", toolName: "gmail_search_emails" });
+    expect(
+      mcpUsage({ ...base, toolName: "js", namespace: "mcp__cua_repl" }),
+    ).toMatchObject({ name: "cua_repl", toolName: "js" });
+    expect(
+      mcpUsage({ ...base, toolName: "mcp__server__SECRET /path" }),
+    ).not.toHaveProperty("toolName");
+  });
+
   it("rolls namespaced calls up to their MCP server", () => {
     expect(
       mcpUsage({

@@ -1507,6 +1507,17 @@
     border-bottom: 1px solid var(--border);
     min-width: 0;
   }
+  .capability-identity {
+    display: block;
+    min-width: 0;
+  }
+  .capability-description {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 400;
+    overflow-wrap: anywhere;
+  }
   .capability-name {
     display: block;
     min-width: 0;

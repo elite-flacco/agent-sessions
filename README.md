@@ -69,6 +69,7 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 ### Insights
 
 - headline metrics for cost, cache hit rate, and capability adoption.
+- MCP labels use explicit plugin attribution and live plugin display metadata when available. Raw server and tool names remain the fallback; shared runtimes are not assumed to identify a particular plugin. Hover for the original identifier, plugin IDs, and full tool list. Labels preserve usage counts, and historical detail is available where source logs can be reprocessed.
 - Capability adoption tabs — Skills, MCPs, Not observed, By provider.
 
 <a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/insights.png"><img src="docs/screenshots/insights.png" width="720" alt="Insights" /></a>

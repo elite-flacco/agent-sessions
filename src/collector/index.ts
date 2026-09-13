@@ -68,7 +68,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "21";
+const NORMALIZATION_VERSION = "24";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -86,8 +86,8 @@ function replaceCapabilityUsage(
     .prepare("DELETE FROM session_capability_usage WHERE session_id = ?")
     .run(sessionId);
   const statement = sqlite.prepare(`INSERT INTO session_capability_usage
-    (session_id, external_id, provider, kind, capability_name, occurred_at)
-    VALUES (?, ?, ?, ?, ?, ?)`);
+    (session_id, external_id, provider, kind, capability_name, occurred_at, tool_name, plugin_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const capability of capabilityUsage) {
     statement.run(
       sessionId,
@@ -96,6 +96,8 @@ function replaceCapabilityUsage(
       capability.kind,
       capability.name,
       capability.occurredAt,
+      capability.toolName ?? null,
+      capability.pluginId ?? null,
     );
   }
 }

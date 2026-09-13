@@ -1,3 +1,4 @@
+import type { ObservedCapabilityPlugin } from "./types";
 import { sqlite } from "@/db/client";
 import { canonicalCapabilityName } from "./agent-inventory/normalize";
 import type { AgentInventory } from "./agent-inventory/types";
@@ -1771,10 +1772,9 @@ export function getOverviewPatterns(
       byModel.set(model, (byModel.get(model) ?? 0) + modelCostUsd);
     }
   }
-  const models = Array.from(byModel, ([model, cost]) => ({
-    model,
-    costUsd: cost,
-  })).sort((a, b) => b.costUsd - a.costUsd);
+  const models = [...byModel.entries()]
+    .map(([model, costUsd]) => ({ model, costUsd }))
+    .sort((a, b) => b.costUsd - a.costUsd || a.model.localeCompare(b.model));
 
   return {
     heatmap,
@@ -1803,6 +1803,8 @@ export type InsightSignal = {
 };
 
 export interface CapabilityInsight {
+  toolNames?: string[];
+  observedPlugins?: ObservedCapabilityPlugin[];
   kind: "skill" | "mcp";
   name: string;
   invocations: number;
@@ -2046,14 +2048,26 @@ function capabilityInsights(
     }
   }
 
+  // Observed usage maps to its installed group via alias matching when the
+  // observing provider has such an installation; otherwise it falls back to
+  // the observed canonical name so usage stays reportable even when the
+  // capability is not discoverable in any inventory (e.g. an MCP server
+  // bundled in a plugin runtime without a declarative manifest).
+  const observedGroupKey = (
+    provider: AgentProvider,
+    kind: "skill" | "mcp",
+    name: string,
+  ): string =>
+    eligibleAliases.get(capabilityHistoryKey(provider, kind, name)) ??
+    `${kind}:${canonicalCapabilityName(name)}`;
+
   const installedUsedKeys = new Set<string>();
   for (const row of historyRows) {
     if (!agentProviders.includes(row.provider as AgentProvider)) continue;
     const provider = row.provider as AgentProvider;
-    const groupKey = eligibleAliases.get(
-      capabilityHistoryKey(provider, row.kind, row.name),
-    );
-    if (!groupKey) continue;
+    // An observation credits the capability's installation group even when
+    // the observing provider is not the one that installed it.
+    const groupKey = observedGroupKey(provider, row.kind, row.name);
     const current = installationsByCapability.get(groupKey);
     if (!current) continue;
     if (current.lastUsedAt === null || row.lastUsedAt > current.lastUsedAt) {
@@ -2070,15 +2084,11 @@ function capabilityInsights(
   for (const row of aggregateRows) {
     if (!agentProviders.includes(row.provider as AgentProvider)) continue;
     const provider = row.provider as AgentProvider;
-    const key = eligibleAliases.get(
-      capabilityHistoryKey(provider, row.kind, row.name),
-    );
-    if (!key) continue;
+    const key = observedGroupKey(provider, row.kind, row.name);
     const installation = installationsByCapability.get(key);
-    if (!installation) continue;
     const current = folded.get(key) ?? {
       kind: row.kind,
-      name: installation.name,
+      name: installation?.name ?? canonicalCapabilityName(row.name),
       invocations: 0,
       sessionCount: 0,
       lastUsedAt: row.lastUsedAt,
@@ -2093,6 +2103,77 @@ function capabilityInsights(
     current.byProvider[provider] = row.invocations;
     current.providers = orderedProviders(Object.keys(current.byProvider));
     folded.set(key, current);
+  }
+
+  // Evidence uses the same selected period and alias folding as usage counts.
+  const toolRows = sqlite
+    .prepare(
+      `SELECT DISTINCT provider, kind,
+    LOWER(TRIM(capability_name)) name, tool_name toolName, plugin_id pluginId
+    FROM session_capability_usage
+    WHERE ${rangeStart ? "occurred_at >= ? AND " : ""}kind = 'mcp' AND (tool_name IS NOT NULL OR plugin_id IS NOT NULL)`,
+    )
+    .all(...(rangeStart ? [rangeStart] : [])) as {
+    provider: AgentProvider;
+    kind: "mcp";
+    name: string;
+    toolName: string | null;
+    pluginId: string | null;
+  }[];
+  const pluginMetadata = new Map<string, ObservedCapabilityPlugin>();
+  for (const inventory of inventories) {
+    for (const capability of inventory.capabilities) {
+      if (capability.kind !== "plugin") continue;
+      const key = `${inventory.provider}:${capability.name}`;
+      // Duplicate installations with conflicting metadata must not pick an arbitrary label.
+      const metadata = {
+        id: capability.name,
+        name: capability.displayName ?? capability.name,
+        ...(capability.description
+          ? { description: capability.description }
+          : {}),
+      };
+      const previous = pluginMetadata.get(key);
+      pluginMetadata.set(
+        key,
+        previous && JSON.stringify(previous) !== JSON.stringify(metadata)
+          ? { id: capability.name, name: capability.name }
+          : metadata,
+      );
+    }
+  }
+  const pluginsByCapability = new Map<
+    string,
+    Map<string, ObservedCapabilityPlugin>
+  >();
+  const toolsByCapability = new Map<string, Set<string>>();
+  for (const row of toolRows) {
+    const key = observedGroupKey(row.provider, row.kind, row.name);
+    const names = toolsByCapability.get(key) ?? new Set<string>();
+    if (row.toolName) names.add(row.toolName);
+    if (row.pluginId) {
+      const plugins =
+        pluginsByCapability.get(key) ??
+        new Map<string, ObservedCapabilityPlugin>();
+      const metadata = pluginMetadata.get(
+        `${row.provider}:${row.pluginId}`,
+      ) ?? { id: row.pluginId, name: row.pluginId };
+      plugins.set(`${row.provider}:${row.pluginId}`, metadata);
+      pluginsByCapability.set(key, plugins);
+    }
+    toolsByCapability.set(key, names);
+  }
+  for (const [key, names] of toolsByCapability) {
+    const item = folded.get(key);
+    if (item) item.toolNames = [...names].sort();
+  }
+
+  for (const [key, plugins] of pluginsByCapability) {
+    const item = folded.get(key);
+    if (item)
+      item.observedPlugins = [...plugins.values()].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
   }
 
   const ranked = [...folded.values()].sort(

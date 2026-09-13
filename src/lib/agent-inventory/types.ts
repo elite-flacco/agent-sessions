@@ -9,6 +9,9 @@ export type CapabilityOrigin =
   "personal" | "skills_sh" | "marketplace" | "built_in" | "unknown";
 
 export interface AgentCapability {
+  /** Allowlisted public plugin manifest fields, read live. */
+  displayName?: string;
+  description?: string;
   id: string;
   name: string;
   kind: CapabilityKind;

@@ -57,6 +57,20 @@
       "when": 1784770094019,
       "tag": "0007_perfect_gwen_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789321228869,
+      "tag": "0008_talented_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789322643181,
+      "tag": "0009_milky_robin_chapel",
+      "breakpoints": true
     }
   ]
 }

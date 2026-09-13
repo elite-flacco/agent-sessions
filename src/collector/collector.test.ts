@@ -141,6 +141,7 @@ describe("collector sync", () => {
                         externalId: "mcp:1",
                         kind: "mcp",
                         name: "github",
+                        pluginId: "future-service@market",
                         occurredAt: "2026-07-22T10:01:30Z",
                       },
                     ]
@@ -149,6 +150,7 @@ describe("collector sync", () => {
                         externalId: "mcp:1",
                         kind: "mcp",
                         name: "github",
+                        pluginId: "future-service@market",
                         occurredAt: "2026-07-22T10:01:30Z",
                       },
                     ],
@@ -168,6 +170,9 @@ describe("collector sync", () => {
       ).count,
     ).toBe(1);
 
+    expect(
+      sqlite.prepare("SELECT plugin_id FROM session_capability_usage").get(),
+    ).toEqual({ plugin_id: "future-service@market" });
     sqlite
       .prepare("DELETE FROM sessions WHERE external_id = ?")
       .run("capability-session");
@@ -680,7 +685,7 @@ describe("collector sync", () => {
       const capabilityUsage = sqlite
         .prepare(
           `SELECT external_id externalId, provider, kind,
-                  capability_name name, occurred_at occurredAt
+                  capability_name name, occurred_at occurredAt, tool_name toolName
            FROM session_capability_usage
            WHERE session_id = (
              SELECT id FROM sessions
@@ -691,6 +696,7 @@ describe("collector sync", () => {
         .all("zcode-child");
       expect(capabilityUsage).toEqual([
         {
+          toolName: null,
           externalId: "skill:zcode-skill-part",
           provider: "zcode",
           kind: "skill",
@@ -698,6 +704,7 @@ describe("collector sync", () => {
           occurredAt: new Date(1_750_000_000_600).toISOString(),
         },
         {
+          toolName: "search_openai_docs",
           externalId: "mcp:zcode-mcp-call",
           provider: "zcode",
           kind: "mcp",

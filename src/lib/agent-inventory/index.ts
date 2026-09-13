@@ -4,6 +4,7 @@ import { agentProviders, type AgentProvider } from "@/lib/types";
 import { discoverClaude } from "./claude";
 import { discoverCodex } from "./codex";
 import { canonicalCapabilityName } from "./normalize";
+import { readPluginPresentation } from "./plugin-presentation";
 import { discoverPi } from "./pi";
 import { isPathPresent, readSkillLock } from "./shared";
 import type { InventoryScope, AgentInventory } from "./types";
@@ -57,6 +58,27 @@ export async function getAgentInventories(
     discoverZcode(common),
     discoverPi(common),
   ]);
+  await Promise.all(
+    inventories.map(async (inventory) => {
+      inventory.capabilities = await Promise.all(
+        inventory.capabilities.map(async (capability) => {
+          if (
+            capability.kind !== "plugin" ||
+            !capability.sourcePath ||
+            capability.status === "unavailable"
+          )
+            return capability;
+          return {
+            ...capability,
+            ...(await readPluginPresentation(
+              capability.sourcePath,
+              inventory.warnings,
+            )),
+          };
+        }),
+      );
+    }),
+  );
   // Reconcile the shared skills.sh lockfile against what discovery actually
   // found: an entry with no installed skill anywhere is a half-uninstalled
   // leftover worth cleaning up. The warning is attached alongside the other

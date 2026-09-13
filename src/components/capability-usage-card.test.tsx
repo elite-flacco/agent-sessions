@@ -202,3 +202,84 @@ describe("CapabilityUsageCard", () => {
     expect(screen.queryByLabelText("Capability usage range")).toBeNull();
   });
 });
+
+test("shows evidence-based MCP labels without visible manifest descriptions", () => {
+  query = "capabilityTab=mcps";
+  render(
+    <CapabilityUsageCard
+      capabilities={{
+        ...fixtureCapabilities,
+        used: [
+          {
+            ...fixtureCapabilities.used[1],
+            name: "f88be71b-78b5-48e9-b787-7620ef541dcd",
+            toolNames: ["slack_read_thread", "slack_search"],
+            observedPlugins: [
+              {
+                id: "slack@marketplace",
+                name: "Slack",
+                description: "Connect to Slack workspaces",
+              },
+            ],
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Slack")).toBeVisible();
+  expect(screen.getByText(/slack_read_thread/)).toBeVisible();
+  expect(screen.queryByText("Connect to Slack workspaces")).toBeNull();
+  // The single observed plugin already names the row; repeating it adds noise.
+  expect(screen.queryByText("Observed plugin: Slack")).toBeNull();
+  expect(screen.getByText("Slack").closest("[title]")).toHaveAttribute(
+    "title",
+    expect.stringContaining("f88be71b-78b5-48e9-b787-7620ef541dcd"),
+  );
+});
+
+test("names multiple observed plugins when one runtime serves several", () => {
+  query = "capabilityTab=mcps";
+  render(
+    <CapabilityUsageCard
+      capabilities={{
+        ...fixtureCapabilities,
+        used: [
+          {
+            ...fixtureCapabilities.used[1],
+            name: "node_repl",
+            toolNames: ["alpha_run"],
+            observedPlugins: [
+              { id: "alpha@market", name: "Alpha" },
+              { id: "beta@market", name: "Beta" },
+            ],
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("node_repl")).toBeVisible();
+  expect(screen.getByText("Observed plugins: Alpha, Beta")).toBeVisible();
+  expect(screen.getByText(/alpha_run/)).toBeVisible();
+});
+
+test("keeps unfamiliar tool names visible without inferring a plugin", () => {
+  query = "capabilityTab=mcps";
+  render(
+    <CapabilityUsageCard
+      capabilities={{
+        ...fixtureCapabilities,
+        used: [
+          {
+            ...fixtureCapabilities.used[1],
+            name: "node_repl",
+            toolNames: ["future_service_read", "slack_search"],
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("node_repl")).toBeVisible();
+  expect(screen.getByText(/future_service_read/)).toBeVisible();
+  expect(screen.queryByText("Browser")).not.toBeInTheDocument();
+  expect(screen.queryByText("Slack")).not.toBeInTheDocument();
+});

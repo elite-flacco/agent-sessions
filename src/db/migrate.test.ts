@@ -66,6 +66,8 @@ const legacyBoundaries = [
   { name: "status-reason bootstrap", generation: 3 },
   { name: "capability-usage bootstrap", generation: 4 },
   { name: "capability-reconciliation bootstrap", generation: 5 },
+  { name: "capability-tool bootstrap", generation: 6 },
+  { name: "capability-plugin bootstrap", generation: 7 },
 ] as const;
 
 function createLegacyDatabase(databasePath: string, generation: number): void {
@@ -125,6 +127,8 @@ function createLegacyDatabase(databasePath: string, generation: number): void {
             provider TEXT NOT NULL,
             kind TEXT NOT NULL,
             capability_name TEXT NOT NULL,
+            ${generation >= 6 ? "tool_name TEXT," : ""}
+            ${generation >= 7 ? "plugin_id TEXT," : ""}
             occurred_at TEXT NOT NULL
           );
           CREATE UNIQUE INDEX capability_usage_session_external_idx ON session_capability_usage(session_id, external_id);
@@ -200,6 +204,20 @@ describe("database migration baseline", () => {
           .prepare("SELECT COUNT(*) count FROM __drizzle_migrations")
           .get() as { count: number }
       ).count;
+      const toolColumn = migrated
+        .prepare("PRAGMA table_info(session_capability_usage)")
+        .all()
+        .find((column) => (column as { name: string }).name === "tool_name");
+      expect(toolColumn).toMatchObject({ type: "TEXT", notnull: 0 });
+      expect(
+        migrated.prepare("PRAGMA table_info(session_capability_usage)").all(),
+      ).toContainEqual(
+        expect.objectContaining({
+          name: "plugin_id",
+          type: "TEXT",
+          notnull: 0,
+        }),
+      );
       migrated.close();
 
       expect(sessionColumns).toEqual(currentSessionColumns);
@@ -207,7 +225,7 @@ describe("database migration baseline", () => {
       expect(capabilityTable).toBeDefined();
       expect(persistedCapabilityIndexes).toEqual(capabilityIndexes);
       expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
-      expect(migrationCount).toBe(8);
+      expect(migrationCount).toBe(10);
     },
   );
 
@@ -277,6 +295,6 @@ describe("database migration baseline", () => {
     migrated.close();
 
     expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
-    expect(migrationCount).toBe(8);
+    expect(migrationCount).toBe(10);
   });
 });
