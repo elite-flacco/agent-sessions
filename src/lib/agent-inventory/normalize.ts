@@ -28,6 +28,10 @@ export function canonicalCapabilityName(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
+function comparisonCapabilityName(value: string): string {
+  return canonicalCapabilityName(value).replace(/@([a-z0-9-]+)-remote$/, "@$1");
+}
+
 function dedupeKey(capability: AgentCapability): string {
   const source =
     capability.canonicalSourcePath ??
@@ -103,7 +107,13 @@ function formatProviderList(
 }
 
 function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
-  const present = primaryProviders.filter((provider) => row.cells[provider]);
+  const configuredPresent = primaryProviders.filter(
+    (provider) => row.cells[provider],
+  );
+  const present = primaryProviders.filter((provider) => {
+    const capability = row.cells[provider];
+    return capability && capability.status !== "disabled";
+  });
   const unavailable = present.filter(
     (provider) => row.cells[provider]?.status === "unavailable",
   );
@@ -116,8 +126,45 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
     };
   }
 
+  if (present.length === primaryProviders.length) {
+    const signatures = new Set(
+      present.map((provider) => assessmentSignature(row.cells[provider]!)),
+    );
+    if (signatures.size === 1) {
+      return {
+        level: "context",
+        reason: "consistent",
+        message: "Consistent across all agents.",
+      };
+    }
+
+    // Every agent agrees on status/origin/packaging and only the skill body
+    // differs: the agents are running different builds of the same skill,
+    // which is a distinct problem from a configuration mismatch.
+    const configurations = new Set(
+      present.map((provider) => configurationSignature(row.cells[provider]!)),
+    );
+    if (configurations.size === 1) {
+      return {
+        level: "review",
+        reason: "content_drift",
+        message: "Installed across all agents with differing content.",
+      };
+    }
+
+    return {
+      level: "review",
+      reason: "configuration_drift",
+      message: "Installed across all agents with differing configuration.",
+    };
+  }
+
   if (present.length === 2) {
-    const missing = primaryProviders.filter((provider) => !row.cells[provider]);
+    // Only enabled providers count as "having" the capability, so a provider
+    // where it's installed but disabled shows up as missing here too.
+    const missing = primaryProviders.filter(
+      (provider) => !present.includes(provider),
+    );
     // skills.sh installs exist to be synced across agents, so a gap there is
     // a genuine fix. For everything else (personal MCPs, marketplace plugins)
     // partial presence is often deliberate — flag for review, not repair.
@@ -132,11 +179,12 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
   }
 
   if (present.length <= 1) {
-    return present.length === 1
+    const contextualPresence = present.length > 0 ? present : configuredPresent;
+    return contextualPresence.length === 1
       ? {
           level: "context",
           reason: "provider_specific",
-          message: `Only found on ${formatProviderList(present)}.`,
+          message: `Only found on ${formatProviderList(contextualPresence)}.`,
         }
       : {
           level: "context",
@@ -145,36 +193,10 @@ function assessCapabilityRow(row: ComparisonRow): ComparisonAssessment {
         };
   }
 
-  const signatures = new Set(
-    present.map((provider) => assessmentSignature(row.cells[provider]!)),
-  );
-  if (signatures.size === 1) {
-    return {
-      level: "context",
-      reason: "consistent",
-      message: "Consistent across all agents.",
-    };
-  }
-
-  // Every agent agrees on status/origin/packaging and only the skill body
-  // differs: the agents are running different builds of the same skill, which
-  // is a distinct problem from a configuration mismatch and gets its own
-  // section in the Needs Attention view.
-  const configurations = new Set(
-    present.map((provider) => configurationSignature(row.cells[provider]!)),
-  );
-  if (configurations.size === 1) {
-    return {
-      level: "review",
-      reason: "content_drift",
-      message: "Installed across all agents with differing content.",
-    };
-  }
-
   return {
-    level: "review",
-    reason: "configuration_drift",
-    message: "Installed across all agents with differing configuration.",
+    level: "context",
+    reason: "consistent",
+    message: "Consistent across all agents.",
   };
 }
 
@@ -226,7 +248,7 @@ export function buildComparisonRows(
 
   for (const inventory of inventories) {
     for (const capability of inventory.capabilities) {
-      const canonicalName = canonicalCapabilityName(capability.name);
+      const canonicalName = comparisonCapabilityName(capability.name);
       const key = `${capability.kind}:${canonicalName}`;
       const row = rows.get(key) ?? {
         key,
@@ -283,7 +305,9 @@ export function buildComparisonRows(
     // or configuration must not mark a row that the three primaries agree on.
     const primarySignatures = primaryProviders.map((provider) => {
       const capability = row.cells[provider];
-      return capability ? assessmentSignature(capability) : undefined;
+      return capability && capability.status !== "disabled"
+        ? assessmentSignature(capability)
+        : undefined;
     });
     row.isDiscrepancy = new Set(primarySignatures).size > 1;
     row.assessment = assessCapabilityRow(row);

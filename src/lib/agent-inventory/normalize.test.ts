@@ -276,6 +276,67 @@ describe("buildComparisonRows", () => {
     expect(rows[0]?.isUniformAcrossProviders).toBe(false);
   });
 
+  test("treats disabled-only capabilities as context rather than attention", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", {
+          name: "google-drive@openai-curated",
+          kind: "plugin",
+          status: "disabled",
+          origin: "marketplace",
+          packaging: "plugin",
+        }),
+      ]),
+      inventory("claude", []),
+      inventory("zcode", []),
+      inventory("pi", []),
+    ]);
+
+    expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "provider_specific",
+      message: "Only found on Codex.",
+    });
+    expect(rows[0]?.isDiscrepancy).toBe(false);
+  });
+
+  test("normalizes remote marketplace suffixes when matching plugin names", () => {
+    const rows = buildComparisonRows([
+      inventory("codex", [
+        providerCapability("codex", {
+          name: "github@openai-curated-remote",
+          kind: "plugin",
+          origin: "marketplace",
+          packaging: "plugin",
+        }),
+      ]),
+      inventory("claude", [
+        providerCapability("claude", {
+          name: "github@openai-curated",
+          kind: "plugin",
+          origin: "marketplace",
+          packaging: "plugin",
+        }),
+      ]),
+      inventory("zcode", [
+        providerCapability("zcode", {
+          name: "github@openai-curated",
+          kind: "plugin",
+          origin: "marketplace",
+          packaging: "plugin",
+        }),
+      ]),
+      inventory("pi", []),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.assessment).toEqual({
+      level: "context",
+      reason: "consistent",
+      message: "Consistent across all agents.",
+    });
+  });
+
   test("does not flag installed versus enabled as configuration drift", () => {
     // Standalone skills read "installed" while plugin-contributed ones read
     // "enabled"; both mean "active" and must not drift against each other.
@@ -363,7 +424,7 @@ describe("buildComparisonRows", () => {
     });
   });
 
-  test("treats a deliberately disabled capability as present drift, not a missing fix", () => {
+  test("treats a deliberately disabled capability as missing from that provider", () => {
     const rows = buildComparisonRows([
       inventory("codex", [providerCapability("codex")]),
       inventory("claude", [providerCapability("claude")]),
@@ -373,8 +434,8 @@ describe("buildComparisonRows", () => {
 
     expect(rows[0]?.assessment).toEqual({
       level: "review",
-      reason: "configuration_drift",
-      message: "Installed across all agents with differing configuration.",
+      reason: "missing_from_one_provider",
+      message: "Present on 2 of 3 agents; missing from Zcode.",
     });
   });
 
