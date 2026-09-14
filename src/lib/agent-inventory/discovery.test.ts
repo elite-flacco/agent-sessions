@@ -203,6 +203,58 @@ enabled = true
     );
   });
 
+  test("prefers configured Codex marketplace sources over stale cache copies", async () => {
+    const home = await createHome();
+    const marketplaceRoot = join(home, "runtime-marketplace");
+    const runtimePluginRoot = join(marketplaceRoot, "plugins", "sites");
+    const staleCacheRoot = join(
+      home,
+      ".codex",
+      "plugins",
+      "cache",
+      "openai-bundled",
+      "sites",
+      "0.1.0",
+    );
+    await skill(runtimePluginRoot, "skills/sites-building", "sites-building");
+    await skill(staleCacheRoot, "skills/stale-sites", "stale-sites");
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[marketplaces.openai-bundled]
+source_type = "local"
+source = "${marketplaceRoot}"
+
+[plugins."sites@openai-bundled"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "sites@openai-bundled",
+          sourcePath: runtimePluginRoot,
+        }),
+        expect.objectContaining({
+          name: "sites:sites-building",
+          sourcePath: join(runtimePluginRoot, "skills/sites-building"),
+        }),
+      ]),
+    );
+    expect(codex?.capabilities).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "sites:stale-sites" }),
+      ]),
+    );
+  });
+
   test("prefers the runtime remote cache for configured Codex marketplace plugins", async () => {
     const home = await createHome();
     const legacyRoot = join(
@@ -341,6 +393,32 @@ enabled = true
     expect(codex?.instructionFile?.contentFingerprint).toMatch(
       /^[a-f0-9]{64}$/,
     );
+  });
+
+  test("discovers shared skills.sh skills for every coding agent", async () => {
+    const home = await createHome();
+    await skill(
+      join(home, ".agents", "skills"),
+      "shared-helper",
+      "shared-helper",
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+
+    for (const provider of ["codex", "claude", "zcode", "pi"] as const) {
+      const inventory = result.find((item) => item.provider === provider);
+      expect(inventory?.capabilities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "shared-helper",
+            kind: "skill",
+          }),
+        ]),
+      );
+    }
   });
 
   test("discovers Claude and Zcode installed plugins with enabled state", async () => {
@@ -517,6 +595,69 @@ enabled = true
     );
     expect(JSON.stringify(result)).not.toContain("do-not-return");
     expect(JSON.stringify(result)).not.toContain("plugin-secret-command");
+  });
+
+  test("discovers Claude Desktop's bundled skills as built-in, favoring the newest session copy", async () => {
+    const home = await createHome();
+    const sessionsRoot = join(
+      home,
+      "Library",
+      "Application Support",
+      "Claude",
+      "local-agent-mode-sessions",
+      "skills-plugin",
+    );
+    const staleSession = join(sessionsRoot, "outer-old", "inner-old");
+    const freshSession = join(sessionsRoot, "outer-new", "inner-new");
+    await fixture(
+      staleSession,
+      ".claude-plugin/plugin.json",
+      JSON.stringify({ name: "anthropic-skills", version: "1.0.0" }),
+    );
+    await skill(join(staleSession, "skills"), "morning", "morning");
+    await fixture(
+      freshSession,
+      ".claude-plugin/plugin.json",
+      JSON.stringify({ name: "anthropic-skills", version: "1.0.0" }),
+    );
+    await skill(join(freshSession, "skills"), "morning", "morning");
+    await skill(join(freshSession, "skills"), "pdf", "pdf");
+    // Force the fresh session's skills directory to have a strictly later
+    // mtime than the stale one's so selection is unambiguous.
+    const { utimes } = await import("node:fs/promises");
+    await utimes(join(staleSession, "skills"), new Date(0), new Date(0));
+    await utimes(join(freshSession, "skills"), new Date(), new Date());
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const claude = result.find((item) => item.provider === "claude");
+
+    expect(claude?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "anthropic-skills:morning",
+          kind: "skill",
+          packaging: "built_in",
+          origin: "built_in",
+          sourcePlugin: "anthropic-skills",
+        }),
+        expect.objectContaining({
+          name: "anthropic-skills:pdf",
+          kind: "skill",
+          packaging: "built_in",
+          origin: "built_in",
+        }),
+      ]),
+    );
+    // Only the newest session's copy is surfaced, so there is exactly one
+    // "morning" capability rather than duplicates across sessions.
+    expect(
+      claude?.capabilities.filter(
+        (item) => item.name === "anthropic-skills:morning",
+      ),
+    ).toHaveLength(1);
   });
 
   test("surfaces Zcode cache-only marketplace plugins, MCPs, and skills", async () => {
@@ -880,6 +1021,39 @@ enabled = false
     );
   });
 
+  test("applies Codex per-skill disables from path-based skills.config entries", async () => {
+    const home = await createHome();
+    const personalRoot = join(home, "personal-skills");
+    const skillDir = await skill(personalRoot, "notion-page", "notion-page");
+    await mkdir(join(home, ".codex", "skills"), { recursive: true });
+    await symlink(skillDir, join(home, ".codex", "skills", "notion-page"));
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[[skills.config]]
+path = "${join(skillDir, "SKILL.md")}"
+enabled = false
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home, personalSkillRoots: [personalRoot] },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    // Codex identifies personal-root skills (no plugin namespace) by `path`
+    // instead of `name` in [[skills.config]] entries.
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "notion-page",
+          status: "disabled",
+        }),
+      ]),
+    );
+  });
+
   test("resolves the numerically highest cached plugin version, not the lexicographic one", async () => {
     const home = await createHome();
     const cacheBase = join(
@@ -1233,7 +1407,7 @@ source = "${pluginRoot}"
 id = "weekly-digest"
 kind = "cron"
 name = "Weekly digest"
-prompt = "Summarize the week. Do not leak SECRET_TOKEN."
+prompt = "Summarize the week.\\nDo not leak SECRET_TOKEN."
 status = "ACTIVE"
 rrule = "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0;BYSECOND=0"
 model = "gpt-5.5"
@@ -1262,7 +1436,8 @@ updated_at = 1783772547499
           status: "active",
           model: "gpt-5.5",
           targetProject: "local-abc123",
-          instructionBody: "Summarize the week. Do not leak SECRET_TOKEN.",
+          description: "Summarize the week.",
+          instructionBody: "Summarize the week.\nDo not leak SECRET_TOKEN.",
           instructionFormat: "toml_prompt",
         }),
       ]),

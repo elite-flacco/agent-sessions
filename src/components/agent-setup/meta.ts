@@ -132,11 +132,15 @@ export function capabilitySourceLabel(
 export function inventorySourceFor(
   capability: AgentCapability,
 ): InventorySource {
-  if (capability.packaging === "plugin" || capability.sourcePlugin) {
-    return "plugin";
-  }
+  // Built-in must win even when a runtime-bundled skill also carries a
+  // `sourcePlugin` (e.g. Claude Desktop's "anthropic-skills" bundle, used
+  // only to qualify the skill's name). Otherwise it would misread as a
+  // user-managed plugin install.
   if (capability.packaging === "built_in" || capability.origin === "built_in") {
     return "built_in";
+  }
+  if (capability.packaging === "plugin" || capability.sourcePlugin) {
+    return "plugin";
   }
   if (
     capability.origin === "marketplace" ||

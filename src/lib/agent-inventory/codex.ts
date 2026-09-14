@@ -1,5 +1,5 @@
-import { basename, join } from "node:path";
-import { readdir } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { readdir, realpath } from "node:fs/promises";
 import { dedupeCapabilities } from "./normalize";
 import { humanizeSchedule } from "./schedule";
 import {
@@ -66,26 +66,97 @@ function sourcePath(body: string): string | undefined {
   return safeAbsolutePath(source);
 }
 
+function decodeTomlBasicString(value: string): string {
+  return value.replace(
+    /\\(?:([btnfr"\\])|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8}))/g,
+    (
+      _match,
+      escaped: string | undefined,
+      shortCode: string | undefined,
+      longCode: string | undefined,
+    ) => {
+      switch (escaped) {
+        case "b":
+          return "\b";
+        case "t":
+          return "\t";
+        case "n":
+          return "\n";
+        case "f":
+          return "\f";
+        case "r":
+          return "\r";
+        case '"':
+          return '"';
+        case "\\":
+          return "\\";
+        default: {
+          const code = shortCode ?? longCode;
+          if (!code) return _match;
+          try {
+            return String.fromCodePoint(Number.parseInt(code, 16));
+          } catch {
+            return _match;
+          }
+        }
+      }
+    },
+  );
+}
+
+function parseTomlString(value: string): string {
+  return value.startsWith('"') && value.endsWith('"')
+    ? decodeTomlBasicString(value.slice(1, -1))
+    : value;
+}
+
 function skillConfigName(body: string): string | undefined {
-  return body.match(/^\s*name\s*=\s*"([^"]+)"\s*(?:#.*)?$/m)?.[1];
+  const raw = body.match(/^\s*name\s*=\s*(".*?")\s*(?:#.*)?$/m)?.[1];
+  return raw ? parseTomlString(raw) : undefined;
+}
+
+function skillConfigPath(body: string): string | undefined {
+  return safeAbsolutePath(
+    parseTomlString(
+      body.match(/^\s*path\s*=\s*(".*?")\s*(?:#.*)?$/m)?.[1] ?? "",
+    ),
+  );
+}
+
+/** Resolves a skill path to the directory containing its `SKILL.md`, following symlinks. */
+async function canonicalSkillDir(path: string): Promise<string> {
+  const dir = extname(path) === ".md" ? dirname(path) : path;
+  try {
+    return await realpath(dir);
+  } catch {
+    return resolve(dir);
+  }
 }
 
 /**
- * Codex records per-skill enable state in `[[skills.config]]` entries whose
- * `name` is `<plugin-short-name>:<skill>` for plugin-contributed skills or a
- * bare `<skill>` for standalone ones. Apply explicit `enabled = false`
- * overrides so individually disabled skills stop inheriting their plugin's
- * enabled status. Broken (unavailable) skills keep their status.
+ * Codex records per-skill enable state in `[[skills.config]]` entries.
+ * Plugin-contributed skills are named `<plugin-short-name>:<skill>` or a bare
+ * `<skill>` for standalone ones under `.codex/skills`; skills discovered from
+ * a personal skill root (e.g. a symlinked repo) instead carry a `path`
+ * pointing at their `SKILL.md`, since they have no stable short name. Apply
+ * explicit `enabled = false` overrides so individually disabled skills stop
+ * inheriting their plugin's enabled status. Broken (unavailable) skills keep
+ * their status.
  */
 function applySkillOverrides(
   capabilities: AgentCapability[],
   overrides: Map<string, boolean>,
+  pathOverrides: Map<string, boolean>,
 ): AgentCapability[] {
-  if (overrides.size === 0) return capabilities;
+  if (overrides.size === 0 && pathOverrides.size === 0) return capabilities;
   return capabilities.map((capability) => {
     if (capability.kind !== "skill") return capability;
     if (capability.status !== "enabled" && capability.status !== "installed") {
       return capability;
+    }
+    if (capability.canonicalSourcePath) {
+      const pathOverride = pathOverrides.get(capability.canonicalSourcePath);
+      if (pathOverride === false) return { ...capability, status: "disabled" };
     }
     const shortPlugin = capability.sourcePlugin?.split("@")[0];
     const canonicalName = capability.name.toLocaleLowerCase();
@@ -111,11 +182,23 @@ async function resolveCachedPluginRoot(
   homeDir: string,
   pluginId: string,
   warnings: InventoryWarning[],
+  marketplaceSources: Map<string, string> = new Map(),
 ): Promise<string | undefined> {
   const atIndex = pluginId.lastIndexOf("@");
   if (atIndex <= 0 || atIndex === pluginId.length - 1) return undefined;
   const plugin = pluginId.slice(0, atIndex);
   const marketplace = pluginId.slice(atIndex + 1);
+  const configuredMarketplaceSource = marketplaceSources.get(marketplace);
+  if (configuredMarketplaceSource) {
+    const pluginRoot = join(configuredMarketplaceSource, "plugins", plugin);
+    try {
+      await realpath(pluginRoot);
+      return pluginRoot;
+    } catch {
+      // Fall through to Codex's cache layout; a stale marketplace source should
+      // not make an otherwise cached plugin disappear.
+    }
+  }
   const marketplaces = marketplace.endsWith("-remote")
     ? [marketplace]
     : [`${marketplace}-remote`, marketplace];
@@ -165,10 +248,10 @@ function parseTomlValues(body: string): {
       const inner = raw.replace(/^\[/, "").replace(/\]$/, "");
       arrays[key] = inner
         .split(",")
-        .map((s) => s.trim().replace(/^"|"$/g, ""))
+        .map((s) => parseTomlString(s.trim()))
         .filter(Boolean);
     } else {
-      values[key] = raw.replace(/^"|"$/g, "");
+      values[key] = parseTomlString(raw);
     }
   }
   return { values, arrays };
@@ -293,13 +376,30 @@ export async function discoverCodex({
   };
 
   const skillOverrides = new Map<string, boolean>();
+  const skillPathOverrides = new Map<string, boolean>();
+  const marketplaceSources = new Map<string, string>();
   if (config) {
+    for (const table of tables(config)) {
+      if (!table.name.startsWith("marketplaces.")) continue;
+      const name = tableKey(table.name, "marketplaces.");
+      const path = sourcePath(table.body);
+      if (name && path) marketplaceSources.set(name, path);
+    }
+
     const seenMcps = new Set<string>();
     for (const table of tables(config)) {
       if (table.name === "skills.config") {
         const name = skillConfigName(table.body);
         if (name) {
           skillOverrides.set(name.toLocaleLowerCase(), enabled(table.body));
+          continue;
+        }
+        const path = skillConfigPath(table.body);
+        if (path) {
+          skillPathOverrides.set(
+            await canonicalSkillDir(path),
+            enabled(table.body),
+          );
         }
         continue;
       }
@@ -309,7 +409,12 @@ export async function discoverCodex({
         const explicitPath = sourcePath(table.body);
         const path =
           explicitPath ??
-          (await resolveCachedPluginRoot(homeDir, name, warnings));
+          (await resolveCachedPluginRoot(
+            homeDir,
+            name,
+            warnings,
+            marketplaceSources,
+          ));
         const pluginStatus = await pluginStatusWithPresence(
           enabled(table.body) ? "enabled" : "disabled",
           path,
@@ -369,7 +474,10 @@ export async function discoverCodex({
   }
 
   capabilities.push(
-    ...(await discoverSkillRoots([join(homeDir, ".codex", "skills")], context)),
+    ...(await discoverSkillRoots(
+      [join(homeDir, ".codex", "skills"), join(homeDir, ".agents", "skills")],
+      context,
+    )),
     ...pluginSkills,
   );
 
@@ -380,7 +488,7 @@ export async function discoverCodex({
     provider: "codex",
     scope: "global",
     capabilities: dedupeCapabilities(
-      applySkillOverrides(capabilities, skillOverrides),
+      applySkillOverrides(capabilities, skillOverrides, skillPathOverrides),
     ),
     scheduledTasks,
     instructionFile: await readInstruction(

@@ -249,7 +249,7 @@ export async function discoverZcode({
 
   capabilities.push(
     ...(await discoverSkillRoots(
-      [join(homeDir, ".zcode", "skills")],
+      [join(homeDir, ".zcode", "skills"), join(homeDir, ".agents", "skills")],
       skillContext,
     )),
   );

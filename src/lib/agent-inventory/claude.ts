@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { dedupeCapabilities } from "./normalize";
 import {
@@ -12,6 +13,7 @@ import {
   readJsonSource,
   readTextSource,
   safeAbsolutePath,
+  type SkillDiscoveryContext,
   type SkillLock,
 } from "./shared";
 import type { AgentCapability, AgentInventory, ScheduledTask } from "./types";
@@ -71,6 +73,69 @@ export async function discoverClaudeScheduledTasks(
     });
   }
   return tasks;
+}
+
+/**
+ * Claude Desktop bundles a set of Anthropic-managed skills (morning brief,
+ * docx/pptx/xlsx, schedule, skill-creator, ...) per session under
+ * `~/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/<session>/<session>/skills`.
+ * The desktop app owns this bundle directly and never registers it in
+ * `installed_plugins.json`, so it's otherwise invisible to inventory. Every
+ * session directory holds an identical copy of the same bundle, so only the
+ * most recently modified one is surfaced.
+ */
+async function newestDesktopSkillsPluginRoot(
+  homeDir: string,
+): Promise<{ skillsRoot: string; pluginName?: string } | undefined> {
+  const base = join(
+    homeDir,
+    "Library",
+    "Application Support",
+    "Claude",
+    "local-agent-mode-sessions",
+    "skills-plugin",
+  );
+  let newest:
+    { skillsRoot: string; pluginName?: string; mtimeMs: number } | undefined;
+  for (const outer of await readDirectoryEntries(base, {
+    directoriesOnly: true,
+  })) {
+    for (const inner of await readDirectoryEntries(outer, {
+      directoriesOnly: true,
+    })) {
+      const skillsRoot = join(inner, "skills");
+      let mtimeMs: number;
+      try {
+        mtimeMs = (await stat(skillsRoot)).mtimeMs;
+      } catch {
+        continue;
+      }
+      if (newest && mtimeMs <= newest.mtimeMs) continue;
+      const manifest = await readJsonSource(
+        join(inner, ".claude-plugin", "plugin.json"),
+        [],
+      );
+      const pluginName =
+        typeof manifest?.name === "string" ? manifest.name : undefined;
+      newest = { skillsRoot, pluginName, mtimeMs };
+    }
+  }
+  return newest;
+}
+
+async function discoverClaudeDesktopBuiltinSkills(
+  homeDir: string,
+  skillContext: SkillDiscoveryContext,
+): Promise<AgentCapability[]> {
+  const newest = await newestDesktopSkillsPluginRoot(homeDir);
+  if (!newest) return [];
+  return discoverSkillRoots([newest.skillsRoot], {
+    ...skillContext,
+    packaging: "built_in",
+    origin: "built_in",
+    sourcePlugin: newest.pluginName,
+    status: "installed",
+  });
 }
 
 export async function discoverClaude({
@@ -164,9 +229,12 @@ export async function discoverClaude({
   }
   capabilities.push(
     ...(await discoverSkillRoots(
-      [join(homeDir, ".claude", "skills")],
+      [join(homeDir, ".claude", "skills"), join(homeDir, ".agents", "skills")],
       skillContext,
     )),
+  );
+  capabilities.push(
+    ...(await discoverClaudeDesktopBuiltinSkills(homeDir, skillContext)),
   );
 
   return {

@@ -1018,7 +1018,22 @@ describe("AgentSetupView", () => {
               },
             ],
           }
-        : inventory,
+        : inventory.provider === "claude" || inventory.provider === "zcode"
+          ? {
+              ...inventory,
+              capabilities: [
+                ...inventory.capabilities,
+                {
+                  id: `${inventory.provider}:mcp:disabled-example`,
+                  name: "disabled-example",
+                  kind: "mcp" as const,
+                  status: "enabled" as const,
+                  packaging: "standalone" as const,
+                  origin: "unknown" as const,
+                },
+              ],
+            }
+          : inventory,
     );
     const html = renderToStaticMarkup(
       <AgentSetupView
