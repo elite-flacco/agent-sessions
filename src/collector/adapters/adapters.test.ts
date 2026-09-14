@@ -1532,6 +1532,104 @@ describe("provider adapters", () => {
     expect(capabilityUsage).toEqual([]);
   });
 
+  it("captures MCP calls recorded only as Zcode tool parts", () => {
+    const capabilityUsage = zcodeStoredCapabilityUsage(
+      [
+        {
+          id: "message-part-mcp",
+          timeCreated: 1_750_000_000_000,
+          data: { role: "assistant" },
+          parts: [
+            {
+              id: "analyze-part",
+              timeCreated: 1_750_000_000_100,
+              data: {
+                type: "tool",
+                callID: "call_analyze",
+                tool: "mcp__4_5v_mcp__analyze_image",
+                state: {
+                  input: { imageSource: "PRIVATE_IMAGE_URL" },
+                  output: "PRIVATE_ANALYSIS",
+                },
+              },
+            },
+            {
+              id: "no-call-id-part",
+              timeCreated: 1_750_000_000_150,
+              data: {
+                type: "tool",
+                tool: "mcp__4_5v_mcp__analyze_image",
+              },
+            },
+            {
+              id: "plain-tool-part",
+              timeCreated: 1_750_000_000_200,
+              data: {
+                type: "tool",
+                callID: "call_bash",
+                tool: "Bash",
+              },
+            },
+          ],
+        },
+      ],
+      [],
+    );
+
+    expect(capabilityUsage).toEqual([
+      {
+        externalId: "mcp:call_analyze",
+        kind: "mcp",
+        name: "4_5v_mcp",
+        toolName: "analyze_image",
+        occurredAt: new Date(1_750_000_000_100).toISOString(),
+      },
+    ]);
+    expect(JSON.stringify(capabilityUsage)).not.toMatch(
+      /PRIVATE_IMAGE_URL|PRIVATE_ANALYSIS/,
+    );
+  });
+
+  it("keeps a single record when a Zcode MCP call appears in both tool usage and a tool part", () => {
+    const capabilityUsage = zcodeStoredCapabilityUsage(
+      [
+        {
+          id: "message-shared-call",
+          timeCreated: 1_750_000_000_000,
+          data: { role: "assistant" },
+          parts: [
+            {
+              id: "shared-part",
+              timeCreated: 1_750_000_000_100,
+              data: {
+                type: "tool",
+                callID: "shared-call",
+                tool: "mcp__node_repl__js",
+              },
+            },
+          ],
+        },
+      ],
+      [
+        {
+          toolCallId: "shared-call",
+          toolName: "mcp__node_repl__js",
+          startedAt: 1_750_000_000_300,
+        },
+      ],
+    );
+
+    expect(capabilityUsage).toEqual([
+      {
+        externalId: "mcp:shared-call",
+        kind: "mcp",
+        name: "node_repl",
+        toolName: "js",
+        occurredAt: new Date(1_750_000_000_300).toISOString(),
+      },
+    ]);
+  });
+
   it("normalizes Zcode capability calls found only in a model response", async () => {
     const result = await parse(zcodeAdapter, [
       {

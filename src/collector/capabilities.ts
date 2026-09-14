@@ -238,7 +238,34 @@ export function zcodeStoredCapabilityUsage(
     });
     return usage ? [usage] : [];
   });
-  return [...skillUsage, ...mcpToolUsage];
+  // Zcode records some MCP calls only as message tool parts: plugin servers in
+  // particular can miss the tool_usage telemetry table. Part call ids share the
+  // tool_usage id space, so a call recorded in both keeps its tool_usage row.
+  const seenCallIds = new Set(tools.map((tool) => tool.toolCallId));
+  const partMcpUsage: CapabilityUsage[] = [];
+  for (const message of messages) {
+    for (const part of message.parts) {
+      const data = objectRecord(part.data);
+      if (data?.type !== "tool") continue;
+      const toolName = data.tool;
+      if (typeof toolName !== "string" || !toolName.startsWith("mcp__"))
+        continue;
+      const callId = typeof data.callID === "string" ? data.callID : undefined;
+      if (!callId || seenCallIds.has(callId)) continue;
+      const occurredAt = capabilityTimestamp(part.timeCreated);
+      if (!occurredAt) continue;
+      const usage = mcpUsage({
+        externalId: callId,
+        toolName,
+        occurredAt,
+        lookup,
+      });
+      if (!usage) continue;
+      seenCallIds.add(callId);
+      partMcpUsage.push(usage);
+    }
+  }
+  return [...skillUsage, ...mcpToolUsage, ...partMcpUsage];
 }
 
 interface MatchedSkillReadsInput {
