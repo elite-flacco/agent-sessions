@@ -237,7 +237,9 @@ describe("OverviewView", () => {
   test("uses the warning color only for the needs-attention icon", () => {
     const html = renderOverview();
 
-    expect(html).toContain('class="lucide lucide-triangle-alert warning-icon"');
+    expect(html).toContain(
+      'class="lucide lucide-triangle-alert lucide-alert-triangle warning-icon"',
+    );
     expect(html).not.toContain(
       'class="lucide lucide-folder-kanban warning-icon"',
     );

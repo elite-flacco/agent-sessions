@@ -1478,7 +1478,7 @@ describe("AgentSetupView", () => {
 
     expect(html).toContain('class="lucide lucide-plug" aria-hidden="true"');
     expect(html).toContain(
-      'class="lucide lucide-wand-sparkles" aria-hidden="true"',
+      'class="lucide lucide-wand-sparkles lucide-wand-2" aria-hidden="true"',
     );
     expect(html).toContain(
       'class="lucide lucide-waypoints" aria-hidden="true"',
