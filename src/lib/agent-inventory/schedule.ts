@@ -26,6 +26,13 @@ function parsePairs(raw: string): Map<string, string[]> {
   return map;
 }
 
+function pairValues(pairs: Map<string, string[]>, key: string): string[] {
+  return (pairs.get(key) ?? [])
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
 function formatTime(hour: number, minute: number): string {
   const suffix = hour < 12 ? "AM" : "PM";
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
@@ -50,11 +57,14 @@ export function humanizeSchedule(raw: string): string | undefined {
   if (freq === "DAILY") return `Daily at ${time}`;
 
   if (freq === "WEEKLY") {
-    const days = pairs.get("BYDAY") ?? [];
+    const days = pairValues(pairs, "BYDAY");
     const named = days
       .map((d) => DAY_NAMES[d.toUpperCase()])
       .filter((d): d is string => Boolean(d));
     if (named.length === 0) return undefined;
+    if (new Set(named).size === Object.keys(DAY_NAMES).length) {
+      return `Daily at ${time}`;
+    }
     const pluralized = named.map((d) => `${d}s`);
     return `${pluralized.join(", ")} at ${time}`;
   }
@@ -232,8 +242,14 @@ export function scheduledTaskSortKey(
     const pairs = parsePairs(task.scheduleRaw);
     const freq = pairs.get("FREQ")?.at(0)?.toUpperCase();
     if (freq === "DAILY") frequencyRank = 0;
-    else if (freq === "WEEKLY") frequencyRank = 1;
-    else if (freq === "MONTHLY") frequencyRank = 2;
+    else if (freq === "WEEKLY") {
+      const days = pairValues(pairs, "BYDAY");
+      const namedDays = days
+        .map((day) => DAY_NAMES[day.toUpperCase()])
+        .filter(Boolean);
+      frequencyRank =
+        new Set(namedDays).size === Object.keys(DAY_NAMES).length ? 0 : 1;
+    } else if (freq === "MONTHLY") frequencyRank = 2;
     const hour = Number.parseInt(pairs.get("BYHOUR")?.at(0) ?? "0", 10);
     const minute = Number.parseInt(pairs.get("BYMINUTE")?.at(0) ?? "0", 10);
     if (!Number.isNaN(hour) && !Number.isNaN(minute)) {

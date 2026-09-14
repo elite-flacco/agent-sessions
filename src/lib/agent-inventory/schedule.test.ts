@@ -72,6 +72,14 @@ describe("humanizeSchedule", () => {
       humanizeSchedule("RRULE:FREQ=WEEKLY;BYHOUR=7;BYMINUTE=0;BYDAY=MO"),
     ).toBe("Mondays at 7:00 AM");
   });
+
+  test("renders comma-separated all-day weekly RRULEs as daily", () => {
+    expect(
+      humanizeSchedule(
+        "RRULE:FREQ=WEEKLY;BYHOUR=7;BYMINUTE=0;BYDAY=SU,MO,TU,WE,TH,FR,SA",
+      ),
+    ).toBe("Daily at 7:00 AM");
+  });
 });
 
 describe("humanizeCron", () => {
