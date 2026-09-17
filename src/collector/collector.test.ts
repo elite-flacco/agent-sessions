@@ -25,6 +25,10 @@ beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), "agentarium-collector-"));
   process.env.AGENTARIUM_DATABASE_PATH = path.join(directory, "agentarium.db");
   process.env.CODEX_STATE_DB_PATH = path.join(directory, "missing-codex.db");
+  process.env.CODEX_CATALOG_DB_PATH = path.join(
+    directory,
+    "missing-codex-catalog.db",
+  );
   process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
   vi.resetModules();
   ({ sqlite } = await import("@/db/client"));
@@ -37,6 +41,7 @@ afterAll(async () => {
   sqlite.close();
   delete process.env.AGENTARIUM_DATABASE_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
+  delete process.env.CODEX_CATALOG_DB_PATH;
   delete process.env.ZCODE_DB_PATH;
   await fs.rm(directory, { recursive: true, force: true });
 });
@@ -1410,6 +1415,63 @@ describe("collector sync", () => {
       process.env.CODEX_STATE_DB_PATH = path.join(
         directory,
         "missing-codex.db",
+      );
+      __resetCodexDbCache();
+    }
+  });
+
+  it("refreshes Codex titles from the thread catalog when it changes", async () => {
+    const catalogDbPath = path.join(directory, "codex-catalog.db");
+    const Database = (await import("better-sqlite3")).default;
+    const catalogDb = new Database(catalogDbPath);
+    catalogDb.exec(`CREATE TABLE local_thread_catalog (
+      host_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      display_title TEXT NOT NULL,
+      source_created_at REAL NOT NULL,
+      source_updated_at REAL NOT NULL,
+      source_recency_at REAL NOT NULL DEFAULT 0,
+      missing_candidate INTEGER NOT NULL DEFAULT 0,
+      observation_sequence INTEGER NOT NULL,
+      PRIMARY KEY (host_id, thread_id)
+    )`);
+    catalogDb
+      .prepare(
+        `INSERT INTO local_thread_catalog
+         (host_id, thread_id, display_title, source_created_at, source_updated_at, source_recency_at, missing_candidate, observation_sequence)
+         VALUES ('local', ?, ?, 1789600000, 1789600000, 1789600000, 0, 1)`,
+      )
+      .run("codex-catalog-renamed", "Clean Up Answer Bank");
+    catalogDb.close();
+    sqlite
+      .prepare(
+        `INSERT INTO sessions
+         (external_id, provider, title, status, started_at, updated_at)
+         VALUES (?, 'codex', ?, 'completed', ?, ?)`,
+      )
+      .run(
+        "codex-catalog-renamed",
+        "Let's refine the answer bank a little bit",
+        "2026-09-16T21:00:00Z",
+        "2026-09-16T21:09:00Z",
+      );
+
+    process.env.CODEX_CATALOG_DB_PATH = catalogDbPath;
+    const { __resetCodexDbCache } = await import("@/lib/codex-db");
+    __resetCodexDbCache();
+    try {
+      await collector.syncAll({ adapters: [] });
+      expect(
+        sqlite
+          .prepare(
+            "SELECT title FROM sessions WHERE provider = 'codex' AND external_id = ?",
+          )
+          .get("codex-catalog-renamed"),
+      ).toEqual({ title: "Clean Up Answer Bank" });
+    } finally {
+      process.env.CODEX_CATALOG_DB_PATH = path.join(
+        directory,
+        "missing-codex-catalog.db",
       );
       __resetCodexDbCache();
     }
