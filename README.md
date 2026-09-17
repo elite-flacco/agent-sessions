@@ -119,7 +119,7 @@ Subagent rollups:
 
 | Provider    | Local source                                                                                                        |
 | ----------- | ------------------------------------------------------------------------------------------------------------------- |
-| Codex       | `~/.codex/sessions/**/*.jsonl` and `~/.codex/state_5.sqlite` (or `~/.codex/sqlite/state_5.sqlite`)                  |
+| Codex       | `~/.codex/sessions/**/*.jsonl` plus thread titles from `~/.codex/sqlite/codex-dev.db` (or the legacy `~/.codex/state_5.sqlite`) |
 | Claude Code | `~/.claude/projects/**/*.jsonl`                                                                                     |
 | Zcode       | `~/.zcode/cli/rollout/**/*.jsonl`, `~/.zcode/cli/agents/**/*.jsonl`, and `~/.zcode/cli/db/db.sqlite` when available |
 | Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                                                                   |

@@ -42,15 +42,18 @@ afterEach(async () => {
 // enrichment set ZCODE_DB_PATH to their own temp DB.
 const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
 const CODEX_DB_GUARD = "/dev/null/nonexistent-codex-db";
+const CODEX_CATALOG_DB_GUARD = "/dev/null/nonexistent-codex-catalog-db";
 beforeEach(() => {
   process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
   process.env.CODEX_STATE_DB_PATH = CODEX_DB_GUARD;
+  process.env.CODEX_CATALOG_DB_PATH = CODEX_CATALOG_DB_GUARD;
   __resetCodexDbCache();
   __resetZcodeDbCache();
 });
 afterEach(() => {
   delete process.env.ZCODE_DB_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
+  delete process.env.CODEX_CATALOG_DB_PATH;
   __resetCodexDbCache();
   __resetZcodeDbCache();
 });
@@ -238,6 +241,134 @@ describe("provider adapters", () => {
     ]);
 
     expect(result.sessions[0]?.title).toBe("Title shown in Codex");
+  });
+
+  async function catalogFixture(
+    rows: Array<{
+      threadId: string;
+      title: string;
+      hostId?: string;
+      recency?: number;
+      missing?: boolean;
+    }>,
+  ): Promise<string> {
+    const dbDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-codex-catalog-"),
+    );
+    temporaryDirectories.push(dbDir);
+    const dbPath = path.join(dbDir, "codex-dev.db");
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE local_thread_catalog (
+      host_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      display_title TEXT NOT NULL,
+      source_created_at REAL NOT NULL,
+      source_updated_at REAL NOT NULL,
+      source_recency_at REAL NOT NULL DEFAULT 0,
+      missing_candidate INTEGER NOT NULL DEFAULT 0,
+      observation_sequence INTEGER NOT NULL,
+      PRIMARY KEY (host_id, thread_id)
+    )`);
+    const insert = db.prepare(
+      `INSERT INTO local_thread_catalog
+       (host_id, thread_id, display_title, source_created_at, source_updated_at, source_recency_at, missing_candidate, observation_sequence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const row of rows)
+      insert.run(
+        row.hostId ?? "local",
+        row.threadId,
+        row.title,
+        1789600000,
+        1789600000,
+        row.recency ?? 1789600000,
+        row.missing ? 1 : 0,
+        1,
+      );
+    db.close();
+    return dbPath;
+  }
+
+  it("prefers the Codex thread catalog title over the legacy state title", async () => {
+    const dbDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-codex-db-"),
+    );
+    temporaryDirectories.push(dbDir);
+    const statePath = path.join(dbDir, "state_5.sqlite");
+    const stateDb = new Database(statePath);
+    stateDb.exec(
+      "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL)",
+    );
+    stateDb
+      .prepare("INSERT INTO threads (id, title) VALUES (?, ?)")
+      .run("codex-catalog-title", "Frozen legacy title");
+    stateDb.close();
+    process.env.CODEX_STATE_DB_PATH = statePath;
+    process.env.CODEX_CATALOG_DB_PATH = await catalogFixture([
+      { threadId: "codex-catalog-title", title: "Clean Up Answer Bank" },
+    ]);
+
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-16T21:00:00Z",
+        payload: { id: "codex-catalog-title", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-16T21:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Let's refine the answer bank a little bit" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Clean Up Answer Bank");
+  });
+
+  it("uses the freshest non-missing Codex catalog row for a thread", async () => {
+    process.env.CODEX_CATALOG_DB_PATH = await catalogFixture([
+      {
+        threadId: "codex-multi-host",
+        title: "Synced cloud copy",
+        hostId: "chatgpt:cloud",
+        recency: 1789600000,
+      },
+      {
+        threadId: "codex-multi-host",
+        title: "Renamed on this machine",
+        hostId: "local",
+        recency: 1789605000,
+      },
+      {
+        threadId: "codex-multi-host",
+        title: "Deleted duplicate",
+        hostId: "local:old",
+        recency: 1789609999,
+        missing: true,
+      },
+    ]);
+
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-16T21:00:00Z",
+        payload: { id: "codex-multi-host", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-16T21:00:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Original user request" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]?.title).toBe("Renamed on this machine");
   });
 
   it("uses the task input from a delegated Codex app title", async () => {
