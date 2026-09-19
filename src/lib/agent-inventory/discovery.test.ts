@@ -147,6 +147,99 @@ enabled = false
     expect(JSON.stringify(result)).not.toContain("legacy-secret");
   });
 
+  test("honors Codex bundled plugin exclusions over enabled config", async () => {
+    const home = await createHome();
+    const marketplaceRoot = join(home, "bundled-marketplace");
+    const pluginRoot = join(marketplaceRoot, "plugins", "sites");
+    await skill(pluginRoot, "skills/sites-building", "sites-building");
+    await fixture(
+      home,
+      ".codex/cache/bundled_plugin_exclusions/current.json",
+      JSON.stringify({
+        "disabled-bundled-plugin-ids": ["sites@openai-bundled"],
+      }),
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[marketplaces.openai-bundled]
+source_type = "local"
+source = "${marketplaceRoot}"
+
+[plugins."sites@openai-bundled"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "sites@openai-bundled",
+          kind: "plugin",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "sites:sites-building",
+          kind: "skill",
+          status: "disabled",
+        }),
+      ]),
+    );
+  });
+
+  test("honors Codex live-disabled bundled plugin manifests", async () => {
+    const home = await createHome();
+    const marketplaceRoot = join(home, "bundled-marketplace");
+    const pluginRoot = join(marketplaceRoot, "plugins", "visualize");
+    await skill(pluginRoot, "skills/visualize", "visualize");
+    await fixture(
+      pluginRoot,
+      ".codex-plugin/plugin.json",
+      JSON.stringify({
+        name: "visualize",
+        bundledContentVariant: "live-disabled",
+      }),
+    );
+    await fixture(
+      home,
+      ".codex/config.toml",
+      `[marketplaces.openai-bundled]
+source_type = "local"
+source = "${marketplaceRoot}"
+
+[plugins."visualize@openai-bundled"]
+enabled = true
+`,
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const codex = result.find((item) => item.provider === "codex");
+
+    expect(codex?.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "visualize@openai-bundled",
+          kind: "plugin",
+          status: "disabled",
+        }),
+        expect.objectContaining({
+          name: "visualize:visualize",
+          kind: "skill",
+          status: "disabled",
+        }),
+      ]),
+    );
+  });
+
   test("resolves Codex plugin skills and MCPs from the cache when source is absent", async () => {
     const home = await createHome();
     const pluginRoot = join(

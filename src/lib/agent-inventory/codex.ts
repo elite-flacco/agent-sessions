@@ -270,6 +270,48 @@ function statusFromToml(raw: string | undefined): ScheduledTaskStatus {
   }
 }
 
+async function readBundledPluginExclusions(
+  homeDir: string,
+  warnings: InventoryWarning[],
+): Promise<Set<string>> {
+  const exclusions = new Set<string>();
+  for (const file of await readDirectoryEntries(
+    join(homeDir, ".codex", "cache", "bundled_plugin_exclusions"),
+  )) {
+    if (extname(file) !== ".json") continue;
+    const parsed = await readJsonSource(file, warnings);
+    const ids = parsed?.["disabled-bundled-plugin-ids"];
+    if (!Array.isArray(ids)) continue;
+    for (const id of ids) {
+      if (typeof id === "string") exclusions.add(id);
+    }
+  }
+  return exclusions;
+}
+
+async function codexPluginStatus(
+  configuredStatus: AgentCapability["status"],
+  pluginId: string,
+  installPath: string | undefined,
+  bundledPluginExclusions: Set<string>,
+  warnings: InventoryWarning[],
+): Promise<AgentCapability["status"]> {
+  if (configuredStatus === "disabled") return "disabled";
+  if (bundledPluginExclusions.has(pluginId)) return "disabled";
+
+  if (installPath) {
+    const manifest = await readJsonSource(
+      join(installPath, ".codex-plugin", "plugin.json"),
+      warnings,
+    );
+    if (manifest?.bundledContentVariant === "live-disabled") {
+      return "disabled";
+    }
+  }
+
+  return pluginStatusWithPresence(configuredStatus, installPath);
+}
+
 /**
  * Reads the id → display-name map of Codex's local projects from
  * `~/.codex/.codex-global-state.json`. Only ids and names are taken; nothing
@@ -369,6 +411,10 @@ export async function discoverCodex({
   const config = await readTextSource(configPath, warnings);
   const capabilities: AgentCapability[] = [];
   const pluginSkills: AgentCapability[] = [];
+  const bundledPluginExclusions = await readBundledPluginExclusions(
+    homeDir,
+    warnings,
+  );
   const context: SkillDiscoveryContext = {
     provider: "codex",
     skillLock,
@@ -415,9 +461,12 @@ export async function discoverCodex({
             warnings,
             marketplaceSources,
           ));
-        const pluginStatus = await pluginStatusWithPresence(
+        const pluginStatus = await codexPluginStatus(
           enabled(table.body) ? "enabled" : "disabled",
+          name,
           path,
+          bundledPluginExclusions,
+          warnings,
         );
         // Split `name` ("<plugin>@<marketplace>") so the marketplace can be
         // surfaced as sourceRepository, matching how Claude/Zcode publish
