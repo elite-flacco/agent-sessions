@@ -472,6 +472,183 @@ describe("provider adapters", () => {
     });
   });
 
+  it("nests a Codex agent-created thread under its delegation source", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-17T00:19:59Z",
+        payload: {
+          id: "codex-agent-created",
+          cwd: "/work/relay",
+          source: "vscode",
+          thread_source: "agent_created_thread",
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:20:00Z",
+        payload: {
+          type: "function_call_output",
+          id: "fco_codex-agent-created",
+          name: "create_thread",
+          namespace: "codex_app",
+          output: `<codex_delegation>
+  <source_thread_id>codex-originating-thread</source_thread_id>
+  <input>Check whether a fresh task can access the sheet</input>
+</codex_delegation>`,
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:20:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            { text: "Check whether a fresh task can access the sheet" },
+          ],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "codex-agent-created",
+      parentExternalId: "codex-originating-thread",
+      sessionKind: "thread",
+      agentLabel: undefined,
+      agentDepth: 1,
+    });
+  });
+
+  it("keeps a Codex thread main when create_thread returned a plain result", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-17T00:09:07Z",
+        payload: { id: "codex-originating-thread", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:10:05Z",
+        payload: {
+          type: "function_call",
+          name: "create_thread",
+          namespace: "mcp__codex_app",
+          call_id: "call_create",
+          arguments:
+            '{"target":{"type":"project"},"title":"Clean up symlinks"}',
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:10:05Z",
+        payload: {
+          type: "function_call_output",
+          call_id: "call_create",
+          name: "create_thread",
+          namespace: "mcp__codex_app",
+          output: '{"threadId":"codex-agent-created","hostId":"local"}',
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:10:06Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Please clean up the migration symlinks" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "codex-originating-thread",
+      sessionKind: "main",
+      agentDepth: 0,
+    });
+  });
+
+  it("ignores delegation blobs on send_message_to_thread outputs", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-17T00:09:07Z",
+        payload: { id: "codex-originating-thread", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:12:00Z",
+        payload: {
+          type: "function_call_output",
+          name: "send_message_to_thread",
+          namespace: "codex_app",
+          output: `<codex_delegation>
+  <source_thread_id>codex-agent-created</source_thread_id>
+  <input>Cleanup finished; three symlinks remain.</input>
+</codex_delegation>`,
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:12:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Thanks, please wrap up" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      externalId: "codex-originating-thread",
+      sessionKind: "main",
+      agentDepth: 0,
+    });
+  });
+
+  it("prefers Codex session_meta parentage over the create_thread delegation", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-17T00:19:59Z",
+        payload: {
+          id: "codex-spawned-child",
+          cwd: "/work/relay",
+          parent_thread_id: "codex-meta-parent",
+          agent_nickname: "Scout",
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:20:00Z",
+        payload: {
+          type: "function_call_output",
+          name: "create_thread",
+          namespace: "codex_app",
+          output: `<codex_delegation>
+  <source_thread_id>codex-delegation-parent</source_thread_id>
+  <input>Task prompt</input>
+</codex_delegation>`,
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-17T00:20:01Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Inspect the data model" }],
+        },
+      },
+    ]);
+
+    expect(result.sessions[0]).toMatchObject({
+      parentExternalId: "codex-meta-parent",
+      sessionKind: "subagent",
+      agentLabel: "Scout",
+    });
+  });
+
   it("titles a Codex subagent from its agent path when no readable prompt exists", async () => {
     const result = await parse(codexAdapter, [
       {

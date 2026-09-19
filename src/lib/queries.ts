@@ -11,6 +11,7 @@ import {
   TASKS_PROJECT_KEY,
   type AgentProvider,
   type CostSource,
+  type SessionKind,
   type SessionStatus,
   type StatusReason,
 } from "./types";
@@ -20,7 +21,7 @@ export interface SessionListItem {
   externalId: string;
   provider: AgentProvider;
   parentExternalId: string | null;
-  sessionKind: "main" | "subagent";
+  sessionKind: SessionKind;
   agentLabel: string | null;
   agentDepth: number;
   title: string;

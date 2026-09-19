@@ -80,12 +80,16 @@ export interface AdapterParseContext {
 export const costSources = ["reported", "estimated", "unavailable"] as const;
 export type CostSource = (typeof costSources)[number];
 
+// "thread" marks a child the agent itself spun up as a fresh conversation
+// (Codex create_thread delegation); "subagent" stays a spawned sub-agent run.
+export type SessionKind = "main" | "subagent" | "thread";
+
 export interface NormalizedSession {
   externalId: string;
   sourcePath?: string;
   provider: AgentProvider;
   parentExternalId?: string;
-  sessionKind?: "main" | "subagent";
+  sessionKind?: SessionKind;
   agentLabel?: string;
   agentDepth?: number;
   title: string;

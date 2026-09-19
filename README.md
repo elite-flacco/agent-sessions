@@ -117,12 +117,12 @@ Subagent rollups:
 
 ### Data sources
 
-| Provider    | Local source                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| Provider    | Local source                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Codex       | `~/.codex/sessions/**/*.jsonl` plus thread titles from `~/.codex/sqlite/codex-dev.db` (or the legacy `~/.codex/state_5.sqlite`) |
-| Claude Code | `~/.claude/projects/**/*.jsonl`                                                                                     |
-| Zcode       | `~/.zcode/cli/rollout/**/*.jsonl`, `~/.zcode/cli/agents/**/*.jsonl`, and `~/.zcode/cli/db/db.sqlite` when available |
-| Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                                                                   |
+| Claude Code | `~/.claude/projects/**/*.jsonl`                                                                                                 |
+| Zcode       | `~/.zcode/cli/rollout/**/*.jsonl`, `~/.zcode/cli/agents/**/*.jsonl`, and `~/.zcode/cli/db/db.sqlite` when available             |
+| Pi          | `~/.pi/agent/sessions/**/*.jsonl`                                                                                               |
 
 - Agentarium stores its normalized database at `data/agentarium.db`. Override with `AGENTARIUM_DATABASE_PATH=/absolute/path/agentarium.db`. The pre-rename `RELAY_DATABASE_PATH` variable and `data/relay.db` location are still honored, and a default-location `data/relay.db` is adopted (renamed) automatically on first run.
 - Session titles prefer provider-authored values, falling back to the first meaningful user message.

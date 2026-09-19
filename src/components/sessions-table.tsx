@@ -12,6 +12,7 @@ import {
   relativeTime,
 } from "@/lib/format";
 import { normalizeModel } from "@/lib/pricing";
+import { childSessionsNoun } from "@/lib/labels";
 import type { SessionFilters, SessionTreeItem } from "@/lib/queries";
 import { ProviderBadge } from "./provider-badge";
 import { StatusLabel } from "./status-label";
@@ -92,9 +93,11 @@ function SessionRow({
           </div>
           <span className="mono session-meta">
             <span className="session-meta-text">
-              {session.sessionKind === "subagent"
-                ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
-                : (session.repository ?? "Unknown workspace")}
+              {session.sessionKind === "thread"
+                ? "Thread"
+                : session.sessionKind === "subagent"
+                  ? `Subagent${session.agentLabel ? ` · ${session.agentLabel}` : ""}`
+                  : (session.repository ?? "Unknown workspace")}
             </span>
             {session.children.length > 0 && (
               <button
@@ -106,7 +109,12 @@ function SessionRow({
                   size={12}
                   className={expanded ? "" : "chevron-collapsed"}
                 />
-                {countLabel(session.children.length, "subagent")}
+                {countLabel(
+                  session.children.length,
+                  childSessionsNoun(
+                    session.children.map((child) => child.sessionKind),
+                  ),
+                )}
               </button>
             )}
           </span>

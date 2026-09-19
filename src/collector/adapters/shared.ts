@@ -7,6 +7,7 @@ import type {
   ModelUsage,
   NormalizedSession,
   ParseResult,
+  SessionKind,
   TerminalStatus,
 } from "@/lib/types";
 import {
@@ -27,7 +28,7 @@ export interface JsonlStrategy {
   title(rows: Record<string, unknown>[]): string | undefined;
   hierarchy?(rows: Record<string, unknown>[]): {
     parentExternalId?: string;
-    sessionKind?: "main" | "subagent";
+    sessionKind?: SessionKind;
     agentLabel?: string;
     agentDepth?: number;
   };

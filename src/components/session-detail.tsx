@@ -7,7 +7,7 @@ import {
   formatTokens,
   relativeTime,
 } from "@/lib/format";
-import { costSourceLabels } from "@/lib/labels";
+import { childSessionsNoun, costSourceLabels } from "@/lib/labels";
 import type {
   SessionDetail,
   SessionListItem,
@@ -134,7 +134,13 @@ export function SessionDetailView({
           <header>
             <div>
               <span className="eyebrow">Delegated work</span>
-              <h2 id="subagents-title">Subagents</h2>
+              <h2 id="subagents-title">
+                {childSessionsNoun(
+                  subagents.map((child) => child.sessionKind),
+                ) === "thread"
+                  ? "Threads"
+                  : "Subagents"}
+              </h2>
             </div>
             <span className="text-muted-foreground">
               {subagents.length} sessions
@@ -146,7 +152,10 @@ export function SessionDetailView({
                 <div>
                   <strong className="truncate text-sm">{child.title}</strong>
                   <span className="mono text-muted-foreground">
-                    {child.agentLabel ?? "Subagent"} ·{" "}
+                    {child.sessionKind === "thread"
+                      ? "Thread"
+                      : (child.agentLabel ?? "Subagent")}{" "}
+                    ·{" "}
                     {elapsed(child.startedAt, child.endedAt ?? child.updatedAt)}
                     {child.costUsd != null
                       ? ` · ${formatCostUsd(child.costUsd)}`

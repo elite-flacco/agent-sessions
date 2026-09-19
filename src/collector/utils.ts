@@ -60,6 +60,17 @@ export function codexDelegationInput(value: unknown): string | undefined {
   return stringValue(match?.[1]);
 }
 
+// Threads Codex spawns itself (create_thread) replay their delegation
+// provenance as a <codex_delegation> blob whose source_thread_id names the
+// originating thread; that is the only parent linkage those rollouts carry.
+export function codexDelegationSource(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  const match = raw?.match(
+    /<codex_delegation\b[^>]*>[\s\S]*?<source_thread_id>([\s\S]*?)<\/source_thread_id>[\s\S]*?<\/codex_delegation>/i,
+  );
+  return stringValue(match?.[1]);
+}
+
 export function safeTitle(value: unknown, fallback: string): string {
   const raw = stringValue(value);
   const text = raw

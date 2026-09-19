@@ -2,6 +2,7 @@ import type { OverviewRange } from "./queries";
 import type {
   AgentProvider,
   CostSource,
+  SessionKind,
   SessionStatus,
   StatusReason,
 } from "./types";
@@ -11,6 +12,18 @@ import type {
 // because they vary by surrounding grammar.
 export function rangeDaysLabel(range: OverviewRange): string {
   return range === "7d" ? "7 days" : range === "30d" ? "30 days" : "all time";
+}
+
+/**
+ * Noun for a group of child sessions. A group made up entirely of
+ * agent-created threads reads as "threads"; any spawned sub-agent keeps the
+ * "subagent" wording, including mixed groups, since sub-agents are the
+ * established concept and per-row labels still disambiguate each child.
+ */
+export function childSessionsNoun(kinds: SessionKind[]): "subagent" | "thread" {
+  return kinds.length > 0 && kinds.every((kind) => kind === "thread")
+    ? "thread"
+    : "subagent";
 }
 
 export const providerLabels: Record<AgentProvider, string> = {

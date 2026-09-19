@@ -8,6 +8,7 @@ import {
 } from "../capabilities";
 import {
   codexDelegationInput,
+  codexDelegationSource,
   homePath,
   record,
   safeTitle,
@@ -150,13 +151,34 @@ export const codexAdapter: ProviderAdapter = {
         );
         const spawn = record(record(meta?.source)?.subagent);
         const threadSpawn = record(spawn?.thread_spawn);
-        const parentExternalId =
+        // Agent-created threads carry no parent in session_meta; their
+        // provenance only exists as the create_thread delegation replayed at
+        // the start of the rollout. Matching stays name-specific because
+        // send_message_to_thread outputs carry the same blob shape while
+        // naming the replying child, not this thread's parent.
+        let delegatedParent: string | undefined;
+        for (const row of rows) {
+          const payload = record(row.payload);
+          if (
+            row.type !== "response_item" ||
+            payload?.type !== "function_call_output" ||
+            payload?.name !== "create_thread"
+          )
+            continue;
+          delegatedParent = codexDelegationSource(payload?.output);
+          if (delegatedParent) break;
+        }
+        const metaParent =
           stringValue(meta?.parent_thread_id) ??
           stringValue(threadSpawn?.parent_thread_id);
+        const parentExternalId = metaParent ?? delegatedParent;
         return parentExternalId
           ? {
               parentExternalId,
-              sessionKind: "subagent",
+              // Delegated children read as "thread", not "subagent": Codex
+              // spun them up as fresh conversations rather than spawning
+              // sub-agent runs.
+              sessionKind: metaParent ? "subagent" : "thread",
               agentLabel:
                 stringValue(meta?.agent_nickname) ??
                 stringValue(threadSpawn?.agent_nickname) ??
