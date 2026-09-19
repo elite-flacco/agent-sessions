@@ -24,7 +24,7 @@ Then, whenever you want to use the dashboard:
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). No database setup is needed — the schema is created automatically on first run. Agentarium refreshes dashboard data and picks up new local activity every 5 seconds while a page is open, so the setup commands do not need to be repeated. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line. After pulling updates, re-run `npm ci` if dependencies changed, and run `npm run db:migrate` if the update added migrations under `drizzle/`.
+Open [http://localhost:3000](http://localhost:3000). No database setup is needed — the schema is created automatically on first run. Agentarium refreshes dashboard data and picks up new local activity every 5 seconds while a page is open, so the setup commands do not need to be repeated. Use **Sync activity** for an immediate refresh, or run `npm run collect` again to import changes from the command line. After pulling updates, re-run `npm ci` if dependencies changed, and run `npm run db:migrate` if the update added migrations under `drizzle/`.
 
 Optional: to keep collecting even when no dashboard page is open, run a watcher in a second terminal:
 
