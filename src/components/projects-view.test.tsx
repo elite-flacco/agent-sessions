@@ -29,6 +29,7 @@ function baseProject(
     workdirs: ["/repos/relay"],
     totalCostUsd: 241.35,
     unpricedSessionCount: 0,
+    openPullRequestCount: null,
     totalRuntimeMs: 3_600_000,
     lastActivityAt: "2026-08-03T10:00:00.000Z",
     ...overrides,
@@ -122,6 +123,48 @@ describe("ProjectsView landing", () => {
     expect(githubLink).toHaveAttribute("target", "_blank");
     expect(githubLink).toHaveAttribute("rel", "noreferrer");
     expect(githubLink.querySelector('[data-icon="github"]')).toBeVisible();
+  });
+
+  test("shows open pull-request counts only when at least one is open", () => {
+    render(
+      <ProjectsView
+        projects={[
+          baseProject({ openPullRequestCount: 3 }),
+          baseProject({
+            key: "ai-compass",
+            repository: "ai-compass",
+            openPullRequestCount: 1,
+          }),
+          baseProject({
+            key: "quiet-repo",
+            repository: "quiet-repo",
+            githubUrl: "https://github.com/openai/quiet-repo",
+            openPullRequestCount: 0,
+          }),
+          baseProject({
+            key: "offline-repo",
+            repository: "offline-repo",
+            openPullRequestCount: null,
+          }),
+        ]}
+        selected={null}
+      />,
+    );
+
+    const grid = screen.getByLabelText("Projects with Git evidence");
+    expect(grid).toHaveTextContent("3 open PRs");
+    expect(grid).toHaveTextContent("1 open PR");
+    const cards = screen.getAllByRole("article");
+    const quietCard = cards.find((card) =>
+      card.textContent?.includes("quiet-repo"),
+    );
+    expect(quietCard).toBeDefined();
+    expect(quietCard).not.toHaveTextContent(/open PR/i);
+    const offlineCard = cards.find((card) =>
+      card.textContent?.includes("offline-repo"),
+    );
+    expect(offlineCard).toBeDefined();
+    expect(offlineCard).not.toHaveTextContent(/open PR/i);
   });
 
   test("shows each project's total cost", () => {

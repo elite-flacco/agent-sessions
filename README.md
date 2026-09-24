@@ -58,7 +58,7 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 ### Projects
 
 - One workspace per project/repository — headline metrics, daily spend sparkline, per-agent session and cost split, activity feed, and more.
-- Link to the GitHub repository when one is available.
+- Link to the GitHub repository when one is available, with a live count of its open pull requests.
 
 ### Usage & cost
 

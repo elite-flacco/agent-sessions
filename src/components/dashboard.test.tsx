@@ -112,6 +112,7 @@ describe("Dashboard session rows", () => {
       workdirs: ["/workspace/agent-sessions"],
       totalCostUsd: 12.345,
       unpricedSessionCount: 1,
+      openPullRequestCount: null,
       totalRuntimeMs: 3_600_000,
       lastActivityAt: "2026-07-15T12:05:00.000Z",
     };

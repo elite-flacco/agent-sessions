@@ -420,6 +420,12 @@ export interface ProjectCostSummary extends ProjectSummary {
   totalCostUsd: number | null;
   /** Top-level session trees omitted because at least one usage row is unpriced. */
   unpricedSessionCount: number;
+  /**
+   * Live GitHub state, attached by `attachOpenPullRequestCounts` at page level
+   * after this SQLite read boundary returns — `null` until then, or when the
+   * repository has no resolvable GitHub remote or the lookup failed.
+   */
+  openPullRequestCount: number | null;
 }
 
 export type ProjectState = "active" | "waiting" | "blocked" | "complete";
@@ -704,6 +710,7 @@ export function getProjectsWithCosts(
       ...project,
       totalCostUsd: total?.pricedSessionCount ? total.costUsd : null,
       unpricedSessionCount: total?.unpricedSessionCount ?? 0,
+      openPullRequestCount: null,
     };
   });
 }
