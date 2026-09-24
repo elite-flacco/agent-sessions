@@ -72,6 +72,10 @@ function ProjectsLanding({ projects }: { projects: ProjectCostSummary[] }) {
                     {project.totalCostUsd != null
                       ? `${formatCostUsd(project.totalCostUsd)}`
                       : "Total cost unavailable"}
+                    {(project.openPullRequestCount ?? 0) > 0 &&
+                      ` · ${project.openPullRequestCount} open ${
+                        project.openPullRequestCount === 1 ? "PR" : "PRs"
+                      }`}
                   </p>
                   <div className="project-provider-list">
                     {project.providers.map((provider) => (

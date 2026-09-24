@@ -1,6 +1,7 @@
 import { ProjectsView } from "@/components/projects-view";
 import { Sidebar } from "@/components/sidebar";
 import { refreshIngestedData } from "@/lib/auto-sync";
+import { attachOpenPullRequestCounts } from "@/lib/project-pull-requests";
 import {
   firstParam,
   getCollectorHealth,
@@ -25,8 +26,10 @@ export default async function ProjectsPage({
   const range = parseOverviewRange(firstParam(params.range));
   const evidence = parseProjectEvidenceFilter(firstParam(params.evidence));
   const health = getCollectorHealth();
-  const projects = getProjectsWithCosts({ range: "all" }).filter(
-    (project) => project.category === "project",
+  const projects = await attachOpenPullRequestCounts(
+    getProjectsWithCosts({ range: "all" }).filter(
+      (project) => project.category === "project",
+    ),
   );
   return (
     <main className="agentarium-shell">
