@@ -22,10 +22,11 @@ const ANTHROPIC_SOURCE =
 const OPENAI_SOURCE = "https://developers.openai.com/api/docs/pricing";
 const ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing";
 
-// Anthropic cache rates: read 0.1x input, write 1.25x input (5-minute TTL,
-// the Claude Code default). OpenAI publishes an explicit cache-write rate
-// for the gpt-5.6 family (1.25x input); gpt-5.5 and earlier, like Z.ai,
-// list no cache-write premium, so writes price as ordinary input there.
+// Anthropic cache rates: 5-minute writes 1.25x input (the Claude Code
+// default TTL); reads 0.1x input, except 0.05x on claude-opus-5-5. OpenAI
+// publishes an explicit cache-write rate for the gpt-5.6 and gpt-6 families
+// (1.25x input); gpt-5.5 and earlier, like Z.ai, list no cache-write
+// premium, so writes price as ordinary input there.
 export const PRICING_TABLE: PricingEntry[] = [
   {
     model: "claude-fable-5",
@@ -37,12 +38,21 @@ export const PRICING_TABLE: PricingEntry[] = [
     source: ANTHROPIC_SOURCE,
   },
   {
+    model: "claude-opus-5-5",
+    inputPerMTok: 4,
+    outputPerMTok: 20,
+    cacheReadPerMTok: 0.2,
+    cacheWritePerMTok: 5,
+    effectiveFrom: "2026-09-22",
+    source: ANTHROPIC_SOURCE,
+  },
+  {
     model: "claude-opus-5",
     inputPerMTok: 5,
     outputPerMTok: 25,
     cacheReadPerMTok: 0.5,
     cacheWritePerMTok: 6.25,
-    effectiveFrom: "2026-08-01",
+    effectiveFrom: "2026-07-24",
     source: ANTHROPIC_SOURCE,
   },
   {
@@ -72,6 +82,8 @@ export const PRICING_TABLE: PricingEntry[] = [
     effectiveFrom: "2025-11-01",
     source: ANTHROPIC_SOURCE,
   },
+  // The introductory $2/$10 rate was made permanent on 2026-08-10; the
+  // planned 2026-09-01 increase to $3/$15 was cancelled and never billed.
   {
     model: "claude-sonnet-5",
     inputPerMTok: 2,
@@ -79,16 +91,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheReadPerMTok: 0.2,
     cacheWritePerMTok: 2.5,
     effectiveFrom: "2026-04-01",
-    effectiveTo: "2026-08-31",
-    source: ANTHROPIC_SOURCE,
-  },
-  {
-    model: "claude-sonnet-5",
-    inputPerMTok: 3,
-    outputPerMTok: 15,
-    cacheReadPerMTok: 0.3,
-    cacheWritePerMTok: 3.75,
-    effectiveFrom: "2026-09-01",
     source: ANTHROPIC_SOURCE,
   },
   {
@@ -115,7 +117,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 50,
     cacheReadPerMTok: 1,
     cacheWritePerMTok: 12.5,
-    effectiveFrom: "2026-09-04",
+    effectiveFrom: "2026-09-03",
     source: OPENAI_SOURCE,
   },
   {
@@ -124,7 +126,19 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 30,
     cacheReadPerMTok: 0.5,
     cacheWritePerMTok: 6.25,
-    effectiveFrom: "2026-06-01",
+    effectiveFrom: "2026-07-09",
+    effectiveTo: "2026-08-20",
+    source: OPENAI_SOURCE,
+  },
+  // Promotional cut announced 2026-08-21, available "at least through
+  // 2026-11-21"; revisit once OpenAI announces what follows the promo.
+  {
+    model: "gpt-5.6-sol",
+    inputPerMTok: 4,
+    outputPerMTok: 20,
+    cacheReadPerMTok: 0.4,
+    cacheWritePerMTok: 5,
+    effectiveFrom: "2026-08-21",
     source: OPENAI_SOURCE,
   },
   {
@@ -133,7 +147,17 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 15,
     cacheReadPerMTok: 0.25,
     cacheWritePerMTok: 3.125,
-    effectiveFrom: "2026-06-01",
+    effectiveFrom: "2026-07-09",
+    effectiveTo: "2026-07-29",
+    source: OPENAI_SOURCE,
+  },
+  {
+    model: "gpt-5.6-terra",
+    inputPerMTok: 2,
+    outputPerMTok: 12,
+    cacheReadPerMTok: 0.2,
+    cacheWritePerMTok: 2.5,
+    effectiveFrom: "2026-07-30",
     source: OPENAI_SOURCE,
   },
   {
@@ -142,7 +166,17 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 6,
     cacheReadPerMTok: 0.1,
     cacheWritePerMTok: 1.25,
-    effectiveFrom: "2026-06-01",
+    effectiveFrom: "2026-07-09",
+    effectiveTo: "2026-07-29",
+    source: OPENAI_SOURCE,
+  },
+  {
+    model: "gpt-5.6-luna",
+    inputPerMTok: 0.2,
+    outputPerMTok: 1.2,
+    cacheReadPerMTok: 0.02,
+    cacheWritePerMTok: 0.25,
+    effectiveFrom: "2026-07-30",
     source: OPENAI_SOURCE,
   },
   {
@@ -151,7 +185,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 30,
     cacheReadPerMTok: 0.5,
     cacheWritePerMTok: 5,
-    effectiveFrom: "2026-02-01",
+    effectiveFrom: "2026-04-24",
     source: OPENAI_SOURCE,
   },
   {
@@ -160,7 +194,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 180,
     cacheReadPerMTok: 0,
     cacheWritePerMTok: 0,
-    effectiveFrom: "2026-02-01",
+    effectiveFrom: "2026-04-24",
     source: OPENAI_SOURCE,
   },
   {
@@ -169,7 +203,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 15,
     cacheReadPerMTok: 0.25,
     cacheWritePerMTok: 2.5,
-    effectiveFrom: "2025-12-01",
+    effectiveFrom: "2026-03-05",
     source: OPENAI_SOURCE,
   },
   {
@@ -178,7 +212,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 4.5,
     cacheReadPerMTok: 0.075,
     cacheWritePerMTok: 0.75,
-    effectiveFrom: "2025-12-01",
+    effectiveFrom: "2026-03-17",
     source: OPENAI_SOURCE,
   },
   {
@@ -187,7 +221,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 1.25,
     cacheReadPerMTok: 0.02,
     cacheWritePerMTok: 0,
-    effectiveFrom: "2025-12-01",
+    effectiveFrom: "2026-03-17",
     source: OPENAI_SOURCE,
   },
   {
@@ -196,7 +230,7 @@ export const PRICING_TABLE: PricingEntry[] = [
     outputPerMTok: 180,
     cacheReadPerMTok: 0,
     cacheWritePerMTok: 0,
-    effectiveFrom: "2025-12-01",
+    effectiveFrom: "2026-03-05",
     source: OPENAI_SOURCE,
   },
   {
@@ -208,9 +242,6 @@ export const PRICING_TABLE: PricingEntry[] = [
     effectiveFrom: "2025-08-07",
     source: OPENAI_SOURCE,
   },
-  // GLM-5.3 has no published per-token rate yet: Z.ai serves it through the
-  // coding plan while the pricing page still ends at GLM-5.2. Mirror GLM-5.2's
-  // published rates as the API-equivalent estimate until a true rate is posted.
   {
     model: "glm-5.3",
     inputPerMTok: 1.4,

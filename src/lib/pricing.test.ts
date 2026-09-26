@@ -20,9 +20,41 @@ describe("model normalization", () => {
 });
 
 describe("pricing lookup", () => {
-  it("selects the introductory Sonnet 5 rate inside its window", () => {
+  it("keeps the permanent Sonnet 5 rate after the cancelled increase", () => {
+    // The planned 2026-09-01 increase to $3/$15 was cancelled on 2026-08-10.
     expect(findPricing("claude-sonnet-5", "2026-07-12")?.inputPerMTok).toBe(2);
-    expect(findPricing("claude-sonnet-5", "2026-09-15")?.inputPerMTok).toBe(3);
+    expect(findPricing("claude-sonnet-5", "2026-09-15")?.inputPerMTok).toBe(2);
+  });
+
+  it("prices claude-opus-5-5 with its special 0.05x cache-read rate", () => {
+    expect(findPricing("claude-opus-5-5", "2026-09-26")).toMatchObject({
+      inputPerMTok: 4,
+      outputPerMTok: 20,
+      cacheReadPerMTok: 0.2,
+      cacheWritePerMTok: 5,
+    });
+  });
+
+  it("applies the 2026-07-30 Terra/Luna cuts and the 2026-08-21 Sol promo", () => {
+    expect(findPricing("gpt-5.6-terra", "2026-07-30")).toMatchObject({
+      inputPerMTok: 2,
+      outputPerMTok: 12,
+      cacheWritePerMTok: 2.5,
+    });
+    expect(findPricing("gpt-5.6-luna", "2026-08-01")).toMatchObject({
+      inputPerMTok: 0.2,
+      outputPerMTok: 1.2,
+      cacheWritePerMTok: 0.25,
+    });
+    expect(findPricing("gpt-5.6-sol", "2026-08-20")).toMatchObject({
+      inputPerMTok: 5,
+      outputPerMTok: 30,
+    });
+    expect(findPricing("gpt-5.6-sol", "2026-09-01")).toMatchObject({
+      inputPerMTok: 4,
+      outputPerMTok: 20,
+      cacheWritePerMTok: 5,
+    });
   });
 
   it("prices gpt-5.6-sol cache writes at the published 1.25x premium", () => {
@@ -40,7 +72,7 @@ describe("pricing lookup", () => {
     ["z-ai/glm-5.2", 1.4, 4.4, 1.4],
     ["glm-5.3", 1.4, 4.4, 1.4],
   ])(
-    "prices %s with its current standard rate",
+    "prices %s with its rate on 2026-07-12",
     (model, inputPerMTok, outputPerMTok, cacheWritePerMTok) => {
       const pricing = findPricing(model, "2026-07-12");
       expect(pricing).toMatchObject({
