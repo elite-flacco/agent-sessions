@@ -103,6 +103,37 @@ export const zcodeAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
+      toolInvocations: (rows) => {
+        const seen = new Set<string>();
+        return rows.flatMap((row) => {
+          const request = record(row.request);
+          const messages = Array.isArray(request?.messages)
+            ? request.messages.map(record).filter(Boolean)
+            : [];
+          const response = record(row.response);
+          const calls = [
+            ...messages.flatMap((message) =>
+              Array.isArray(message?.toolCalls)
+                ? message.toolCalls.map(record).filter(Boolean)
+                : [],
+            ),
+            ...(Array.isArray(response?.toolCalls)
+              ? response.toolCalls.map(record).filter(Boolean)
+              : []),
+          ];
+          return calls.flatMap((tool) => {
+            const name = stringValue(tool?.name) ?? stringValue(tool?.toolName);
+            if (!tool || !name) return [];
+            // The same call is replayed in later request histories.
+            const callId = stringValue(tool.id) ?? stringValue(tool.callId);
+            if (callId) {
+              if (seen.has(callId)) return [];
+              seen.add(callId);
+            }
+            return [{ name, input: tool.input ?? tool.arguments ?? tool.args }];
+          });
+        });
+      },
       capabilityUsage: (rows) => {
         const seenCallIds = new Set<string>();
         return rows.flatMap((row, rowIndex) => {

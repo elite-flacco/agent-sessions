@@ -52,6 +52,13 @@ export interface SessionTreeItem extends SessionListItem {
 
 export interface SessionDetail extends SessionListItem {
   sourcePath: string | null;
+  /**
+   * Derived from the session's edit tool calls. Null means the provider
+   * exposed no edit calls to count, not that nothing changed.
+   */
+  filesChanged: number | null;
+  additions: number | null;
+  deletions: number | null;
 }
 
 export interface SessionEventRow {
@@ -311,7 +318,8 @@ export function getSession(sessionId: number): SessionDetail | null {
         parent_external_id parentExternalId, session_kind sessionKind, agent_label agentLabel, agent_depth agentDepth,
         title, summary, repository, cwd, branch,
         ${status} status, status_reason statusReason, started_at startedAt, ended_at endedAt, updated_at updatedAt, input_tokens inputTokens,
-        output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd
+        output_tokens outputTokens, cached_tokens cachedTokens, model, estimated_cost_usd estimatedCostUsd,
+        files_changed filesChanged, additions, deletions
         FROM sessions WHERE id = ?`,
       )
       .get(staleCutoff(), sessionId) as SessionDetail | undefined) ?? null

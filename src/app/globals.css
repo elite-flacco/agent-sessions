@@ -101,6 +101,12 @@
   --text-xl: clamp(1.2rem, 1.1rem + 0.35vw, 1.45rem);
   --text-2xl: clamp(1.5rem, 1.35rem + 0.5vw, 1.85rem);
   --text-3xl: clamp(1.8rem, 1.6rem + 0.65vw, 2.25rem);
+  /* Session log: the turn gutter the spine and message nodes hang in, and the
+     space that separates one turn from the next. Both are read by
+     .transcript-turn and its ::before, which must stay in step. */
+  --turn-gutter: 1.75rem;
+  --turn-space-before: 1.5rem;
+  --turn-space-after: 1.7rem;
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.65;
@@ -1072,9 +1078,13 @@
     gap: 1.5rem;
     margin-top: 1.2rem;
   }
-  .detail-page-header h1 {
+  .detail-page-header h2 {
     max-width: 58rem;
     margin-top: 0.45rem;
+  }
+  .detail-time {
+    /* Timing stack reads start -> end -> active -> context. */
+    line-height: var(--leading-tight);
   }
   .detail-time {
     display: grid;
@@ -1084,7 +1094,7 @@
   }
   .session-detail-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     margin-top: 1.25rem;
     overflow: hidden;
   }
@@ -1092,10 +1102,13 @@
     display: grid;
     min-width: 0;
     gap: 0.35rem;
-    padding: 0.9rem;
-  }
-  .session-detail-grid > div + div {
+    border-top: 1px solid var(--border);
     border-left: 1px solid var(--border);
+    /* Pull the leading edges off-grid so only interior seams show, at any
+       column count the auto-fit track produces. */
+    margin-top: -1px;
+    margin-left: -1px;
+    padding: 0.9rem;
   }
   .session-parent-link {
     display: flex;
@@ -1131,7 +1144,7 @@
     gap: 1rem;
     padding: 0.85rem 0.9rem;
   }
-  .session-children h2 {
+  .session-children h3 {
     margin-top: 0.2rem;
   }
   .session-children-list > a {
@@ -1171,14 +1184,263 @@
     justify-content: space-between;
     gap: 1rem;
   }
-  .transcript-heading h2 {
+  .transcript-heading h3 {
     margin-top: 0.25rem;
   }
   .transcript-list {
     display: grid;
-    gap: 0.7rem;
+    /* Turns carry their own vertical space (see --turn-space-*), so the list
+       adds none: between-turn and within-turn spacing have to differ for
+       proximity to group anything. */
+    gap: 0;
     grid-template-columns: minmax(0, 1fr);
     margin-top: 0.8rem;
+  }
+  /* Activity ribbon: one tick per entry, placed by real time. Bursts share the
+     width in proportion to the work they hold; idle time is a fixed marker so
+     a stalled session does not squash its own working periods into slivers. */
+  .trajectory-ribbon {
+    margin: 0.9rem 0 0;
+  }
+  .trajectory-ribbon-track {
+    display: flex;
+    align-items: stretch;
+    gap: 0.25rem;
+    height: 2.4rem;
+  }
+  .trajectory-burst {
+    position: relative;
+    flex-basis: 0;
+    min-width: 0;
+    border: 1px solid var(--border);
+    background: var(--card);
+    padding: 0;
+    cursor: pointer;
+  }
+  .trajectory-burst:hover {
+    border-color: var(--muted-foreground);
+  }
+  .trajectory-tick {
+    position: absolute;
+    top: 0.3rem;
+    bottom: 0.3rem;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--muted-foreground);
+  }
+  .trajectory-tick[data-kind="user"] {
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--info);
+  }
+  .trajectory-tick[data-kind="assistant"] {
+    background: var(--muted-foreground);
+  }
+  .trajectory-tick[data-kind="thinking"] {
+    opacity: 0.45;
+  }
+  .trajectory-tick[data-kind="tool"] {
+    background: var(--accent);
+    opacity: 0.6;
+  }
+  .trajectory-tick[data-kind="subagent"] {
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--warning);
+  }
+  .trajectory-tick[data-kind="error"] {
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--danger);
+  }
+  /* Waiting on the user after a turn ended. Hatched rather than blank so it
+     cannot be mistaken for the agent grinding on a slow step; the solid left
+     edge is the turn-end marker. */
+  .trajectory-wait {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 2px solid var(--muted-foreground);
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--border) 0 1px,
+      transparent 1px 5px
+    );
+    pointer-events: none;
+  }
+  .trajectory-gap {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.5rem;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+  .trajectory-gap::before,
+  .trajectory-gap::after {
+    content: "";
+    width: 0.4rem;
+    border-top: 1px dashed var(--border);
+  }
+  .trajectory-ribbon figcaption {
+    margin-top: 0.35rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  /* Log and its outline rail. The rail is the navigable spine for long
+     sessions, so it stays put while the log scrolls under it. */
+  .transcript-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+  .transcript-layout-outlined {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+  }
+  .transcript-outline {
+    min-width: 0;
+  }
+  .transcript-outline-inner {
+    position: sticky;
+    top: 1rem;
+    display: grid;
+    gap: 0.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    padding-left: 0.85rem;
+  }
+  .transcript-outline ol {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: turn;
+  }
+  .transcript-outline-btn {
+    display: grid;
+    gap: 0.1rem;
+    width: 100%;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: none;
+    padding: 0.35rem 0.5rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .transcript-outline-btn:hover {
+    background: var(--card-hover);
+  }
+  .transcript-outline-current {
+    border-left-color: var(--accent);
+    background: var(--card);
+  }
+  .transcript-outline-label {
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .transcript-outline-current .transcript-outline-label {
+    color: var(--foreground);
+  }
+  .transcript-outline-meta {
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
+  .transcript-outline-errors {
+    color: var(--warning);
+  }
+  /* A turn hangs off a gutter: its ordinal and every message node sit on one
+     continuous rule, so however long the work runs the turn still reads as a
+     single object rather than as more rows in an undifferentiated column. */
+  .transcript-turn {
+    position: relative;
+    scroll-margin-top: 1rem;
+    padding-left: var(--turn-gutter);
+  }
+  .transcript-turn::before {
+    content: "";
+    position: absolute;
+    top: var(--turn-space-before);
+    bottom: var(--turn-space-after);
+    left: 0.45rem;
+    border-left: 1px solid var(--border-hover);
+  }
+  .transcript-turn:has(> .transcript-message-user)::before {
+    border-left-color: var(--badge-2-foreground);
+    opacity: 0.55;
+  }
+  /* The header outranks what it contains and stays put while its work scrolls
+     under it, so the reader always knows which turn they are inside. */
+  .transcript-turn-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: calc(100% + var(--turn-gutter));
+    margin-left: calc(var(--turn-gutter) * -1);
+    border: 0;
+    background: var(--background);
+    padding: 0.35rem 0 0.6rem;
+    color: var(--muted-foreground);
+    text-align: left;
+    cursor: pointer;
+  }
+  .transcript-turn-header:hover .transcript-turn-label {
+    color: var(--accent);
+  }
+  .transcript-turn-header svg {
+    flex-shrink: 0;
+    align-self: center;
+    transform: rotate(90deg);
+    transition: transform 0.15s ease;
+  }
+  .transcript-turn[data-collapsed] .transcript-turn-header svg {
+    transform: rotate(0deg);
+  }
+  .transcript-turn-index {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
+  .transcript-turn-meta,
+  .transcript-turn-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Capped so the header titles the turn rather than restating the first
+     sentence of the block directly beneath it. */
+  .transcript-turn-label {
+    flex: 0 1 auto;
+    max-width: 52ch;
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .transcript-turn-meta {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 0.75rem;
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
   }
   .transcript-controls {
     display: flex;
@@ -1237,6 +1499,9 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
+  .transcript-divider-idle {
+    color: var(--warning);
+  }
   .transcript-day-divider::before,
   .transcript-day-divider::after {
     content: "";
@@ -1245,20 +1510,48 @@
   }
   .transcript-turn {
     display: grid;
-    gap: 0.65rem;
+    gap: 0.5rem;
     grid-template-columns: minmax(0, 1fr);
+    padding-block: var(--turn-space-before) var(--turn-space-after);
   }
   .transcript-message {
     display: grid;
     gap: 0.35rem;
     grid-template-columns: minmax(0, 1fr);
   }
+  /* An author label starts a new thought, so it needs more air above it than
+     the turn's own block gap gives — whether it opens the turn or follows a
+     run of work, which would otherwise read as one continuous stream. */
+  .transcript-turn > .transcript-message {
+    margin-top: 0.45rem;
+  }
   .transcript-message > header {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.45rem;
     color: var(--muted-foreground);
     font-size: var(--text-xs);
+  }
+  /* Each message pins a node onto the turn's rule. A user node is larger and
+     carries the user colour, so "a human spoke here" is findable peripherally
+     while scrolling rather than by reading the labels. */
+  .transcript-message > header::before {
+    content: "";
+    position: absolute;
+    top: 0.42rem;
+    left: -1.52rem;
+    width: 0.4rem;
+    height: 0.4rem;
+    box-shadow: 0 0 0 3px var(--background);
+    background: var(--muted-foreground);
+  }
+  .transcript-message-user > header::before {
+    top: 0.35rem;
+    left: -1.6rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    background: var(--badge-2-foreground);
   }
   .transcript-message > header > svg {
     color: var(--muted-foreground);
@@ -1270,8 +1563,14 @@
     color: var(--success);
   }
   .transcript-message > header strong {
-    color: var(--foreground);
-    font-size: var(--text-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .transcript-message-user > header strong {
+    color: var(--badge-2-foreground);
   }
   .transcript-message time,
   .transcript-tool-row time {
@@ -1283,8 +1582,6 @@
   .transcript-message-user .transcript-content {
     max-width: 68ch;
     margin-top: 0;
-    border-left: 2px solid var(--badge-2-foreground);
-    padding-left: 0.75rem;
   }
   .transcript-message-assistant .transcript-content {
     max-width: 68ch;
@@ -1303,11 +1600,16 @@
   .transcript-thinking > summary > svg {
     flex-shrink: 0;
     color: var(--muted-foreground);
+    opacity: 0.55;
   }
   .transcript-thinking > summary strong {
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+  .transcript-thinking > summary:hover strong {
     color: var(--foreground);
-    font-size: var(--text-sm);
-    font-weight: 500;
   }
   .transcript-thinking-preview {
     flex: 1;
@@ -1334,22 +1636,154 @@
     color: var(--muted-foreground);
     font-style: italic;
   }
+  /* Trajectory markers: plan, decision, and phase changes read as milestones
+     rather than as another tool row. */
+  .transcript-marker {
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    background: var(--card);
+    padding: 0.55rem 0.75rem 0.65rem;
+  }
+  .transcript-marker[data-marker="decision"] {
+    border-left-color: var(--info);
+  }
+  .transcript-marker[data-marker="phase"] {
+    border-left-color: var(--warning);
+  }
+  .transcript-marker > header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .transcript-marker-glyph {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+  .transcript-marker[data-marker="decision"] .transcript-marker-glyph {
+    color: var(--info);
+  }
+  .transcript-marker[data-marker="phase"] .transcript-marker-glyph {
+    color: var(--warning);
+  }
+  .transcript-marker > header strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .transcript-marker time {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
+  .transcript-marker-list {
+    display: grid;
+    gap: 0.2rem;
+    margin-top: 0.45rem;
+    padding-left: 1.55rem;
+  }
+  .transcript-marker-list > li {
+    display: flex;
+    gap: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
+  }
+  .transcript-marker-list > li > span:first-child {
+    flex-shrink: 0;
+    width: 0.7rem;
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+  }
+  .transcript-marker-list > li[data-state="done"] {
+    color: var(--success);
+  }
+  .transcript-marker-list > li[data-state="started"] {
+    color: var(--foreground);
+  }
+  .transcript-marker-qa {
+    display: grid;
+    gap: 0.15rem;
+    margin-top: 0.45rem;
+    padding-left: 1.55rem;
+  }
+  .transcript-marker-qa dt {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .transcript-marker-qa dd {
+    margin: 0 0 0.35rem;
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .transcript-marker-qa dd:last-child {
+    margin-bottom: 0;
+  }
+  .transcript-marker-note {
+    margin-top: 0.35rem;
+    padding-left: 1.55rem;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
   .transcript-tool-cluster {
     border: 1px solid var(--border);
     background: var(--card);
   }
+  /* The controls carry the padding, so the whole header row is a hit target
+     rather than just the label text. */
   .transcript-tool-cluster > header {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
-    gap: 0.5rem;
     border-bottom: 1px solid var(--border);
-    padding: 0.5rem 0.75rem;
     color: var(--muted-foreground);
     font-size: var(--text-xs);
   }
+  .transcript-tool-cluster > header .transcript-clamp-toggle {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+  }
   .transcript-tool-cluster > header strong {
-    color: var(--foreground);
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+  .transcript-group-toggle {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 0.5rem 0.75rem;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .transcript-group-toggle:hover {
+    background: var(--card-hover);
+  }
+  .transcript-group-toggle:hover strong {
+    color: var(--accent-foreground, var(--foreground));
+  }
+  .transcript-group-toggle svg {
+    opacity: 0.55;
+    transition: transform 0.15s ease;
+  }
+  .transcript-group-toggle[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+  }
+  /* A folded group is a single line, so it needs no divider under its header. */
+  .transcript-tool-cluster[data-collapsed="true"] > header {
+    border-bottom: 0;
   }
   .transcript-tool-rows {
     display: grid;
@@ -1398,6 +1832,13 @@
     color: var(--muted-foreground);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .transcript-tool-duration {
+    flex: 0 0 auto;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
   .transcript-tool-ok {
     color: var(--success);
@@ -2979,6 +3420,13 @@
 }
 
 @media (max-width: 900px) {
+  .transcript-layout-outlined {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .transcript-outline {
+    display: none;
+  }
+
   @layer components {
     .agentarium-shell {
       grid-template-columns: 1fr;
@@ -3020,16 +3468,6 @@
     }
     .agentarium-content {
       padding: 1rem;
-    }
-    .session-detail-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .session-detail-grid > div:nth-child(4) {
-      border-top: 1px solid var(--border);
-      border-left: 0;
-    }
-    .session-detail-grid > div:nth-child(n + 5) {
-      border-top: 1px solid var(--border);
     }
     .overview-grid {
       grid-template-columns: 1fr;
@@ -3142,19 +3580,6 @@
     }
     .detail-time {
       text-align: left;
-    }
-    .session-detail-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .session-detail-grid > div:nth-child(n) {
-      border-top: 0;
-      border-left: 0;
-    }
-    .session-detail-grid > div:nth-child(even) {
-      border-left: 1px solid var(--border);
-    }
-    .session-detail-grid > div:nth-child(n + 3) {
-      border-top: 1px solid var(--border);
     }
     .transcript-message > header,
     .transcript-tool-row > summary,

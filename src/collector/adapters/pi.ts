@@ -73,6 +73,20 @@ export const piAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
+      toolInvocations: (rows) =>
+        rows.flatMap((row) => {
+          const message = record(row.message);
+          const blocks = Array.isArray(message?.content)
+            ? message.content.map(record).filter(Boolean)
+            : [];
+          return blocks.flatMap((tool) => {
+            if (tool?.type !== "toolCall" && tool?.type !== "tool_use")
+              return [];
+            const name = stringValue(tool.name);
+            if (!name) return [];
+            return [{ name, input: tool.input ?? tool.arguments ?? tool.args }];
+          });
+        }),
       capabilityUsage: (rows) =>
         rows.flatMap((row, rowIndex) => {
           const message = record(row.message);

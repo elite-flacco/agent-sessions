@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SessionDetailView } from "@/components/session-detail";
 import { Sidebar } from "@/components/sidebar";
@@ -15,6 +16,20 @@ export const dynamic = "force-dynamic";
 
 interface SessionPageProps {
   params: Promise<{ id: string }>;
+}
+
+export async function generateMetadata({
+  params,
+}: SessionPageProps): Promise<Metadata> {
+  const { id } = await params;
+  const sessionId = Number(id);
+  if (!Number.isInteger(sessionId) || sessionId < 1) return {};
+  const session = getSession(sessionId);
+  if (!session) return {};
+  return {
+    title: `${session.title} — Agentarium`,
+    description: `${session.provider} session${session.repository ? ` in ${session.repository}` : ""}.`,
+  };
 }
 
 export default async function SessionPage({ params }: SessionPageProps) {

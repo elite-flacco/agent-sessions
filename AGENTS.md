@@ -21,6 +21,9 @@ This project may use Next.js APIs and conventions newer than your training data.
 - `src/db/`: SQLite/Drizzle schema and migrations.
 - `src/lib/queries.ts`: server-side dashboard read boundary.
 - `src/lib/transcript.ts`: on-demand transcript reading and redaction.
+- `src/lib/trajectory.ts`: derives working time, idle gaps, per-tool-call durations, and the activity ribbon's bursts from transcript entries.
+- `src/lib/transcript-markers.ts`: classifies plan, decision, and phase tool calls and parses their payloads for the session log.
+- `src/collector/adapters/file-edits.ts`: derives diff-impact counts from edit tool calls without retaining their arguments.
 - `src/lib/pricing.ts`: dated, sourced model pricing and model normalization.
 - `src/lib/agent-inventory/`: live global capability and scheduled-task discovery; never persisted by the collector.
 - `src/app/globals.css`: semantic design tokens and shared component classes.

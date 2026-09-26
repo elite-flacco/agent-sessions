@@ -280,6 +280,28 @@ export const codexAdapter: ProviderAdapter = {
           )
         );
       },
+      toolInvocations: (rows) =>
+        rows.flatMap((row) => {
+          const payload = record(row.payload);
+          const callType = stringValue(payload?.type);
+          if (
+            !payload ||
+            row.type !== "response_item" ||
+            (callType !== "function_call" && callType !== "custom_tool_call")
+          )
+            return [];
+          const name = stringValue(payload.name);
+          if (!name) return [];
+          return [
+            {
+              name,
+              input:
+                callType === "custom_tool_call"
+                  ? payload.input
+                  : payload.arguments,
+            },
+          ];
+        }),
       capabilityUsage: (rows) => {
         const plugins = pluginAttributions(rows);
         return rows.flatMap((row, rowIndex) => {

@@ -10,6 +10,7 @@ import type {
   SessionKind,
   TerminalStatus,
 } from "@/lib/types";
+import { fileEditStats, type ToolInvocation } from "./file-edits";
 import {
   parseLines,
   record,
@@ -42,6 +43,12 @@ export interface JsonlStrategy {
    */
   model?(rows: Record<string, unknown>[]): string | undefined;
   capabilityUsage?(rows: Record<string, unknown>[]): CapabilityUsage[];
+  /**
+   * Edit tool invocations, name plus raw input, used only to derive the
+   * changed-file and line counts. The raw arguments stay inside the adapter
+   * boundary; `fileEditStats` returns counts alone.
+   */
+  toolInvocations?(rows: Record<string, unknown>[]): ToolInvocation[];
 }
 
 export function tokenCount(value: unknown): number {
@@ -186,6 +193,9 @@ export async function parseJsonl(
           0 || entry.reportedCostUsd !== undefined,
     );
     const capabilityUsage = strategy.capabilityUsage?.(rows) ?? [];
+    const fileEdits = strategy.toolInvocations
+      ? fileEditStats(strategy.toolInvocations(rows))
+      : undefined;
     const terminalStatus = strategy.terminalStatus(rows);
     const derived = staleStatus(updatedAt, terminalStatus);
     const hierarchy = strategy.hierarchy?.(rows) ?? {};
@@ -205,6 +215,9 @@ export async function parseJsonl(
       endedAt: terminalStatus ? updatedAt : undefined,
       updatedAt,
       model: dominantModel(usage) ?? strategy.model?.(rows),
+      filesChanged: fileEdits?.filesChanged,
+      additions: fileEdits?.additions,
+      deletions: fileEdits?.deletions,
       usage,
       capabilityUsage,
       events: events.length

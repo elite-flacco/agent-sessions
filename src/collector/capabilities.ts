@@ -1,6 +1,7 @@
 import type { AgentInventory } from "@/lib/agent-inventory";
 import { canonicalCapabilityName } from "@/lib/agent-inventory/normalize";
 import type { ZcodeStoredMessage, ZcodeToolUsage } from "@/lib/zcode-db";
+import type { ToolInvocation } from "./adapters/file-edits";
 import {
   agentProviders,
   type AgentProvider,
@@ -207,6 +208,26 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+/**
+ * Tool calls as the Zcode DB records them. The rollout JSONL carries only a
+ * fraction of a session's calls — 3 against 211 on one measured session — so
+ * anything derived from tool usage must read the DB, which is authoritative.
+ */
+export function zcodeStoredToolInvocations(
+  messages: ZcodeStoredMessage[],
+): ToolInvocation[] {
+  return messages.flatMap((message) =>
+    message.parts.flatMap((part) => {
+      const data = objectRecord(part.data);
+      if (data?.type !== "tool") return [];
+      const name = typeof data.tool === "string" ? data.tool : undefined;
+      if (!name) return [];
+      const state = objectRecord(data.state);
+      return [{ name, input: state?.input }];
+    }),
+  );
 }
 
 export function zcodeStoredCapabilityUsage(

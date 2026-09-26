@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AgentInventory } from "@/lib/agent-inventory";
+import type { ZcodeStoredMessage } from "@/lib/zcode-db";
 import {
   buildCapabilityLookups,
   explicitSkillUsage,
   matchedSkillReads,
   mcpUsage,
+  zcodeStoredToolInvocations,
 } from "./capabilities";
 
 const inventories: AgentInventory[] = [
@@ -283,5 +285,56 @@ describe("capability normalization", () => {
         }),
       ).toHaveLength(1);
     }
+  });
+});
+
+describe("zcodeStoredToolInvocations", () => {
+  function message(parts: unknown[]): ZcodeStoredMessage {
+    return {
+      id: "m1",
+      timeCreated: 1_750_000_000_000,
+      data: { role: "assistant" },
+      parts: parts.map((data, index) => ({
+        id: `p${index}`,
+        timeCreated: 1_750_000_000_000 + index,
+        data,
+      })),
+    };
+  }
+
+  it("reads a tool part's name and input out of its state", () => {
+    expect(
+      zcodeStoredToolInvocations([
+        message([
+          {
+            type: "tool",
+            tool: "Edit",
+            state: {
+              status: "completed",
+              input: { file_path: "src/a.ts", new_string: "x" },
+            },
+          },
+        ]),
+      ]),
+    ).toEqual([
+      { name: "Edit", input: { file_path: "src/a.ts", new_string: "x" } },
+    ]);
+  });
+
+  it("skips parts that are not tool calls", () => {
+    expect(
+      zcodeStoredToolInvocations([
+        message([
+          { type: "text", text: "hello" },
+          { type: "reasoning", text: "thinking" },
+        ]),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps a tool call whose state carried no input", () => {
+    expect(
+      zcodeStoredToolInvocations([message([{ type: "tool", tool: "Bash" }])]),
+    ).toEqual([{ name: "Bash", input: undefined }]);
   });
 });

@@ -173,7 +173,7 @@ describe("session transcript", () => {
           status: "completed",
           input: { command: "npm test", api_key: "private" },
           output: "Bearer private-token",
-          time: { start: 1_750_000_000_004 },
+          time: { start: 1_750_000_000_004, end: 1_750_000_002_504 },
         },
       }),
     );
@@ -213,6 +213,48 @@ describe("session transcript", () => {
       title: "Bash",
       input: expect.stringContaining('"api_key": "[redacted]"'),
       output: "Bearer [redacted]",
+      // A tool part is timed by its own run window, not the enclosing message.
+      occurredAt: new Date(1_750_000_000_004).toISOString(),
+      completedAt: new Date(1_750_000_002_504).toISOString(),
+    });
+  });
+
+  it("stamps a paired tool result onto its call so the duration is derivable", async () => {
+    const sourcePath = await fixture([
+      {
+        type: "response_item",
+        timestamp: "2026-07-13T10:00:00Z",
+        payload: {
+          type: "function_call",
+          call_id: "call-1",
+          name: "Bash",
+          arguments: { command: "npm test" },
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-13T10:00:03Z",
+        payload: {
+          type: "function_call_output",
+          call_id: "call-1",
+          output: "ok",
+        },
+      },
+    ]);
+
+    const transcript = await readSessionTranscript({
+      externalId: "codex-1",
+      provider: "codex",
+      sourcePath,
+    });
+
+    expect(transcript.entries).toHaveLength(1);
+    expect(transcript.entries[0]).toMatchObject({
+      kind: "tool",
+      title: "Bash",
+      output: "ok",
+      occurredAt: "2026-07-13T10:00:00Z",
+      completedAt: "2026-07-13T10:00:03Z",
     });
   });
 

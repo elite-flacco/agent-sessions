@@ -2,10 +2,12 @@ import { ArrowLeft, Command, Users } from "lucide-react";
 import Link from "next/link";
 import {
   absoluteTime,
+  countLabel,
   elapsed,
   formatCostUsd,
   formatTokens,
   relativeTime,
+  runtime,
 } from "@/lib/format";
 import { childSessionsNoun, costSourceLabels } from "@/lib/labels";
 import type {
@@ -13,6 +15,7 @@ import type {
   SessionListItem,
   SessionUsageDetail,
 } from "@/lib/queries";
+import { trajectoryTiming } from "@/lib/trajectory";
 import type { SessionTranscript } from "@/lib/transcript";
 import { ProviderBadge } from "./provider-badge";
 import { StatusLabel } from "./status-label";
@@ -24,6 +27,36 @@ interface SessionDetailViewProps {
   subagents: SessionListItem[];
   usage: SessionUsageDetail;
   transcript: SessionTranscript;
+}
+
+function endedLabel(session: SessionDetail): string | null {
+  if (!session.endedAt) return null;
+  return `Ended ${absoluteTime(session.endedAt)}`;
+}
+
+/** Main-agent/subagent split, folded under the total rather than given cells
+ * of its own — a variable cell count leaves the strip's last row ragged. */
+function costSplit(usage: SessionUsageDetail): string | undefined {
+  const main = usage.costUsd;
+  const sub = usage.subagentCostUsd;
+  if (main === null && sub === null) return undefined;
+  const parts: string[] = [];
+  if (main !== null) parts.push(`${formatCostUsd(main)} main`);
+  if (sub !== null) parts.push(`${formatCostUsd(sub)} delegated`);
+  return parts.join(" · ");
+}
+
+/** Diff impact, when the provider exposed edit calls to count. */
+function changeSummary(session: SessionDetail): string | null {
+  if (session.filesChanged === null) return null;
+  return `${countLabel(session.filesChanged, "file")}`;
+}
+
+function changeNote(session: SessionDetail): string | undefined {
+  const added = session.additions ?? 0;
+  const removed = session.deletions ?? 0;
+  if (!added && !removed) return undefined;
+  return `+${added} / -${removed} lines`;
 }
 
 function totalTokens(session: SessionDetail): string {
@@ -38,6 +71,12 @@ export function SessionDetailView({
   usage,
   transcript,
 }: SessionDetailViewProps) {
+  // Start→end wall clock badly overstates the work on any session that stalled
+  // or was resumed, so lead with the time the agent was actually stepping and
+  // keep waiting, idle, and the raw span as context.
+  const timing = trajectoryTiming(transcript.entries);
+  const span = elapsed(session.startedAt, session.endedAt ?? session.updatedAt);
+  const ended = endedLabel(session);
   return (
     <section className="agentarium-content session-detail-page">
       <Link className="back-link" href="/sessions">
@@ -66,9 +105,23 @@ export function SessionDetailView({
           >
             Started {absoluteTime(session.startedAt)}
           </span>
-          <strong className="text-lg">
-            {elapsed(session.startedAt, session.endedAt ?? session.updatedAt)}
+          {ended && <span className="text-muted-foreground">{ended}</span>}
+          <strong className="text-lg" title="Time the agent spent working">
+            {timing ? `${runtime(timing.activeMs)} active` : span}
           </strong>
+          {timing && (timing.idleGaps > 0 || timing.waitingMs >= 60_000) && (
+            <span className="text-muted-foreground">
+              {[
+                timing.waitingMs >= 60_000 &&
+                  `${runtime(timing.waitingMs)} waiting on you`,
+                timing.idleGaps > 0 &&
+                  `${runtime(timing.idleMs)} idle across ${countLabel(timing.idleGaps, "gap")}`,
+                `${span} elapsed`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
         </div>
       </header>
 
@@ -89,6 +142,11 @@ export function SessionDetailView({
         />
         <Detail label="Branch" value={session.branch ?? "Unavailable"} mono />
         <Detail label="Model" value={session.model ?? "Unavailable"} mono />
+        <Detail
+          label="Files changed"
+          value={changeSummary(session) ?? "Unavailable"}
+          note={changeNote(session)}
+        />
         <Detail label="Tokens" value={totalTokens(session)} />
         <Detail
           label="Cache"
@@ -103,27 +161,8 @@ export function SessionDetailView({
               ? `${formatCostUsd(usage.totalCostUsd)} · ${costSourceLabels[usage.totalCostSource]}`
               : "Unavailable"
           }
+          note={subagents.length > 0 ? costSplit(usage) : undefined}
         />
-        {subagents.length > 0 && (
-          <>
-            <Detail
-              label="Main agent cost"
-              value={
-                usage.costUsd !== null
-                  ? formatCostUsd(usage.costUsd)
-                  : "Unavailable"
-              }
-            />
-            <Detail
-              label="Subagent cost"
-              value={
-                usage.subagentCostUsd !== null
-                  ? formatCostUsd(usage.subagentCostUsd)
-                  : "Unavailable"
-              }
-            />
-          </>
-        )}
       </div>
 
       {subagents.length > 0 && (
@@ -175,7 +214,7 @@ export function SessionDetailView({
       <section className="mt-6" aria-labelledby="transcript-title">
         <header className="transcript-heading">
           <div>
-            <h3>Session log</h3>
+            <h3 id="transcript-title">Session log</h3>
           </div>
           <span className="text-muted-foreground">
             {transcript.entries.length} entries
@@ -203,21 +242,29 @@ export function SessionDetailView({
   );
 }
 
+const MISSING_VALUES = new Set(["Unavailable", "None"]);
+
 function Detail({
   label,
   value,
   mono,
+  note,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  note?: string;
 }) {
+  // A placeholder should not carry the same weight as a real measurement.
+  const missing = MISSING_VALUES.has(value);
+  const classes = ["truncate", "text-xs"];
+  if (mono && !missing) classes.push("mono");
+  if (missing) classes.push("text-muted-foreground");
   return (
     <div>
       <span className="eyebrow">{label}</span>
-      <strong className={mono ? "mono truncate text-xs" : "truncate text-xs"}>
-        {value}
-      </strong>
+      <strong className={classes.join(" ")}>{value}</strong>
+      {note && <span className="truncate text-muted-foreground">{note}</span>}
     </div>
   );
 }

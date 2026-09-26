@@ -13,6 +13,12 @@ export interface TranscriptEntry {
   input: string | null;
   output: string | null;
   occurredAt: string | null;
+  /**
+   * When a tool result was paired back onto its call, the result row's own
+   * timestamp. Keeping it is what makes a call's duration derivable; without
+   * it the trajectory has no notion of how long any step took.
+   */
+  completedAt: string | null;
   isError: boolean;
 }
 
@@ -172,6 +178,7 @@ function addMessage(
     input: null,
     output: null,
     occurredAt: occurredAt(row),
+    completedAt: null,
     isError: false,
   });
 }
@@ -193,6 +200,7 @@ function addTool(
     input: formatPayload(block.input ?? block.arguments ?? block.args),
     output: null,
     occurredAt: occurredAt(row),
+    completedAt: null,
     isError: false,
   };
   entries.push(entry);
@@ -214,6 +222,7 @@ function addToolResult(
   const call = id ? calls.get(id) : undefined;
   if (call) {
     call.output = output;
+    call.completedAt = occurredAt(row);
     call.isError = isError;
     return;
   }
@@ -225,6 +234,7 @@ function addToolResult(
     input: null,
     output: null,
     occurredAt: occurredAt(row),
+    completedAt: null,
     isError,
   });
 }
@@ -240,6 +250,7 @@ function addReasoning(
     kind: "reasoning",
     title: "Thinking",
     content: text,
+    completedAt: null,
     input: null,
     output: null,
     occurredAt: occurred,
@@ -413,6 +424,7 @@ function parseZcodeStoredMessages(
           input: null,
           output: null,
           occurredAt: partOccurredAt,
+          completedAt: null,
           isError: false,
         });
         continue;
@@ -429,6 +441,10 @@ function parseZcodeStoredMessages(
         const state = record(partData.state);
         const status = stringValue(state?.status);
         const isError = status === "error";
+        // A tool part carries its own run window under `state.time`, which is
+        // when the call actually ran; the enclosing message's timestamp only
+        // says when the assistant turn began.
+        const stateTime = record(state?.time);
         entries.push({
           id: `zcode-${part.id}`,
           kind: "tool",
@@ -438,7 +454,9 @@ function parseZcodeStoredMessages(
           output: formatPayload(
             isError ? (state?.error ?? state?.output) : state?.output,
           ),
-          occurredAt: partOccurredAt,
+          occurredAt:
+            occurredAtMilliseconds(stateTime?.start) ?? partOccurredAt,
+          completedAt: occurredAtMilliseconds(stateTime?.end),
           isError,
         });
       }

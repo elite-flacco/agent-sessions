@@ -2331,3 +2331,121 @@ it("joins explicit Codex plugin attribution by call, server and tool without dou
     /PRIVATE_ARGUMENT|PRIVATE_RESULT|PRIVATE_PLUGIN/,
   );
 });
+
+describe("file change counts", () => {
+  it("counts Claude edits without retaining the paths or the code", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        timestamp: "2026-07-11T10:00:00Z",
+        cwd: "/work/relay",
+        message: { role: "user", content: "Refactor the parser" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        timestamp: "2026-07-11T10:00:05Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "call-1",
+              name: "Edit",
+              input: {
+                file_path: "/work/relay/src/parser.ts",
+                old_string: "const a = 1;",
+                new_string: "const a = 2;\nconst b = 3;",
+              },
+            },
+            {
+              type: "tool_use",
+              id: "call-2",
+              name: "Write",
+              input: {
+                file_path: "/work/relay/src/new.ts",
+                content: "export const x = 1;\n",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const [session] = result.sessions;
+    expect(session).toMatchObject({
+      filesChanged: 2,
+      additions: 3,
+      deletions: 1,
+    });
+    const serialized = JSON.stringify(session);
+    expect(serialized).not.toContain("parser.ts");
+    expect(serialized).not.toContain("const a = 2;");
+  });
+
+  it("leaves the counts unset when a session edited nothing", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        timestamp: "2026-07-11T10:00:00Z",
+        cwd: "/work/relay",
+        message: { role: "user", content: "What does this do?" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        timestamp: "2026-07-11T10:00:05Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "call-1",
+              name: "Read",
+              input: { file_path: "/work/relay/src/parser.ts" },
+            },
+          ],
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      filesChanged: undefined,
+      additions: undefined,
+      deletions: undefined,
+    });
+  });
+
+  it("counts a Codex apply_patch envelope", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-07-11T10:00:00Z",
+        payload: { id: "codex-edits", cwd: "/work/relay" },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-07-11T10:00:02Z",
+        payload: {
+          type: "function_call",
+          call_id: "call-1",
+          name: "apply_patch",
+          arguments: JSON.stringify({
+            patch: [
+              "*** Begin Patch",
+              "*** Update File: src/a.ts",
+              "-const a = 1;",
+              "+const a = 2;",
+              "*** End Patch",
+            ].join("\n"),
+          }),
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      filesChanged: 1,
+      additions: 1,
+      deletions: 1,
+    });
+  });
+});

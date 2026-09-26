@@ -27,12 +27,14 @@ import {
 } from "@/lib/zcode-db";
 import { claudeAdapter } from "./adapters/claude";
 import { codexAdapter } from "./adapters/codex";
+import { fileEditStats } from "./adapters/file-edits";
 import { piAdapter } from "./adapters/pi";
 import { sessionSummary } from "./adapters/shared";
 import { zcodeAdapter } from "./adapters/zcode";
 import {
   buildCapabilityLookups,
   zcodeStoredCapabilityUsage,
+  zcodeStoredToolInvocations,
 } from "./capabilities";
 import { acquireLease, releaseLease } from "./lock";
 import {
@@ -68,7 +70,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "26";
+const NORMALIZATION_VERSION = "29";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -133,7 +135,11 @@ function persistSession(session: NormalizedSession): void {
         cwd=COALESCE(excluded.cwd, sessions.cwd), branch=COALESCE(excluded.branch, sessions.branch), status=excluded.status,
         status_reason=excluded.status_reason,
         started_at=MIN(excluded.started_at, sessions.started_at), ended_at=COALESCE(excluded.ended_at, sessions.ended_at),
-        updated_at=MAX(excluded.updated_at, sessions.updated_at), input_tokens=COALESCE(excluded.input_tokens, sessions.input_tokens),
+        updated_at=MAX(excluded.updated_at, sessions.updated_at),
+        files_changed=COALESCE(excluded.files_changed, sessions.files_changed),
+        additions=COALESCE(excluded.additions, sessions.additions),
+        deletions=COALESCE(excluded.deletions, sessions.deletions),
+        input_tokens=COALESCE(excluded.input_tokens, sessions.input_tokens),
         output_tokens=COALESCE(excluded.output_tokens, sessions.output_tokens), cached_tokens=COALESCE(excluded.cached_tokens, sessions.cached_tokens),
         model=COALESCE(excluded.model, sessions.model), estimated_cost_usd=COALESCE(excluded.estimated_cost_usd, sessions.estimated_cost_usd)`,
       )
@@ -361,7 +367,10 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
     const update = sqlite.prepare(
       `UPDATE sessions
        SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-           session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?
+           session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?,
+           files_changed = COALESCE(?, files_changed),
+           additions = COALESCE(?, additions),
+           deletions = COALESCE(?, deletions)
        WHERE id = ?`,
     );
     const writeMetadata = sqlite.transaction(() => {
@@ -390,6 +399,9 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
           messages.length && updatedAt
             ? zcodeStoredStatus(messages, updatedAt)
             : undefined;
+        const storedEdits = messages.length
+          ? fileEditStats(zcodeStoredToolInvocations(messages))
+          : undefined;
         const keepInterrupted =
           session.status === "interrupted" &&
           (storedStatus?.status === "running" ||
@@ -427,6 +439,11 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
             ? (updatedAt ?? null)
             : null,
           freshestUpdatedAt,
+          // The rollout JSONL sees only a fraction of a Zcode session's tool
+          // calls, so recount from the DB, which is authoritative.
+          storedEdits?.filesChanged ?? null,
+          storedEdits?.additions ?? null,
+          storedEdits?.deletions ?? null,
           session.id,
         );
         if (storedMessages && storedTools) {

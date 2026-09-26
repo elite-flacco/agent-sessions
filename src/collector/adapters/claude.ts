@@ -127,6 +127,18 @@ export const claudeAdapter: ProviderAdapter = {
         }
         return [...byModel.values()];
       },
+      toolInvocations: (rows) =>
+        rows.flatMap((row) => {
+          const message = record(row.message);
+          const blocks = Array.isArray(message?.content)
+            ? message.content.map(record).filter(Boolean)
+            : [];
+          return blocks.flatMap((block) => {
+            const name = stringValue(block?.name);
+            if (block?.type !== "tool_use" || !name) return [];
+            return [{ name, input: block.input }];
+          });
+        }),
       capabilityUsage: (rows) =>
         rows.flatMap((row, rowIndex) => {
           const message = record(row.message);
