@@ -35,6 +35,28 @@ describe("pricing lookup", () => {
     });
   });
 
+  it("prices the GPT-6 family at its launch rates", () => {
+    expect(findPricing("gpt-6-astra", "2026-09-26")).toMatchObject({
+      inputPerMTok: 10,
+      outputPerMTok: 50,
+      cacheReadPerMTok: 1,
+      cacheWritePerMTok: 12.5,
+    });
+    // Sol and Luna launched together on 2026-09-22.
+    expect(findPricing("gpt-6-sol", "2026-09-26")).toMatchObject({
+      inputPerMTok: 2,
+      outputPerMTok: 10,
+      cacheReadPerMTok: 0.2,
+      cacheWritePerMTok: 2.5,
+    });
+    expect(findPricing("gpt-6-luna", "2026-09-26")).toMatchObject({
+      inputPerMTok: 0.1,
+      outputPerMTok: 0.5,
+      cacheReadPerMTok: 0.01,
+      cacheWritePerMTok: 0.125,
+    });
+  });
+
   it("applies the 2026-07-30 Terra/Luna cuts and the 2026-08-21 Sol promo", () => {
     expect(findPricing("gpt-5.6-terra", "2026-07-30")).toMatchObject({
       inputPerMTok: 2,
