@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import type { AgentProvider } from "./types";
 import { readZcodeSessionMessages, type ZcodeStoredMessage } from "./zcode-db";
 
-export type TranscriptEntryKind = "user" | "assistant" | "tool" | "result";
+export type TranscriptEntryKind =
+  "user" | "assistant" | "tool" | "result" | "reasoning";
 
 export interface TranscriptEntry {
   id: string;
@@ -142,9 +143,14 @@ function callId(block: Record<string, unknown>): string | undefined {
   );
 }
 
+/**
+ * Appends a message entry. `seen` deduplicates only where a source replays the
+ * same logical message across rows (zcode `model_io` request history); pass
+ * null for per-row sources, where repeated text is a distinct real event.
+ */
 function addMessage(
   entries: TranscriptEntry[],
-  seen: Set<string>,
+  seen: Set<string> | null,
   row: Record<string, unknown>,
   index: number,
   role: unknown,
@@ -153,9 +159,11 @@ function addMessage(
   if (role !== "user" && role !== "assistant") return;
   const text = textContent(content);
   if (!text) return;
-  const signature = `${role}:${text}`;
-  if (seen.has(signature)) return;
-  seen.add(signature);
+  if (seen) {
+    const signature = `${role}:${text}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+  }
   entries.push({
     id: `${index}-${role}`,
     kind: role,
@@ -221,6 +229,38 @@ function addToolResult(
   });
 }
 
+function addReasoning(
+  entries: TranscriptEntry[],
+  id: string,
+  occurred: string | null,
+  text: string,
+): void {
+  entries.push({
+    id,
+    kind: "reasoning",
+    title: "Thinking",
+    content: text,
+    input: null,
+    output: null,
+    occurredAt: occurred,
+    isError: false,
+  });
+}
+
+function codexReasoningText(payload: Record<string, unknown>): string | null {
+  const direct = textContent(payload.text);
+  if (direct) return direct;
+  if (!Array.isArray(payload.summary)) return null;
+  const joined = payload.summary
+    .flatMap((item) => {
+      const itemRecord = record(item);
+      const text = itemRecord ? textContent(itemRecord.text) : null;
+      return text ? [text] : [];
+    })
+    .join("\n");
+  return joined || null;
+}
+
 function addBlocks(
   entries: TranscriptEntry[],
   calls: Map<string, TranscriptEntry>,
@@ -241,6 +281,16 @@ function addBlocks(
       type === "function_call_output"
     )
       addToolResult(entries, calls, row, index, block);
+    if (type === "thinking" || type === "reasoning") {
+      const text = textContent(block.thinking ?? block.text ?? block.reasoning);
+      if (text)
+        addReasoning(
+          entries,
+          `${index}-reasoning-${entries.length}`,
+          occurredAt(row),
+          text,
+        );
+    }
   }
 }
 
@@ -257,14 +307,7 @@ function parseRows(
       const payload = record(row.payload);
       if (row.type === "response_item" && payload) {
         if (payload.type === "message")
-          addMessage(
-            entries,
-            seenMessages,
-            row,
-            index,
-            payload.role,
-            payload.content,
-          );
+          addMessage(entries, null, row, index, payload.role, payload.content);
         if (
           payload.type === "function_call" ||
           payload.type === "custom_tool_call"
@@ -275,20 +318,23 @@ function parseRows(
           payload.type === "custom_tool_call_output"
         )
           addToolResult(entries, calls, row, index, payload);
+        if (payload.type === "reasoning") {
+          const text = codexReasoningText(payload);
+          if (text)
+            addReasoning(
+              entries,
+              `${index}-reasoning-${entries.length}`,
+              occurredAt(row),
+              text,
+            );
+        }
       }
       return;
     }
 
     const message = record(row.message);
     if (message) {
-      addMessage(
-        entries,
-        seenMessages,
-        row,
-        index,
-        message.role,
-        message.content,
-      );
+      addMessage(entries, null, row, index, message.role, message.content);
       addBlocks(entries, calls, row, index, message.content);
     }
 
@@ -369,6 +415,13 @@ function parseZcodeStoredMessages(
           occurredAt: partOccurredAt,
           isError: false,
         });
+        continue;
+      }
+
+      if (type === "reasoning") {
+        const content = textContent(partData.text);
+        if (content)
+          addReasoning(entries, `zcode-${part.id}`, partOccurredAt, content);
         continue;
       }
 

@@ -1,4 +1,4 @@
-import { ArrowLeft, Command, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Command, Users } from "lucide-react";
 import Link from "next/link";
 import {
   absoluteTime,
@@ -50,7 +50,7 @@ export function SessionDetailView({
           <span className="mono text-muted-foreground">
             {session.provider.toUpperCase()} · {session.externalId.slice(0, 12)}
           </span>
-          <h1>{session.title}</h1>
+          <h2>{session.title}</h2>
           <div className="inspector-badges">
             <ProviderBadge provider={session.provider} />
             <StatusLabel
@@ -134,13 +134,13 @@ export function SessionDetailView({
           <header>
             <div>
               <span className="eyebrow">Delegated work</span>
-              <h2 id="subagents-title">
+              <h3 id="subagents-title">
                 {childSessionsNoun(
                   subagents.map((child) => child.sessionKind),
                 ) === "thread"
                   ? "Threads"
                   : "Subagents"}
-              </h2>
+              </h3>
             </div>
             <span className="text-muted-foreground">
               {subagents.length} sessions
@@ -172,21 +172,10 @@ export function SessionDetailView({
         </section>
       )}
 
-      <div className="payload-notice">
-        <ShieldCheck size={16} />
-        <p>
-          This transcript is read from local provider storage on demand. Common
-          credentials are redacted, raw reasoning records are excluded, and
-          payloads are not copied into Agentarium’s database. Provider-injected
-          context may still appear inside user or assistant messages.
-        </p>
-      </div>
-
       <section className="mt-6" aria-labelledby="transcript-title">
         <header className="transcript-heading">
           <div>
-            <span className="eyebrow">Session log</span>
-            <h2 id="transcript-title">Conversation and tool payloads</h2>
+            <h3>Session log</h3>
           </div>
           <span className="text-muted-foreground">
             {transcript.entries.length} entries

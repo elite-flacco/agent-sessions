@@ -173,6 +173,10 @@
     font-size: var(--text-xs);
   }
 
+  strong {
+    font-weight: 500;
+  }
+
   button,
   input,
   select {
@@ -1173,6 +1177,7 @@
   .transcript-list {
     display: grid;
     gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr);
     margin-top: 0.8rem;
   }
   .transcript-controls {
@@ -1238,47 +1243,190 @@
     flex: 1;
     border-top: 1px solid var(--border);
   }
-  .transcript-entry {
+  .transcript-turn {
     display: grid;
-    grid-template-columns: 2.2rem minmax(0, 1fr);
-    gap: 0.75rem;
-    border: 1px solid var(--border);
-    background: var(--card);
-    padding: 0.85rem;
+    gap: 0.65rem;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .transcript-icon {
+  .transcript-message {
     display: grid;
-    width: 2.2rem;
-    height: 2.2rem;
-    place-items: center;
-    background: var(--muted);
-    color: var(--muted-foreground);
+    gap: 0.35rem;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .transcript-user .transcript-icon {
-    color: var(--badge-2-foreground);
-  }
-  .transcript-assistant .transcript-icon {
-    color: var(--success);
-  }
-  .transcript-tool .transcript-icon {
-    color: var(--warning);
-  }
-  .transcript-result .transcript-icon {
-    color: var(--info);
-  }
-  .transcript-body {
-    min-width: 0;
-  }
-  .transcript-body > header {
+  .transcript-message > header {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.45rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
   }
-  .transcript-body time {
+  .transcript-message > header > svg {
+    color: var(--muted-foreground);
+  }
+  .transcript-message-user > header > svg {
+    color: var(--badge-2-foreground);
+  }
+  .transcript-message-assistant > header > svg {
+    color: var(--success);
+  }
+  .transcript-message > header strong {
+    color: var(--foreground);
+    font-size: var(--text-sm);
+  }
+  .transcript-message time,
+  .transcript-tool-row time {
     margin-left: auto;
     color: var(--muted-foreground);
     font-family: var(--font-geist-mono), ui-monospace, monospace;
     font-size: var(--text-xs);
+  }
+  .transcript-message-user .transcript-content {
+    max-width: 68ch;
+    margin-top: 0;
+    border-left: 2px solid var(--badge-2-foreground);
+    padding-left: 0.75rem;
+  }
+  .transcript-message-assistant .transcript-content {
+    max-width: 68ch;
+    margin-top: 0;
+  }
+  .transcript-thinking > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    list-style: none;
+    cursor: pointer;
+  }
+  .transcript-thinking > summary > svg {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+  }
+  .transcript-thinking > summary strong {
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .transcript-thinking-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-style: italic;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .transcript-thinking[open] .transcript-thinking-preview {
+    display: none;
+  }
+  .transcript-thinking time {
+    margin-left: auto;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+  }
+  .transcript-thinking .transcript-content {
+    max-width: 68ch;
+    margin-top: 0.45rem;
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+  .transcript-tool-cluster {
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .transcript-tool-cluster > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .transcript-tool-cluster > header strong {
+    color: var(--foreground);
+  }
+  .transcript-tool-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .transcript-tool-rows-flat {
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .transcript-tool-row {
+    border-top: 1px solid var(--border);
+  }
+  .transcript-tool-rows > .transcript-tool-row:first-child,
+  .transcript-tool-rows-flat > .transcript-tool-row:first-child {
+    border-top: 0;
+  }
+  .transcript-tool-row > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.75rem;
+    list-style: none;
+    cursor: pointer;
+  }
+  .transcript-tool-row > summary:hover {
+    background: var(--card-hover);
+  }
+  .transcript-tool-glyph {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--warning);
+  }
+  .transcript-tool-row[data-kind="result"] .transcript-tool-glyph {
+    color: var(--info);
+  }
+  .transcript-tool-name {
+    flex-shrink: 0;
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .transcript-tool-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .transcript-tool-ok {
+    color: var(--success);
+    font-size: var(--text-xs);
+  }
+  .transcript-tool-payload {
+    display: grid;
+    gap: 0.6rem;
+    border-top: 1px dashed var(--border);
+    padding: 0.65rem 0.75rem;
+  }
+  .transcript-tool-payload-label {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+  }
+  .transcript-tool-payload pre {
+    max-height: 28rem;
+    margin: 0.25rem 0 0;
+    overflow: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: var(--text-xs);
+    line-height: var(--leading-relaxed);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .payload-error {
     border-radius: 9999px;
@@ -1287,41 +1435,10 @@
     color: var(--badge-5-foreground);
   }
   .transcript-content {
-    margin-top: 0.55rem;
+    margin-top: 0;
     color: var(--foreground);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-  }
-  .payload-disclosure {
-    margin-top: 0.65rem;
-    border: 1px solid var(--border);
-    background: var(--background);
-    overflow: hidden;
-  }
-  .payload-disclosure summary {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.55rem 0.7rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-xs);
-    cursor: pointer;
-  }
-  .payload-disclosure[open] summary {
-    border-bottom: 1px solid var(--border);
-    color: var(--foreground);
-  }
-  .payload-disclosure pre {
-    max-height: 28rem;
-    margin: 0;
-    overflow: auto;
-    padding: 0.75rem;
-    color: var(--muted-foreground);
-    font-family: var(--font-geist-mono), ui-monospace, monospace;
-    font-size: var(--text-xs);
-    line-height: var(--leading-relaxed);
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   .metric-link {
@@ -3019,7 +3136,6 @@
       flex-direction: column;
     }
     /* Header rows that wrap instead, keeping their children on one axis. */
-    .transcript-body > header,
     .agent-source-group-heading {
       align-items: flex-start;
       flex-wrap: wrap;
@@ -3040,18 +3156,19 @@
     .session-detail-grid > div:nth-child(n + 3) {
       border-top: 1px solid var(--border);
     }
-    .transcript-entry {
-      grid-template-columns: 1.8rem minmax(0, 1fr);
-      gap: 0.55rem;
-      padding: 0.7rem;
+    .transcript-message > header,
+    .transcript-tool-row > summary,
+    .transcript-thinking > summary {
+      flex-wrap: wrap;
     }
-    .transcript-icon {
-      width: 1.8rem;
-      height: 1.8rem;
-    }
-    .transcript-body time {
+    .transcript-message time,
+    .transcript-tool-row time,
+    .transcript-thinking time {
       width: 100%;
       margin-left: 0;
+    }
+    .transcript-tool-preview {
+      flex-basis: 6rem;
     }
     .agent-context-metrics {
       justify-content: flex-start;
