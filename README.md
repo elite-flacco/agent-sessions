@@ -53,7 +53,9 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 
 ### Session detail
 
-- Detailed view with session transcript, metadata and links between main and subagent sessions.
+- Detailed view with session transcript that clearly presents the agent trajectory.
+
+<a href="https://raw.githubusercontent.com/elite-flacco/agent-sessions/main/docs/screenshots/session-detail.png"><img src="docs/screenshots/session-detail.png" width="720" alt="Session detail" /></a>
 
 ### Projects
 
