@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `is_scheduled` integer DEFAULT false NOT NULL;

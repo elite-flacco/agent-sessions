@@ -63,7 +63,8 @@ export function SessionsTable({
             filters.provider ||
             filters.status ||
             filters.project ||
-            filters.model,
+            filters.model ||
+            filters.scheduled,
           )}
           onSync={onSync}
         />

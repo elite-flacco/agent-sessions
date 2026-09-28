@@ -45,7 +45,7 @@ Overview, Sessions, Usage & Cost, Insights, and project briefings share a **7-da
 
 ### Sessions
 
-- Summary cards, search, and provider/project/model/status filters, with switchable Sessions and Projects tables.
+- Summary cards, search, and provider/project/model/status filters plus a scheduled-task filter that narrows to automated runs or hides them, with switchable Sessions and Projects tables.
 - Sessions sort by last update and nest subagent runs beneath their main session.
 - Each session shows its model as one canonical name.
 

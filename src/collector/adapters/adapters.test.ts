@@ -41,10 +41,12 @@ afterEach(async () => {
 // read-only `fileMustExist` open fails gracefully. Tests that exercise the
 // enrichment set ZCODE_DB_PATH to their own temp DB.
 const ZCODE_DB_GUARD = "/dev/null/nonexistent-zcode-db";
+const ZCODE_TASKS_DB_GUARD = "/dev/null/nonexistent-zcode-tasks-db";
 const CODEX_DB_GUARD = "/dev/null/nonexistent-codex-db";
 const CODEX_CATALOG_DB_GUARD = "/dev/null/nonexistent-codex-catalog-db";
 beforeEach(() => {
   process.env.ZCODE_DB_PATH = ZCODE_DB_GUARD;
+  process.env.ZCODE_TASKS_DB_PATH = ZCODE_TASKS_DB_GUARD;
   process.env.CODEX_STATE_DB_PATH = CODEX_DB_GUARD;
   process.env.CODEX_CATALOG_DB_PATH = CODEX_CATALOG_DB_GUARD;
   __resetCodexDbCache();
@@ -52,6 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete process.env.ZCODE_DB_PATH;
+  delete process.env.ZCODE_TASKS_DB_PATH;
   delete process.env.CODEX_STATE_DB_PATH;
   delete process.env.CODEX_CATALOG_DB_PATH;
   __resetCodexDbCache();
@@ -2447,5 +2450,142 @@ describe("file change counts", () => {
       additions: 1,
       deletions: 1,
     });
+  });
+});
+
+describe("scheduled-task detection", () => {
+  it("flags a Claude run opened by a scheduled task", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-scheduled",
+        timestamp: "2026-09-20T12:00:00Z",
+        message: {
+          role: "user",
+          content:
+            '<scheduled-task name="daily-pr-triage" file="/Users/test/.claude/scheduled-tasks/daily-pr-triage/SKILL.md">\nThis is an automated run of a scheduled task.\n</scheduled-task>',
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ isScheduled: true });
+    // The marker names a task file, which must not survive normalization.
+    expect(JSON.stringify(result.sessions[0])).not.toContain("SKILL.md");
+  });
+
+  it("leaves a Claude session that merely discusses a scheduled task unflagged", async () => {
+    const result = await parse(claudeAdapter, [
+      {
+        type: "user",
+        uuid: "u1",
+        sessionId: "claude-authoring",
+        timestamp: "2026-09-20T12:00:00Z",
+        message: { role: "user", content: "Write me a scheduled task" },
+      },
+      {
+        type: "user",
+        uuid: "u2",
+        sessionId: "claude-authoring",
+        timestamp: "2026-09-20T12:05:00Z",
+        message: {
+          role: "user",
+          content: '<scheduled-task name="draft">body</scheduled-task>',
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ isScheduled: false });
+  });
+
+  it("flags a Codex automation dispatch from session_meta", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-20T16:00:32Z",
+        payload: {
+          id: "codex-automation",
+          cwd: "/work/relay",
+          thread_source: "automation",
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-20T16:00:35Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Automation: Weekly digest edit" }],
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ isScheduled: true });
+  });
+
+  it("leaves an interactive Codex session unflagged", async () => {
+    const result = await parse(codexAdapter, [
+      {
+        type: "session_meta",
+        timestamp: "2026-09-20T16:00:32Z",
+        payload: {
+          id: "codex-interactive",
+          cwd: "/work/relay",
+          thread_source: "user",
+        },
+      },
+      {
+        type: "response_item",
+        timestamp: "2026-09-20T16:00:35Z",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ text: "Fix the failing test" }],
+        },
+      },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ isScheduled: false });
+  });
+
+  it("flags a Zcode session an automation run was dispatched to", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agentarium-zcode-tasks-"),
+    );
+    temporaryDirectories.push(directory);
+    const dbPath = path.join(directory, "tasks-index.sqlite");
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE automation_runs (
+      run_id TEXT PRIMARY KEY, automation_id TEXT NOT NULL,
+      workspace_key TEXT NOT NULL, scheduled_at INTEGER,
+      trigger TEXT NOT NULL DEFAULT 'schedule',
+      dispatch_status TEXT NOT NULL DEFAULT 'claimed', outcome TEXT,
+      session_id TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );`);
+    db.prepare(
+      `INSERT INTO automation_runs
+       (run_id, automation_id, workspace_key, trigger, session_id, created_at, updated_at)
+       VALUES ('run-1', 'automation-1', '/work', 'schedule', 'sess_zcode_scheduled', 1, 1)`,
+    ).run();
+    db.close();
+    process.env.ZCODE_TASKS_DB_PATH = dbPath;
+    __resetZcodeDbCache();
+
+    const scheduled = await parse(zcodeAdapter, [
+      {
+        sessionId: "sess_zcode_scheduled",
+        cwd: "/work/relay",
+        time: "2026-09-20T12:00:00Z",
+        request: { messages: [{ role: "user", content: "Run the digest" }] },
+      },
+    ]);
+    expect(scheduled.sessions[0]).toMatchObject({ isScheduled: true });
+
+    const interactive = await parse(zcodeAdapter, [
+      {
+        sessionId: "sess_zcode_interactive",
+        cwd: "/work/relay",
+        time: "2026-09-20T12:00:00Z",
+        request: { messages: [{ role: "user", content: "Fix the build" }] },
+      },
+    ]);
+    expect(interactive.sessions[0]).toMatchObject({ isScheduled: false });
   });
 });

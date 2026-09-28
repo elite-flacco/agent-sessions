@@ -251,6 +251,16 @@ export function Dashboard({
           ]}
         />
         <FilterSelect
+          label="Filter by scheduled tasks"
+          value={filters.scheduled ?? "all"}
+          onChange={(value) => updateParam("scheduled", value)}
+          options={[
+            { value: "all", label: "All sessions" },
+            { value: "only", label: "Scheduled tasks only" },
+            { value: "exclude", label: "Exclude scheduled" },
+          ]}
+        />
+        <FilterSelect
           label="Sort sessions"
           value={filters.sort ?? "updated"}
           onChange={(value) => updateParam("sort", value)}

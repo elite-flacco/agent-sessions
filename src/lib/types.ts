@@ -92,6 +92,12 @@ export interface NormalizedSession {
   sessionKind?: SessionKind;
   agentLabel?: string;
   agentDepth?: number;
+  /**
+   * The run was started by a provider-native scheduled task or automation
+   * rather than by the user. Adapters derive it from provider markers and
+   * return the flag alone, never the prompt that carried it.
+   */
+  isScheduled?: boolean;
   title: string;
   summary?: string;
   repository?: string;

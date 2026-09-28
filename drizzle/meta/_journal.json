@@ -71,6 +71,13 @@
       "when": 1789322643181,
       "tag": "0009_milky_robin_chapel",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790544454340,
+      "tag": "0010_superb_ultragirl",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,7 @@ export default async function Home({ searchParams }: HomeProps) {
     sort: firstParam(params.sort),
     project: firstParam(params.project),
     model: firstParam(params.model),
+    scheduled: firstParam(params.scheduled),
   };
   const sessions = getSessions(filters);
   const view: WorkspaceView =

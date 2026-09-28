@@ -18,6 +18,7 @@ import { getAgentInventories } from "@/lib/agent-inventory";
 import {
   getZcodeModelUsage,
   getZcodeSessionMetadataResult,
+  isZcodeAutomationSession,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
   listZcodeSessionMetadataResult,
@@ -70,7 +71,7 @@ const SYNC_LEASE_TTL_MS = 5 * 60 * 1000;
 const WATCH_LEASE_TTL_MS = 90 * 1000;
 const WATCH_LEASE_RENEW_MS = 30 * 1000;
 const SYNC_ERROR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const NORMALIZATION_VERSION = "29";
+const NORMALIZATION_VERSION = "30";
 
 function fingerprint(size: number, modifiedAt: number): string {
   return crypto
@@ -121,16 +122,17 @@ function persistSession(session: NormalizedSession): void {
     sqlite
       .prepare(
         `INSERT INTO sessions (
-        external_id, source_path, provider, parent_external_id, session_kind, agent_label, agent_depth,
+        external_id, source_path, provider, parent_external_id, session_kind, is_scheduled, agent_label, agent_depth,
         title, summary, repository, cwd, branch, status, status_reason, started_at, ended_at,
         updated_at, files_changed, additions, deletions, input_tokens, output_tokens, cached_tokens, model, estimated_cost_usd
       ) VALUES (
-        @externalId, @sourcePath, @provider, @parentExternalId, @sessionKind, @agentLabel, @agentDepth,
+        @externalId, @sourcePath, @provider, @parentExternalId, @sessionKind, @isScheduled, @agentLabel, @agentDepth,
         @title, @summary, @repository, @cwd, @branch, @status, @statusReason, @startedAt, @endedAt,
         @updatedAt, @filesChanged, @additions, @deletions, @inputTokens, @outputTokens, @cachedTokens, @model, @estimatedCostUsd
       ) ON CONFLICT(provider, external_id) DO UPDATE SET
         source_path=COALESCE(excluded.source_path, sessions.source_path), parent_external_id=excluded.parent_external_id,
-        session_kind=excluded.session_kind, agent_label=excluded.agent_label, agent_depth=excluded.agent_depth,
+        session_kind=excluded.session_kind, is_scheduled=excluded.is_scheduled,
+        agent_label=excluded.agent_label, agent_depth=excluded.agent_depth,
         title=excluded.title, summary=excluded.summary, repository=COALESCE(excluded.repository, sessions.repository),
         cwd=COALESCE(excluded.cwd, sessions.cwd), branch=COALESCE(excluded.branch, sessions.branch), status=excluded.status,
         status_reason=excluded.status_reason,
@@ -148,6 +150,7 @@ function persistSession(session: NormalizedSession): void {
         sourcePath: session.sourcePath ?? null,
         parentExternalId: session.parentExternalId ?? null,
         sessionKind: session.sessionKind ?? "main",
+        isScheduled: session.isScheduled ? 1 : 0,
         agentLabel: session.agentLabel ?? null,
         agentDepth: session.agentDepth ?? 0,
         summary: session.summary ?? null,
@@ -367,7 +370,7 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
     const update = sqlite.prepare(
       `UPDATE sessions
        SET title = ?, cwd = ?, repository = ?, summary = ?, parent_external_id = ?,
-           session_kind = ?, agent_depth = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?,
+           session_kind = ?, agent_depth = ?, is_scheduled = ?, status = ?, status_reason = ?, ended_at = ?, updated_at = ?,
            files_changed = COALESCE(?, files_changed),
            additions = COALESCE(?, additions),
            deletions = COALESCE(?, deletions)
@@ -431,6 +434,10 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
           metadata.parentId ?? null,
           metadata.taskType === "subagent_child" ? "subagent" : "main",
           metadata.parentId ? 1 : 0,
+          // Refreshed here as well as at parse time: a recurring automation
+          // reuses one session, so an existing row can become scheduled when a
+          // later run is dispatched to it.
+          isZcodeAutomationSession(session.externalId) ? 1 : 0,
           status,
           statusReason,
           status === "completed" ||
@@ -493,6 +500,7 @@ function reconcileZcodeMetadata(capabilityLookup?: CapabilityLookup): boolean {
         sessionKind:
           metadata.taskType === "subagent_child" ? "subagent" : "main",
         agentDepth: metadata.parentId ? 1 : 0,
+        isScheduled: isZcodeAutomationSession(metadata.id),
         title: zcodeTitle(
           safeTitle(metadata.title, "Zcode coding session"),
           metadata.taskType,

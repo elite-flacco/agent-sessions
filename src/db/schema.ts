@@ -16,6 +16,9 @@ export const sessions = sqliteTable(
     provider: text("provider").notNull(),
     parentExternalId: text("parent_external_id"),
     sessionKind: text("session_kind").notNull().default("main"),
+    isScheduled: integer("is_scheduled", { mode: "boolean" })
+      .notNull()
+      .default(false),
     agentLabel: text("agent_label"),
     agentDepth: integer("agent_depth").notNull().default(0),
     title: text("title").notNull(),

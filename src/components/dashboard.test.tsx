@@ -77,14 +77,16 @@ describe("Dashboard session rows", () => {
     expect(html).not.toContain('aria-label="Date range"');
   });
 
-  test("keeps session filters the same width at the compact desktop breakpoint", () => {
+  test("fits every session filter on one row above the compact desktop breakpoint", () => {
     const styles = readFileSync(
       new URL("../app/globals.css", import.meta.url),
       "utf8",
     );
 
+    // Search plus five filters and the sort control: seven tracks, so the row
+    // never orphans a control onto a second line on a desktop-width viewport.
     expect(styles).toContain(`.session-filter-row {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: minmax(11rem, 1.5fr) repeat(6, minmax(0, 1fr));
   }`);
 
     // The 1200px block also carries unrelated inventory rules, so assert the

@@ -78,6 +78,11 @@ export interface SessionFilters {
   project?: string;
   /** Canonical model id (normalizeModel output) or UNKNOWN_MODEL_KEY. */
   model?: string;
+  /**
+   * Narrows to scheduled-task runs ("only") or hides them ("exclude").
+   * Undefined or "all" leaves both in.
+   */
+  scheduled?: string;
 }
 
 const STALE_RUNNING_MS = 10 * 60 * 1000;
@@ -135,6 +140,30 @@ function sessionRuntimeMs(session: SessionListItem): number {
     new Date(session.endedAt ?? session.updatedAt).getTime() -
     new Date(session.startedAt).getTime()
   );
+}
+
+/**
+ * Every session belonging to a scheduled-task subtree: the runs adapters
+ * flagged plus all their descendants. Only the run's own opening turn carries a
+ * provider marker, so a scheduled session's subagents are scheduled by
+ * inheritance. Resolving the whole subtree keeps the "only" view from dropping
+ * those children and the "exclude" view from promoting them to top-level rows.
+ */
+function scheduledSubtreeSessionIds(): number[] {
+  return (
+    sqlite
+      .prepare(
+        `WITH RECURSIVE subtree(id, provider, externalId) AS (
+          SELECT id, provider, external_id FROM sessions WHERE is_scheduled = 1
+          UNION
+          SELECT s.id, s.provider, s.external_id
+          FROM sessions s JOIN subtree t
+            ON s.provider = t.provider AND s.parent_external_id = t.externalId
+        )
+        SELECT id FROM subtree`,
+      )
+      .all() as { id: number }[]
+  ).map((row) => row.id);
 }
 
 function getSessionsMatchingFilters(
@@ -196,6 +225,21 @@ function getSessionsMatchingFilters(
       } else {
         clauses.push("1 = 0");
       }
+    }
+  }
+  if (filters.scheduled === "only" || filters.scheduled === "exclude") {
+    const ids = scheduledSubtreeSessionIds();
+    if (!ids.length) {
+      // Nothing is flagged: "only" matches nothing, "exclude" excludes nothing.
+      if (filters.scheduled === "only") clauses.push("1 = 0");
+    } else {
+      const placeholders = ids.map(() => "?").join(", ");
+      clauses.push(
+        filters.scheduled === "only"
+          ? `id IN (${placeholders})`
+          : `id NOT IN (${placeholders})`,
+      );
+      params.push(...ids);
     }
   }
   const date = cutoff(filters.range);

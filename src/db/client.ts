@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   provider TEXT NOT NULL,
   parent_external_id TEXT,
   session_kind TEXT NOT NULL DEFAULT 'main',
+  is_scheduled INTEGER NOT NULL DEFAULT 0,
   agent_label TEXT,
   agent_depth INTEGER NOT NULL DEFAULT 0,
   title TEXT NOT NULL,

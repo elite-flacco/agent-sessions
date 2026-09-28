@@ -83,6 +83,19 @@ export const claudeAdapter: ProviderAdapter = {
           if (safeTitle(candidate, "")) return candidate;
         }
       },
+      // Claude prefixes a scheduled run's opening user turn with a
+      // <scheduled-task name="..."> block naming the task's SKILL.md. Only the
+      // opening turn counts: sessions that merely discuss or author a
+      // scheduled task quote the same tag later on.
+      scheduled: (rows) => {
+        for (const row of rows) {
+          if (row.type !== "user" || record(row.message)?.role !== "user")
+            continue;
+          const text = contentText(record(row.message)?.content);
+          return /^\s*<scheduled-task[\s>]/.test(text ?? "");
+        }
+        return false;
+      },
       terminalStatus: (rows) => {
         for (const row of [...rows].reverse()) {
           if (row.type === "result") return { status: "completed" };

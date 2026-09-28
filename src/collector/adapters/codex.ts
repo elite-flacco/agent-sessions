@@ -188,6 +188,15 @@ export const codexAdapter: ProviderAdapter = {
             }
           : { sessionKind: "main", agentDepth: 0 };
       },
+      // Codex records an automation dispatch on the session itself:
+      // session_meta's thread_source names the trigger, so no prompt text is
+      // inspected. The run's opening turn also names the automation and its
+      // id, which stays inside this boundary.
+      scheduled: (rows) =>
+        stringValue(
+          record(rows.find((row) => row.type === "session_meta")?.payload)
+            ?.thread_source,
+        ) === "automation",
       title: (rows) => {
         for (const row of rows) {
           const payload = record(row.payload);

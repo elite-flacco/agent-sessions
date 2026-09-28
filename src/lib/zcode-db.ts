@@ -441,6 +441,33 @@ export function listZcodeAutomations(): ZcodeAutomation[] | undefined {
   }
 }
 
+/**
+ * Whether a Zcode session id appears as the target of an automation run in
+ * `~/.zcode/v2/tasks-index.sqlite`. This is the only linkage Zcode records
+ * between an automation and the session it drove: its rollout JSONL and
+ * session rows carry no automation marker. Returns false when the database or
+ * table is unavailable so callers degrade to "not scheduled" rather than
+ * throwing, and queries per id so a newly dispatched run is picked up without
+ * restarting the collector.
+ *
+ * Recurring automations reuse one session across runs, so a matching session
+ * covers every run of that automation rather than a single one.
+ */
+export function isZcodeAutomationSession(sessionId: string): boolean {
+  if (!sessionId) return false;
+  const db = zcodeTasksDb();
+  if (!db) return false;
+  try {
+    return (
+      db
+        .prepare("SELECT 1 FROM automation_runs WHERE session_id = ? LIMIT 1")
+        .get(sessionId) !== undefined
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Tests switch ZCODE_DB_PATH / ZCODE_TASKS_DB_PATH between isolated
 // databases. Closing cached read-only handles keeps those fixtures
 // independent and removable.

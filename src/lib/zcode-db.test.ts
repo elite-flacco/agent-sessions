@@ -7,6 +7,7 @@ import {
   __resetZcodeDbCache,
   getZcodeModelUsage,
   getZcodeSessionMetadataResult,
+  isZcodeAutomationSession,
   isZcodeCapabilityDbAvailable,
   isZcodeDbAvailable,
   listZcodeAutomations,
@@ -330,5 +331,82 @@ describe("Zcode v2 automations", () => {
       "/nonexistent/agentarium-zcode-tasks-missing.db";
     __resetZcodeDbCache();
     expect(listZcodeAutomations()).toBeUndefined();
+  });
+});
+
+const AUTOMATION_RUNS_SCHEMA = `
+  CREATE TABLE automation_runs (
+    run_id TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL,
+    workspace_key TEXT NOT NULL,
+    scheduled_at INTEGER,
+    trigger TEXT NOT NULL DEFAULT 'schedule',
+    dispatch_status TEXT NOT NULL DEFAULT 'claimed',
+    outcome TEXT,
+    session_id TEXT,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`;
+
+describe("Zcode automation run sessions", () => {
+  async function seedRuns(
+    rows: { runId: string; sessionId: string | null; trigger?: string }[],
+  ): Promise<void> {
+    const dbPath = await zcodeFixture(
+      AUTOMATION_RUNS_SCHEMA,
+      "ZCODE_TASKS_DB_PATH",
+    );
+    const db = new Database(dbPath);
+    const insert = db.prepare(`INSERT INTO automation_runs
+      (run_id, automation_id, workspace_key, scheduled_at, trigger,
+       dispatch_status, outcome, session_id, error, attempts,
+       created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'dispatched', 'succeeded', ?, NULL, 0, ?, ?)`);
+    for (const row of rows)
+      insert.run(
+        row.runId,
+        "automation-1",
+        "/Users/test/project",
+        1_789_511_600_000,
+        row.trigger ?? "schedule",
+        row.sessionId,
+        1_789_511_603_000,
+        1_789_511_662_000,
+      );
+    db.close();
+    __resetZcodeDbCache();
+  }
+
+  it("recognizes a session an automation run was dispatched to", async () => {
+    await seedRuns([{ runId: "run-1", sessionId: "sess_scheduled" }]);
+    expect(isZcodeAutomationSession("sess_scheduled")).toBe(true);
+    expect(isZcodeAutomationSession("sess_interactive")).toBe(false);
+  });
+
+  it("recognizes a manually triggered automation run", async () => {
+    await seedRuns([
+      { runId: "run-manual", sessionId: "sess_manual", trigger: "manual" },
+    ]);
+    expect(isZcodeAutomationSession("sess_manual")).toBe(true);
+  });
+
+  it("ignores runs that never reached a session", async () => {
+    await seedRuns([{ runId: "run-unclaimed", sessionId: null }]);
+    expect(isZcodeAutomationSession("")).toBe(false);
+  });
+
+  it("degrades to not scheduled when the runs table is missing", async () => {
+    await zcodeFixture("", "ZCODE_TASKS_DB_PATH");
+    expect(isZcodeAutomationSession("sess_scheduled")).toBe(false);
+  });
+
+  it("degrades to not scheduled when the tasks database is unavailable", async () => {
+    process.env.ZCODE_TASKS_DB_PATH =
+      "/nonexistent/agentarium-zcode-tasks-missing.db";
+    __resetZcodeDbCache();
+    expect(isZcodeAutomationSession("sess_scheduled")).toBe(false);
   });
 });

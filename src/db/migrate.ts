@@ -82,6 +82,7 @@ if (hasSessions) {
           name: string;
         }[]
       ).some((column) => column.name === "plugin_id"),
+    () => sessionColumns.has("is_scheduled"),
   ];
 
   const migrations = readMigrationFiles({ migrationsFolder });

@@ -33,6 +33,12 @@ export interface JsonlStrategy {
     agentLabel?: string;
     agentDepth?: number;
   };
+  /**
+   * True when provider markers show the run was started by a scheduled task or
+   * automation rather than by the user. Returns the flag alone: the marker
+   * lives in prompt text, which never leaves the adapter boundary.
+   */
+  scheduled?(rows: Record<string, unknown>[]): boolean;
   terminalStatus(rows: Record<string, unknown>[]): TerminalStatus | undefined;
   events(rows: Record<string, unknown>[]): ActivityEvent[];
   usage?(rows: Record<string, unknown>[]): ModelUsage[];
@@ -204,6 +210,7 @@ export async function parseJsonl(
       sourcePath: filePath,
       provider: strategy.provider,
       ...hierarchy,
+      isScheduled: strategy.scheduled?.(rows) ?? false,
       title,
       summary: sessionSummary(strategy.provider, cwd),
       repository: repositoryFromCwd(cwd),

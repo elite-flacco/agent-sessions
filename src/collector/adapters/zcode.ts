@@ -1,5 +1,9 @@
 import type { CapabilityUsage, ModelUsage, ProviderAdapter } from "@/lib/types";
-import { __resetZcodeDbCache, getZcodeSessionMetadata } from "@/lib/zcode-db";
+import {
+  __resetZcodeDbCache,
+  getZcodeSessionMetadata,
+  isZcodeAutomationSession,
+} from "@/lib/zcode-db";
 import {
   capabilityTimestamp,
   explicitSkillUsage,
@@ -222,6 +226,9 @@ export const zcodeAdapter: ProviderAdapter = {
     // fallback for cwd because interactive model_io rows omit that field.
     const session = result.sessions[0];
     if (session?.externalId) {
+      // Zcode's rollout carries no automation marker; the automation-run index
+      // is the only place the linkage exists.
+      session.isScheduled = isZcodeAutomationSession(session.externalId);
       const metadata = getZcodeSessionMetadata(session.externalId);
       if (metadata?.title)
         session.title = safeTitle(metadata.title, session.title);

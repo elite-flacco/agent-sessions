@@ -15,6 +15,7 @@ const currentSessionColumns = [
   "provider",
   "parent_external_id",
   "session_kind",
+  "is_scheduled",
   "agent_label",
   "agent_depth",
   "title",
@@ -68,6 +69,7 @@ const legacyBoundaries = [
   { name: "capability-reconciliation bootstrap", generation: 5 },
   { name: "capability-tool bootstrap", generation: 6 },
   { name: "capability-plugin bootstrap", generation: 7 },
+  { name: "scheduled-flag bootstrap", generation: 8 },
 ] as const;
 
 function createLegacyDatabase(databasePath: string, generation: number): void {
@@ -80,6 +82,9 @@ function createLegacyDatabase(databasePath: string, generation: number): void {
       ? [
           "parent_external_id TEXT",
           "session_kind TEXT NOT NULL DEFAULT 'main'",
+          ...(generation >= 8
+            ? ["is_scheduled INTEGER NOT NULL DEFAULT 0"]
+            : []),
           "agent_label TEXT",
           "agent_depth INTEGER NOT NULL DEFAULT 0",
         ]
@@ -225,7 +230,7 @@ describe("database migration baseline", () => {
       expect(capabilityTable).toBeDefined();
       expect(persistedCapabilityIndexes).toEqual(capabilityIndexes);
       expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
-      expect(migrationCount).toBe(10);
+      expect(migrationCount).toBe(11);
     },
   );
 
@@ -295,6 +300,6 @@ describe("database migration baseline", () => {
     migrated.close();
 
     expect(adapterScanColumns).toEqual(currentAdapterScanColumns);
-    expect(migrationCount).toBe(10);
+    expect(migrationCount).toBe(11);
   });
 });

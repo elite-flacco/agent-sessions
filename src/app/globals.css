@@ -533,8 +533,11 @@
     gap: 0.55rem;
     margin-top: 0.9rem;
   }
+  /* Search plus five filters and the sort control, all on one row above the
+     1200px breakpoint. The search field takes a wider track because it holds
+     typed text; the six selects share the rest evenly. */
   .session-filter-row {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: minmax(11rem, 1.5fr) repeat(6, minmax(0, 1fr));
   }
   .search-control,
   .filter-select {
@@ -547,6 +550,11 @@
     top: 0.9rem;
     z-index: 1;
     color: var(--muted-foreground);
+  }
+  /* The shortcut badge is absolutely positioned over the field, so the input
+     has to reserve its width or placeholder text runs underneath it. */
+  .search-control input {
+    padding-right: 3.2rem;
   }
   .search-control kbd {
     position: absolute;

@@ -104,6 +104,79 @@ describe("session queries", () => {
     expect(queries.getSessions({ q: "main" })).toHaveLength(1);
   });
 
+  it("filters scheduled-task runs in and out, with their subagents", () => {
+    const now = new Date().toISOString();
+    const insert = sqlite.prepare(`INSERT INTO sessions
+      (external_id, provider, parent_external_id, session_kind, is_scheduled,
+       title, status, started_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    insert.run(
+      "sched-root",
+      "claude",
+      null,
+      "main",
+      1,
+      "Daily PR triage",
+      "completed",
+      now,
+      now,
+    );
+    insert.run(
+      "sched-child",
+      "claude",
+      "sched-root",
+      "subagent",
+      0,
+      "Triage one repository",
+      "completed",
+      now,
+      now,
+    );
+    insert.run(
+      "manual-root",
+      "claude",
+      null,
+      "main",
+      0,
+      "Manual investigation",
+      "completed",
+      now,
+      now,
+    );
+    try {
+      const only = queries.getSessions({ scheduled: "only" });
+      expect(only.map((session) => session.externalId)).toEqual(["sched-root"]);
+      // The subagent carries no marker of its own, so it must still arrive
+      // nested under the scheduled run rather than being filtered away.
+      expect(only[0].children.map((child) => child.externalId)).toEqual([
+        "sched-child",
+      ]);
+
+      const excluded = queries.getSessions({ scheduled: "exclude" });
+      const ids = excluded.map((session) => session.externalId);
+      expect(ids).toContain("manual-root");
+      expect(ids).not.toContain("sched-root");
+      // And it must not resurface as a top-level row once its parent is gone.
+      expect(ids).not.toContain("sched-child");
+
+      expect(
+        queries.getSessions({}).map((session) => session.externalId),
+      ).toContain("sched-root");
+    } finally {
+      sqlite
+        .prepare(
+          "DELETE FROM sessions WHERE external_id IN ('sched-root', 'sched-child', 'manual-root')",
+        )
+        .run();
+    }
+  });
+
+  it("matches nothing in scheduled-only mode when no run is flagged", () => {
+    expect(queries.getSessions({ scheduled: "only", range: "all" })).toEqual(
+      [],
+    );
+  });
+
   it("treats underscore, percent, and backslash literally in search", () => {
     const now = new Date().toISOString();
     const insert = sqlite.prepare(`INSERT INTO sessions
