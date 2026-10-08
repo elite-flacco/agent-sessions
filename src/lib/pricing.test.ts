@@ -35,6 +35,16 @@ describe("pricing lookup", () => {
     });
   });
 
+  it("prices claude-sonnet-5-5 with the 0.05x cache-read rate", () => {
+    expect(findPricing("claude-sonnet-5-5", "2026-10-01")).toMatchObject({
+      inputPerMTok: 2,
+      outputPerMTok: 10,
+      cacheReadPerMTok: 0.1,
+      cacheWritePerMTok: 2.5,
+    });
+    expect(findPricing("claude-sonnet-5-5", "2026-09-26")).toBeUndefined();
+  });
+
   it("prices the GPT-6 family at its launch rates", () => {
     expect(findPricing("gpt-6-astra", "2026-09-26")).toMatchObject({
       inputPerMTok: 10,
@@ -49,6 +59,13 @@ describe("pricing lookup", () => {
       cacheReadPerMTok: 0.2,
       cacheWritePerMTok: 2.5,
     });
+    expect(findPricing("gpt-6.1-sol", "2026-10-01")).toMatchObject({
+      inputPerMTok: 2,
+      outputPerMTok: 10,
+      cacheReadPerMTok: 0.1,
+      cacheWritePerMTok: 2.5,
+    });
+    expect(findPricing("gpt-6.1-sol", "2026-09-26")).toBeUndefined();
     expect(findPricing("gpt-6-luna", "2026-09-26")).toMatchObject({
       inputPerMTok: 0.1,
       outputPerMTok: 0.5,

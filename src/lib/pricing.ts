@@ -23,7 +23,7 @@ const OPENAI_SOURCE = "https://developers.openai.com/api/docs/pricing";
 const ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing";
 
 // Anthropic cache rates: 5-minute writes 1.25x input (the Claude Code
-// default TTL); reads 0.1x input, except 0.05x on claude-opus-5-5. OpenAI
+// default TTL); reads 0.1x input, except 0.05x on claude-opus-5-5 and claude-sonnet-5-5. OpenAI
 // publishes an explicit cache-write rate for the gpt-5.6 and gpt-6 families
 // (1.25x input); gpt-5.5 and earlier, like Z.ai, list no cache-write
 // premium, so writes price as ordinary input there.
@@ -84,6 +84,16 @@ export const PRICING_TABLE: PricingEntry[] = [
   },
   // The introductory $2/$10 rate was made permanent on 2026-08-10; the
   // planned 2026-09-01 increase to $3/$15 was cancelled and never billed.
+  // Effective date inferred from the 12-month retirement floor (2027-09-28).
+  {
+    model: "claude-sonnet-5-5",
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    cacheReadPerMTok: 0.1,
+    cacheWritePerMTok: 2.5,
+    effectiveFrom: "2026-09-28",
+    source: ANTHROPIC_SOURCE,
+  },
   {
     model: "claude-sonnet-5",
     inputPerMTok: 2,
@@ -118,6 +128,17 @@ export const PRICING_TABLE: PricingEntry[] = [
     cacheReadPerMTok: 1,
     cacheWritePerMTok: 12.5,
     effectiveFrom: "2026-09-03",
+    source: OPENAI_SOURCE,
+  },
+  // Standard short-context (<=272K input) rates; the date is the launch
+  // reported by secondary sources (2026-09-29/30), not listed on the page.
+  {
+    model: "gpt-6.1-sol",
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    cacheReadPerMTok: 0.1,
+    cacheWritePerMTok: 2.5,
+    effectiveFrom: "2026-09-29",
     source: OPENAI_SOURCE,
   },
   {
