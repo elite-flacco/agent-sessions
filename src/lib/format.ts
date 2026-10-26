@@ -40,13 +40,21 @@ export function relativeTime(value: string): string {
 
 // Accepts ISO strings and ms epochs (scheduled-task `nextRunAt` fields).
 export function absoluteTime(value: string | number): string {
-  return new Date(value).toLocaleString([], {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid Date";
+  // ICU versions differ on date/time separators (", " versus " at ").
+  // Own the literals so SSR and hydration produce identical attributes.
+  const parts = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  });
+    hour12: true,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("month")} ${part("day")}, ${part("year")}, ${part("hour")}:${part("minute")} ${part("dayPeriod")}`;
 }
 
 export function isOlderThan(value: string, milliseconds: number): boolean {

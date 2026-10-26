@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { dedupeCapabilities } from "./normalize";
+import { humanizeCron } from "./schedule";
 import {
   capability,
   discoverPluginMcps,
@@ -40,17 +41,92 @@ function installedPlugins(value: unknown): InstalledPlugin[] {
   });
 }
 
+interface DesktopScheduledTask {
+  displayName?: string;
+  cronExpression?: string;
+  enabled?: boolean;
+  model?: string;
+  cwd?: string;
+  createdAt?: number;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+/**
+ * Claude Desktop keeps scheduling metadata (display title, cron, enabled flag,
+ * model, working directory) in `scheduled-tasks.json` beside its Claude Code
+ * sessions, scoped by account/org UUID directories. This is undocumented app
+ * internals, so every lookup is tolerant: the most recently written file wins,
+ * and a missing or malformed file yields an empty map. Fields such as
+ * `approvedPermissions` and `notifySessionId` are deliberately not read.
+ */
+async function readDesktopScheduledTasks(
+  homeDir: string,
+): Promise<Map<string, DesktopScheduledTask>> {
+  const base = join(
+    homeDir,
+    "Library",
+    "Application Support",
+    "Claude",
+    "claude-code-sessions",
+  );
+  let newestPath: string | undefined;
+  let newestMtime = -1;
+  for (const outer of await readDirectoryEntries(base, {
+    directoriesOnly: true,
+  })) {
+    for (const inner of await readDirectoryEntries(outer, {
+      directoriesOnly: true,
+    })) {
+      const candidate = join(inner, "scheduled-tasks.json");
+      try {
+        const { mtimeMs } = await stat(candidate);
+        if (mtimeMs > newestMtime) {
+          newestMtime = mtimeMs;
+          newestPath = candidate;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  const tasks = new Map<string, DesktopScheduledTask>();
+  if (!newestPath) return tasks;
+  const store = await readJsonSource(newestPath, []);
+  if (!store || !Array.isArray(store.scheduledTasks)) return tasks;
+  for (const item of store.scheduledTasks) {
+    const record = objectValue(item);
+    const id = nonEmptyString(record?.id);
+    if (!record || !id) continue;
+    tasks.set(id, {
+      displayName: nonEmptyString(record.displayName),
+      cronExpression: nonEmptyString(record.cronExpression),
+      enabled: typeof record.enabled === "boolean" ? record.enabled : undefined,
+      model: nonEmptyString(record.model),
+      cwd: safeAbsolutePath(record.cwd),
+      createdAt:
+        typeof record.createdAt === "number" ? record.createdAt : undefined,
+    });
+  }
+  return tasks;
+}
+
 /**
  * Reads Claude's scheduled-task directories (`~/.claude/scheduled-tasks/<id>/`).
- * Each task is a SKILL.md with YAML frontmatter. Claude doesn't store the
- * schedule in-file — `scheduleMissing` is always true and the instruction body
- * (the SKILL.md body) is surfaced verbatim under the allowlist exception.
+ * Each task is a SKILL.md with YAML frontmatter; the instruction body is
+ * surfaced verbatim under the allowlist exception. The SKILL.md carries no
+ * schedule or friendly title, so those are joined from Claude Desktop's
+ * scheduled-task store by task id. Tasks absent from the store fall back to
+ * the frontmatter name and `scheduleMissing: true`.
  */
 export async function discoverClaudeScheduledTasks(
   homeDir: string,
 ): Promise<ScheduledTask[]> {
   const tasks: ScheduledTask[] = [];
   const root = join(homeDir, ".claude", "scheduled-tasks");
+  const desktopTasks = await readDesktopScheduledTasks(homeDir);
   for (const entry of await readDirectoryEntries(root, {
     directoriesOnly: true,
   })) {
@@ -59,16 +135,23 @@ export async function discoverClaudeScheduledTasks(
     if (!content) continue;
     const { data, body } = parseFrontmatter(content);
     const id = basename(entry);
+    const desktop = desktopTasks.get(id);
+    const cron = desktop?.cronExpression;
     tasks.push({
       id,
-      name: data.name ?? id,
+      name: desktop?.displayName ?? data.name ?? id,
       description: data.description,
       provider: "claude",
-      scheduleMissing: true,
-      status: "active",
+      scheduleRaw: cron,
+      scheduleHuman: cron ? humanizeCron(cron) : undefined,
+      scheduleMissing: !cron,
+      status: desktop?.enabled === false ? "paused" : "active",
+      model: desktop?.model,
+      workingDirectories: desktop?.cwd ? [desktop.cwd] : undefined,
       instructionBody: body,
       instructionFormat: "skill_md",
       sourcePath: skillPath,
+      createdAt: desktop?.createdAt,
       warnings: [],
     });
   }

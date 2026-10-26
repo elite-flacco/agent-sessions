@@ -80,6 +80,27 @@ describe("relativeTime", () => {
 });
 
 describe("absoluteTime", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(["Jul 14, 2026, 8:53 PM", "Jul 14, 2026 at 8:53 PM"])(
+    "keeps hydration output stable when the runtime formats dates as %s",
+    (runtimeOutput) => {
+      // Node and browsers can use different ICU punctuation for the same locale.
+      vi.spyOn(Date.prototype, "toLocaleString").mockReturnValue(runtimeOutput);
+      expect(absoluteTime("2026-07-15T00:53:00Z")).toBe(
+        "Jul 14, 2026, 8:53 PM",
+      );
+    },
+  );
+
+  it("accepts millisecond epochs for scheduled tasks", () => {
+    expect(absoluteTime(Date.parse("2026-07-15T00:53:00Z"))).toBe(
+      "Jul 14, 2026, 8:53 PM",
+    );
+  });
+
   it("includes date and time", () => {
     const value = absoluteTime(new Date(2026, 6, 14, 20, 53, 0).toISOString());
     expect(value).toMatch(/Jul 14, 2026/);

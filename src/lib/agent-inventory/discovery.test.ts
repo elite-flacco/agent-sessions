@@ -1725,6 +1725,81 @@ rrule = "FREQ=DAILY"
     expect(claude?.scheduledTasks?.[0]?.scheduleHuman).toBeUndefined();
   });
 
+  test("joins Claude scheduled tasks with the Desktop store for title and schedule", async () => {
+    const home = await createHome();
+    for (const id of ["daily-job-harvest", "daily-job-triage", "orphan"]) {
+      const taskDir = join(home, ".claude", "scheduled-tasks", id);
+      await mkdir(taskDir, { recursive: true });
+      await writeFile(
+        join(taskDir, "SKILL.md"),
+        `---\nname: ${id}\ndescription: d\n---\nBody.\n`,
+      );
+    }
+    const storeDir = join(
+      home,
+      "Library",
+      "Application Support",
+      "Claude",
+      "claude-code-sessions",
+      "org",
+      "acct",
+    );
+    await mkdir(storeDir, { recursive: true });
+    await writeFile(
+      join(storeDir, "scheduled-tasks.json"),
+      JSON.stringify({
+        scheduledTasks: [
+          {
+            id: "daily-job-harvest",
+            displayName: "Daily job harvest (phase 1/3)",
+            cronExpression: "0 2 * * *",
+            enabled: true,
+            model: "claude-sonnet-5",
+            cwd: "/work/job-search",
+            createdAt: 1000,
+            approvedPermissions: [{ toolName: "Bash" }],
+            notifySessionId: "local_x",
+          },
+          {
+            id: "daily-job-triage",
+            cronExpression: "30 3 * * *",
+            enabled: false,
+          },
+        ],
+      }),
+    );
+
+    const result = await getAgentInventories(
+      { kind: "global" },
+      { homeDir: home },
+    );
+    const tasks = result.find(
+      (item) => item.provider === "claude",
+    )?.scheduledTasks;
+    const harvest = tasks?.find((t) => t.id === "daily-job-harvest");
+    expect(harvest).toMatchObject({
+      name: "Daily job harvest (phase 1/3)",
+      scheduleRaw: "0 2 * * *",
+      scheduleHuman: "Daily at 2:00 AM",
+      scheduleMissing: false,
+      status: "active",
+      model: "claude-sonnet-5",
+      workingDirectories: ["/work/job-search"],
+      createdAt: 1000,
+    });
+    expect(JSON.stringify(harvest)).not.toContain("approvedPermissions");
+    expect(JSON.stringify(harvest)).not.toContain("local_x");
+
+    const triage = tasks?.find((t) => t.id === "daily-job-triage");
+    expect(triage?.name).toBe("daily-job-triage");
+    expect(triage?.status).toBe("paused");
+    expect(triage?.scheduleMissing).toBe(false);
+
+    const orphan = tasks?.find((t) => t.id === "orphan");
+    expect(orphan?.scheduleMissing).toBe(true);
+    expect(orphan?.status).toBe("active");
+  });
+
   test("uses directory name when Claude scheduled-task frontmatter omits name", async () => {
     const home = await createHome();
     const taskDir = join(home, ".claude", "scheduled-tasks", "no-name-task");
