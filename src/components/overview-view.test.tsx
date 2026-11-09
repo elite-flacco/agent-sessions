@@ -238,7 +238,7 @@ describe("OverviewView", () => {
     const html = renderOverview();
 
     expect(html).toContain(
-      'class="lucide lucide-triangle-alert lucide-alert-triangle warning-icon"',
+      'class="lucide lucide-triangle-exclamation-point lucide-alert-triangle lucide-triangle-alert warning-icon"',
     );
     expect(html).not.toContain(
       'class="lucide lucide-folder-kanban warning-icon"',
